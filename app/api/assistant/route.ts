@@ -27,10 +27,7 @@ export async function POST(request: Request) {
   const model = typeof body?.model === "string" ? body.model : undefined;
 
   if (!prompt) {
-    return NextResponse.json(
-      { error: "prompt is required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
   const updated = await applyAssistantEdit({

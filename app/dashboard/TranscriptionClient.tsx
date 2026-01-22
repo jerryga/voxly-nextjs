@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useId, useRef } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useId,
+  useRef,
+  useCallback,
+} from "react";
+import { useRouter } from "next/navigation";
 
 type ActionItem = {
   text: string;
@@ -41,7 +49,14 @@ type ApiResponse = {
   error?: string;
 };
 
-export function TranscriptionClient() {
+type TranscriptionClientProps = {
+  isAuthenticated: boolean;
+};
+
+export function TranscriptionClient({
+  isAuthenticated,
+}: TranscriptionClientProps) {
+  const router = useRouter();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<Transcription[]>([]);
@@ -100,6 +115,10 @@ export function TranscriptionClient() {
   }, [latestSummary]);
 
   async function handleAssistantSend(overridePrompt?: string) {
+    if (!isAuthenticated) {
+      redirectToAuth();
+      return;
+    }
     const prompt = (overridePrompt ?? assistantPrompt).trim();
     if (!prompt) {
       setAssistantStatus("Enter a request to send to the assistant.");
@@ -154,9 +173,7 @@ export function TranscriptionClient() {
       setAssistantSuggestions(buildAssistantSuggestions(updatedSummary));
 
       const assistantReply =
-        typeof chatResp.data?.message === "string"
-          ? chatResp.data.message
-          : "";
+        typeof chatResp.data?.message === "string" ? chatResp.data.message : "";
       setAssistantMessages((prev) => [
         ...prev,
         { role: "assistant", content: assistantReply || "(No reply)" },
@@ -172,7 +189,18 @@ export function TranscriptionClient() {
     }
   }
 
-  async function loadItems() {
+  function redirectToAuth(event?: React.SyntheticEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    router.push("/auth/sign-up");
+  }
+
+  const loadItems = useCallback(async () => {
+    if (!isAuthenticated) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -187,14 +215,18 @@ export function TranscriptionClient() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     loadItems();
-  }, []);
+  }, [loadItems]);
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isAuthenticated) {
+      redirectToAuth();
+      return;
+    }
     if (!file) return;
     setUploading(true);
     setError(null);
@@ -223,6 +255,10 @@ export function TranscriptionClient() {
   }
 
   async function handleProcess(id: string, template?: string | null) {
+    if (!isAuthenticated) {
+      redirectToAuth();
+      return;
+    }
     setProcessingId(id);
     setError(null);
     try {
@@ -247,6 +283,10 @@ export function TranscriptionClient() {
   }
 
   async function handleTemplateUpdate(id: string, templateId: string) {
+    if (!isAuthenticated) {
+      redirectToAuth();
+      return;
+    }
     setError(null);
     try {
       const res = await fetch("/api/transcriptions", {
@@ -287,7 +327,11 @@ export function TranscriptionClient() {
               <span className="font-medium">Template:</span>
               <select
                 value={uploadTemplate}
-                onChange={(e) => setUploadTemplate(e.target.value)}
+                onChange={(e) =>
+                  isAuthenticated
+                    ? setUploadTemplate(e.target.value)
+                    : redirectToAuth(e)
+                }
                 className="cursor-pointer bg-transparent text-xs text-slate-700 outline-none"
               >
                 {templates.map((t) => (
@@ -314,18 +358,28 @@ export function TranscriptionClient() {
               ref={fileInputRef}
               type="file"
               accept="audio/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) =>
+                isAuthenticated
+                  ? setFile(e.target.files?.[0] || null)
+                  : redirectToAuth(e)
+              }
               className="hidden"
             />
             <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <label
                 htmlFor={fileInputId}
+                onClick={(event) => {
+                  if (!isAuthenticated) redirectToAuth(event);
+                }}
                 className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-700 shadow-sm"
               >
                 Select Files
               </label>
               <button
                 type="button"
+                onClick={(event) => {
+                  if (!isAuthenticated) redirectToAuth(event);
+                }}
                 className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-600 shadow-sm"
               >
                 Load Test Data
@@ -343,9 +397,7 @@ export function TranscriptionClient() {
                 {uploading ? "Uploading..." : "Upload"}
               </button>
               {file && (
-                <span className="text-xs text-slate-500">
-                  {file.name}
-                </span>
+                <span className="text-xs text-slate-500">{file.name}</span>
               )}
             </form>
           </div>
@@ -377,7 +429,8 @@ export function TranscriptionClient() {
             {
               title: "Action Items",
               badge: "Owners",
-              items: assistantSummary?.actionItems || latestSummary?.actionItems,
+              items:
+                assistantSummary?.actionItems || latestSummary?.actionItems,
             },
           ].map((block) => (
             <div
@@ -417,10 +470,14 @@ export function TranscriptionClient() {
 
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Transcriptions</h2>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Transcriptions
+            </h2>
             <button
               type="button"
-              onClick={loadItems}
+              onClick={(event) =>
+                isAuthenticated ? loadItems() : redirectToAuth(event)
+              }
               className="cursor-pointer text-sm font-medium text-slate-500 hover:text-slate-700"
             >
               Refresh
@@ -453,7 +510,9 @@ export function TranscriptionClient() {
                         value={item.template || "default"}
                         disabled={item.status === "processing"}
                         onChange={(e) =>
-                          handleTemplateUpdate(item.id, e.target.value)
+                          isAuthenticated
+                            ? handleTemplateUpdate(item.id, e.target.value)
+                            : redirectToAuth(e)
                         }
                         className="cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600"
                       >
@@ -465,7 +524,11 @@ export function TranscriptionClient() {
                       </select>
                       <button
                         type="button"
-                        onClick={() => handleProcess(item.id, item.template)}
+                        onClick={(event) =>
+                          isAuthenticated
+                            ? handleProcess(item.id, item.template)
+                            : redirectToAuth(event)
+                        }
                         disabled={
                           processingId === item.id || item.status !== "uploaded"
                         }
@@ -495,7 +558,9 @@ export function TranscriptionClient() {
         <section className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-400">AI ASSISTANT</p>
+              <p className="text-xs font-semibold text-slate-400">
+                AI ASSISTANT
+              </p>
               <h3 className="text-lg font-semibold text-slate-900">
                 Ask me to edit your notes
               </h3>
@@ -503,7 +568,12 @@ export function TranscriptionClient() {
             <button
               type="button"
               onClick={() => {
-                const summary = assistantSummary || normalizeSummary(latestSummary);
+                if (!isAuthenticated) {
+                  redirectToAuth();
+                  return;
+                }
+                const summary =
+                  assistantSummary || normalizeSummary(latestSummary);
                 setAssistantSuggestions(buildAssistantSuggestions(summary));
                 setAssistantStatus("Assistant suggestions refreshed.");
               }}
@@ -524,8 +594,8 @@ export function TranscriptionClient() {
                     How can I help with these notes?
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    I can directly edit your notes – add key points, update action
-                    items, change priorities, and more.
+                    I can directly edit your notes – add key points, update
+                    action items, change priorities, and more.
                   </p>
                 </div>
               </div>
@@ -547,25 +617,25 @@ export function TranscriptionClient() {
             </div>
 
             <div className="mt-4 rounded-2xl bg-white p-3">
-              <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
-              {assistantMessages.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">
-                  Hi! I can edit these notes or answer questions about them.
-                </div>
-              ) : (
-                assistantMessages.map((message, index) => (
-                  <div
-                    key={`${message.role}-${index}`}
-                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs ${
-                      message.role === "assistant"
-                        ? "bg-slate-100 text-slate-700"
-                        : "ml-auto bg-blue-500 text-white"
-                    }`}
-                  >
-                    {message.content}
+              <div className="max-h-65 space-y-2 overflow-y-auto pr-1">
+                {assistantMessages.length === 0 ? (
+                  <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">
+                    Hi! I can edit these notes or answer questions about them.
                   </div>
-                ))
-              )}
+                ) : (
+                  assistantMessages.map((message, index) => (
+                    <div
+                      key={`${message.role}-${index}`}
+                      className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs ${
+                        message.role === "assistant"
+                          ? "bg-slate-100 text-slate-700"
+                          : "ml-auto bg-blue-500 text-white"
+                      }`}
+                    >
+                      {message.content}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -586,16 +656,14 @@ export function TranscriptionClient() {
               />
               <button
                 type="button"
-                onClick={handleAssistantSend}
+                onClick={() => handleAssistantSend()}
                 disabled={assistantSending}
                 className="cursor-pointer rounded-full bg-blue-500 px-4 py-2 text-xs font-medium text-white hover:bg-blue-600 disabled:opacity-60"
               >
                 Send
               </button>
             </div>
-            <p className="mt-3 text-xs text-slate-400">
-              {assistantStatus}
-            </p>
+            <p className="mt-3 text-xs text-slate-400">{assistantStatus}</p>
           </div>
         </section>
       </aside>
@@ -623,15 +691,15 @@ function buildAssistantSuggestions(summary: SummaryState | null) {
   const actions = Array.isArray(summary?.actionItems)
     ? summary?.actionItems
     : [];
-  const keyPoints = Array.isArray(summary?.keyPoints)
-    ? summary?.keyPoints
-    : [];
+  const keyPoints = Array.isArray(summary?.keyPoints) ? summary?.keyPoints : [];
 
   const actionItem = actions.find(
     (item): item is ActionItem => typeof item === "object" && !!item?.text,
   );
   if (actionItem?.text) {
-    suggestions.push(`Mark "${truncateText(actionItem.text, 52)}" as completed`);
+    suggestions.push(
+      `Mark "${truncateText(actionItem.text, 52)}" as completed`,
+    );
   }
 
   const secondAction = actions.find(
