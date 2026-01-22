@@ -8,6 +8,20 @@ type ActionItem = {
   assignee?: string;
 };
 
+type SummaryItem = string | ActionItem;
+
+type SummaryState = {
+  decisions: string[];
+  keyPoints: string[];
+  nextSteps: string[];
+  actionItems: SummaryItem[];
+};
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 type Transcription = {
   id: string;
   fileName: string;
@@ -18,7 +32,7 @@ type Transcription = {
   decisions?: string[];
   keyPoints?: string[];
   nextSteps?: string[];
-  actionItems?: ActionItem[];
+  actionItems?: SummaryItem[];
 };
 
 type ApiResponse = {
@@ -37,6 +51,18 @@ export function TranscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploadTemplate, setUploadTemplate] = useState("default");
+  const [assistantSummary, setAssistantSummary] = useState<SummaryState | null>(
+    null,
+  );
+  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
+  const [assistantSuggestions, setAssistantSuggestions] = useState<string[]>(
+    [],
+  );
+  const [assistantStatus, setAssistantStatus] = useState(
+    "Ready to help. Choose a suggestion or type your own request.",
+  );
+  const [assistantSending, setAssistantSending] = useState(false);
 
   const templates = [
     { id: "default", label: "Default Template (Default)" },
@@ -56,6 +82,95 @@ export function TranscriptionClient() {
   const latestSummary = useMemo(() => {
     return sortedItems.find((item) => item.status === "done") || null;
   }, [sortedItems]);
+
+  useEffect(() => {
+    if (!latestSummary) {
+      setAssistantSummary(null);
+      setAssistantSuggestions(buildAssistantSuggestions(null));
+      setAssistantStatus("Upload and process a file to enable the assistant.");
+      return;
+    }
+
+    const nextSummary = normalizeSummary(latestSummary);
+    setAssistantSummary(nextSummary);
+    setAssistantSuggestions(buildAssistantSuggestions(nextSummary));
+    setAssistantStatus(
+      "Ready to help. Choose a suggestion or type your own request.",
+    );
+  }, [latestSummary]);
+
+  async function handleAssistantSend(overridePrompt?: string) {
+    const prompt = (overridePrompt ?? assistantPrompt).trim();
+    if (!prompt) {
+      setAssistantStatus("Enter a request to send to the assistant.");
+      return;
+    }
+
+    const summary = assistantSummary || normalizeSummary(latestSummary);
+    if (!summary) {
+      setAssistantStatus("Upload and process a file first.");
+      return;
+    }
+
+    setAssistantSending(true);
+    setAssistantStatus("Sending to assistant...");
+
+    const nextMessages: ChatMessage[] = [
+      ...assistantMessages,
+      { role: "user", content: prompt },
+    ];
+    setAssistantMessages(nextMessages);
+
+    try {
+      const [editResp, chatResp] = await Promise.all([
+        fetch("/api/assistant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, summary }),
+        }).then(async (response) => ({
+          ok: response.ok,
+          data: await response.json().catch(() => ({})),
+        })),
+        fetch("/api/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: nextMessages, summary }),
+        }).then(async (response) => ({
+          ok: response.ok,
+          data: await response.json().catch(() => ({})),
+        })),
+      ]);
+
+      if (!editResp.ok || !editResp.data?.ok) {
+        throw new Error(editResp.data?.error || "Assistant edit failed");
+      }
+
+      if (!chatResp.ok || !chatResp.data?.ok) {
+        throw new Error(chatResp.data?.error || "Assistant chat failed");
+      }
+
+      const updatedSummary = normalizeSummary(editResp.data.summary);
+      setAssistantSummary(updatedSummary);
+      setAssistantSuggestions(buildAssistantSuggestions(updatedSummary));
+
+      const assistantReply =
+        typeof chatResp.data?.message === "string"
+          ? chatResp.data.message
+          : "";
+      setAssistantMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: assistantReply || "(No reply)" },
+      ]);
+      setAssistantStatus("Notes updated by the AI assistant.");
+      setAssistantPrompt("");
+    } catch (err) {
+      setAssistantStatus(
+        err instanceof Error ? err.message : "Assistant request failed",
+      );
+    } finally {
+      setAssistantSending(false);
+    }
+  }
 
   async function loadItems() {
     setLoading(true);
@@ -173,7 +288,7 @@ export function TranscriptionClient() {
               <select
                 value={uploadTemplate}
                 onChange={(e) => setUploadTemplate(e.target.value)}
-                className="bg-transparent text-xs text-slate-700 outline-none"
+                className="cursor-pointer bg-transparent text-xs text-slate-700 outline-none"
               >
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -211,7 +326,7 @@ export function TranscriptionClient() {
               </label>
               <button
                 type="button"
-                className="rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-600 shadow-sm"
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-600 shadow-sm"
               >
                 Load Test Data
               </button>
@@ -223,7 +338,7 @@ export function TranscriptionClient() {
               <button
                 type="submit"
                 disabled={!file || uploading}
-                className="rounded-full bg-slate-900 px-6 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                className="cursor-pointer rounded-full bg-slate-900 px-6 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
               >
                 {uploading ? "Uploading..." : "Upload"}
               </button>
@@ -244,10 +359,26 @@ export function TranscriptionClient() {
 
         <section className="space-y-3">
           {[
-            { title: "Decisions", badge: "Final", items: latestSummary?.decisions },
-            { title: "Key Points", badge: "Highlights", items: latestSummary?.keyPoints },
-            { title: "Next Steps", badge: "Planned", items: latestSummary?.nextSteps },
-            { title: "Action Items", badge: "Owners", items: latestSummary?.actionItems },
+            {
+              title: "Decisions",
+              badge: "Final",
+              items: assistantSummary?.decisions || latestSummary?.decisions,
+            },
+            {
+              title: "Key Points",
+              badge: "Highlights",
+              items: assistantSummary?.keyPoints || latestSummary?.keyPoints,
+            },
+            {
+              title: "Next Steps",
+              badge: "Planned",
+              items: assistantSummary?.nextSteps || latestSummary?.nextSteps,
+            },
+            {
+              title: "Action Items",
+              badge: "Owners",
+              items: assistantSummary?.actionItems || latestSummary?.actionItems,
+            },
           ].map((block) => (
             <div
               key={block.title}
@@ -290,7 +421,7 @@ export function TranscriptionClient() {
             <button
               type="button"
               onClick={loadItems}
-              className="text-sm font-medium text-slate-500 hover:text-slate-700"
+              className="cursor-pointer text-sm font-medium text-slate-500 hover:text-slate-700"
             >
               Refresh
             </button>
@@ -324,7 +455,7 @@ export function TranscriptionClient() {
                         onChange={(e) =>
                           handleTemplateUpdate(item.id, e.target.value)
                         }
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600"
+                        className="cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600"
                       >
                         {templates.map((t) => (
                           <option key={t.id} value={t.id}>
@@ -338,7 +469,7 @@ export function TranscriptionClient() {
                         disabled={
                           processingId === item.id || item.status !== "uploaded"
                         }
-                        className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+                        className="cursor-pointer rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
                       >
                         {processingId === item.id ? "Processing..." : "Process"}
                       </button>
@@ -369,65 +500,164 @@ export function TranscriptionClient() {
                 Ask me to edit your notes
               </h3>
             </div>
-            <button className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600">
+            <button
+              type="button"
+              onClick={() => {
+                const summary = assistantSummary || normalizeSummary(latestSummary);
+                setAssistantSuggestions(buildAssistantSuggestions(summary));
+                setAssistantStatus("Assistant suggestions refreshed.");
+              }}
+              className="cursor-pointer rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600"
+            >
               Refresh notes
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                🤖
-              </div>
-              <div>
-                <p className="text-sm font-medium text-slate-900">
-                  How can I help with these notes?
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  I can directly edit your notes – add key points, update action
-                  items, change priorities, and more.
-                </p>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                  🤖
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">
+                    How can I help with these notes?
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    I can directly edit your notes – add key points, update action
+                    items, change priorities, and more.
+                  </p>
+                </div>
               </div>
             </div>
 
             <div className="mt-4 space-y-2">
-              {[
-                "Summarize the meeting in 3 bullets",
-                "List owners for each action item",
-                "Draft a follow-up email for attendees",
-                "Create a risk list from the discussion",
-              ].map((text) => (
+              {assistantSuggestions.map((text) => (
                 <button
                   key={text}
                   type="button"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-600 transition hover:bg-slate-50"
+                  onClick={() => {
+                    if (!assistantSending) handleAssistantSend(text);
+                  }}
+                  className="cursor-pointer w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-600 transition hover:bg-slate-50"
                 >
                   {text}
                 </button>
               ))}
             </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
-              Hi! I can edit these notes or answer questions about them.
+            <div className="mt-4 rounded-2xl bg-white p-3">
+              <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+              {assistantMessages.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-500">
+                  Hi! I can edit these notes or answer questions about them.
+                </div>
+              ) : (
+                assistantMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs ${
+                      message.role === "assistant"
+                        ? "bg-slate-100 text-slate-700"
+                        : "ml-auto bg-blue-500 text-white"
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                ))
+              )}
+              </div>
             </div>
           </div>
 
           <div className="mt-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2">
               <input
                 placeholder="Ask me to edit your notes..."
-                className="w-full rounded-full border border-slate-200 px-4 py-2 text-xs text-slate-600 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                value={assistantPrompt}
+                onChange={(event) => setAssistantPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    if (!assistantSending) handleAssistantSend();
+                  }
+                }}
+                className="w-full bg-transparent text-xs text-slate-600 outline-none"
               />
-              <button className="rounded-full bg-blue-500 px-4 py-2 text-xs font-medium text-white hover:bg-blue-600">
+              <button
+                type="button"
+                onClick={handleAssistantSend}
+                disabled={assistantSending}
+                className="cursor-pointer rounded-full bg-blue-500 px-4 py-2 text-xs font-medium text-white hover:bg-blue-600 disabled:opacity-60"
+              >
                 Send
               </button>
             </div>
             <p className="mt-3 text-xs text-slate-400">
-              Ready to help. Choose a suggestion or type your own request.
+              {assistantStatus}
             </p>
           </div>
         </section>
       </aside>
     </div>
   );
+}
+
+function truncateText(text: string, max = 80) {
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function normalizeSummary(summary?: Transcription | SummaryState | null) {
+  if (!summary) return null;
+  return {
+    decisions: Array.isArray(summary.decisions) ? summary.decisions : [],
+    keyPoints: Array.isArray(summary.keyPoints) ? summary.keyPoints : [],
+    nextSteps: Array.isArray(summary.nextSteps) ? summary.nextSteps : [],
+    actionItems: Array.isArray(summary.actionItems) ? summary.actionItems : [],
+  } satisfies SummaryState;
+}
+
+function buildAssistantSuggestions(summary: SummaryState | null) {
+  const suggestions: string[] = [];
+  const actions = Array.isArray(summary?.actionItems)
+    ? summary?.actionItems
+    : [];
+  const keyPoints = Array.isArray(summary?.keyPoints)
+    ? summary?.keyPoints
+    : [];
+
+  const actionItem = actions.find(
+    (item): item is ActionItem => typeof item === "object" && !!item?.text,
+  );
+  if (actionItem?.text) {
+    suggestions.push(`Mark "${truncateText(actionItem.text, 52)}" as completed`);
+  }
+
+  const secondAction = actions.find(
+    (item, idx): item is ActionItem =>
+      idx > 0 && typeof item === "object" && !!item?.text,
+  );
+  if (secondAction?.text) {
+    suggestions.push(
+      `Change the priority of "${truncateText(secondAction.text, 48)}" to urgent`,
+    );
+  }
+
+  if (keyPoints[0]) {
+    suggestions.push(`Add a key point about ${truncateText(keyPoints[0], 56)}`);
+  }
+
+  const fallback = [
+    "Summarize the meeting in 3 bullets",
+    "List owners for each action item",
+    "Draft a follow-up email for attendees",
+    "Create a risk list from the discussion",
+  ];
+
+  fallback.forEach((item) => {
+    if (suggestions.length < 4) suggestions.push(item);
+  });
+
+  return suggestions.slice(0, 4);
 }
