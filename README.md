@@ -1,4 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Voxly is a [Next.js](https://nextjs.org) app for authenticated audio uploads, transcription processing, and AI-assisted insights. It uses Next.js App Router, API routes, Prisma for data access, and external AI/transcription services.
+
+## Architecture
+
+```mermaid
+flowchart LR
+	U[User Browser] -->|Auth & UI| APP[Next.js App Router]
+	APP -->|API calls| API[Next.js API Routes]
+
+	subgraph Core Services
+		API -->|Auth| AUTH[NextAuth]
+		API -->|DB| DB[(Postgres via Prisma)]
+		API -->|Storage| S3[(S3-compatible Storage)]
+		API -->|Transcription| DG[Deepgram]
+		API -->|LLM| LLM[OpenAI/Gemini]
+	end
+
+	S3 -->|Audio files| API
+	DG -->|Transcripts| API
+	LLM -->|Summaries/Insights| API
+	DB -->|Metadata & Users| API
+```
 
 ## Getting Started
 
