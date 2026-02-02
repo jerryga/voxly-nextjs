@@ -37,12 +37,18 @@ export function TranscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploadTemplate, setUploadTemplate] = useState("default");
+  const [testDataLoading, setTestDataLoading] = useState(false);
+  const [testDataStatus, setTestDataStatus] = useState<string | null>(null);
+  const [expandedTranscripts, setExpandedTranscripts] = useState<
+    Record<string, boolean>
+  >({});
 
   const templates = [
     { id: "default", label: "Default Template (Default)" },
-    { id: "standup", label: "Standup" },
-    { id: "sales", label: "Sales call" },
-    { id: "planning", label: "Planning" },
+    { id: "brainstorm", label: "Brainstorm Session" },
+    { id: "interview_notes", label: "Interview Notes" },
+    { id: "lecture_notes", label: "Lecture Notes" },
+    { id: "voice_memo", label: "Voice Memo Notes" },
   ];
 
   const sortedItems = useMemo(() => {
@@ -130,28 +136,33 @@ export function TranscriptionClient() {
     }
   }
 
-  async function handleTemplateUpdate(id: string, templateId: string) {
+  async function handleLoadTestData() {
     setError(null);
+    setTestDataStatus(null);
+    setTestDataLoading(true);
+
     try {
-      const res = await fetch("/api/transcriptions", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, template: templateId }),
-      });
+      const res = await fetch(
+        `/api/transcriptions/training-data?template=${encodeURIComponent(uploadTemplate)}`,
+      );
       const payload = await res.json();
       if (!res.ok) {
-        throw new Error(payload?.error || "Failed to update template");
+        throw new Error(payload?.error || "Failed to load test data");
       }
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === id ? { ...item, template: templateId } : item,
-        ),
-      );
+      setTestDataStatus("Test data loaded successfully.");
+      await loadItems();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to update template",
-      );
+      setError(err instanceof Error ? err.message : "Failed to load test data");
+    } finally {
+      setTestDataLoading(false);
     }
+  }
+
+  function toggleTranscript(id: string) {
+    setExpandedTranscripts((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   }
 
   return (
@@ -167,12 +178,12 @@ export function TranscriptionClient() {
             </p>
           </div>
           <div className="mt-4 flex justify-center">
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500 shadow-sm">
               <span className="font-medium">Template:</span>
               <select
                 value={uploadTemplate}
                 onChange={(e) => setUploadTemplate(e.target.value)}
-                className="bg-transparent text-xs text-slate-700 outline-none"
+                className="bg-transparent text-xs font-medium text-slate-700 outline-none"
               >
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -183,7 +194,7 @@ export function TranscriptionClient() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center">
+          <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-gradient-to-br from-slate-50 to-white px-6 py-10 text-center">
             <h3 className="text-lg font-semibold text-slate-900">
               Upload audio or video
             </h3>
@@ -204,17 +215,22 @@ export function TranscriptionClient() {
             <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <label
                 htmlFor={fileInputId}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-700 shadow-sm"
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
               >
                 Select Files
               </label>
               <button
                 type="button"
-                className="rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-600 shadow-sm"
+                className="rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
+                onClick={handleLoadTestData}
+                disabled={testDataLoading}
               >
-                Load Test Data
+                {testDataLoading ? "Loading..." : "Load Test Data"}
               </button>
             </div>
+            {testDataStatus && (
+              <p className="mt-3 text-xs text-emerald-600">{testDataStatus}</p>
+            )}
             <form
               onSubmit={handleUpload}
               className="mt-5 flex flex-col items-center gap-2"
@@ -222,14 +238,12 @@ export function TranscriptionClient() {
               <button
                 type="submit"
                 disabled={!file || uploading}
-                className="rounded-full bg-slate-900 px-6 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                className="rounded-full bg-slate-900 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
               >
                 {uploading ? "Uploading..." : "Upload"}
               </button>
               {file && (
-                <span className="text-xs text-slate-500">
-                  {file.name}
-                </span>
+                <span className="text-xs text-slate-500">{file.name}</span>
               )}
             </form>
           </div>
@@ -243,14 +257,30 @@ export function TranscriptionClient() {
 
         <section className="space-y-3">
           {[
-            { title: "Decisions", badge: "Final", items: latestSummary?.decisions },
-            { title: "Key Points", badge: "Highlights", items: latestSummary?.keyPoints },
-            { title: "Next Steps", badge: "Planned", items: latestSummary?.nextSteps },
-            { title: "Action Items", badge: "Owners", items: latestSummary?.actionItems },
+            {
+              title: "Decisions",
+              badge: "Final",
+              items: latestSummary?.decisions,
+            },
+            {
+              title: "Key Points",
+              badge: "Highlights",
+              items: latestSummary?.keyPoints,
+            },
+            {
+              title: "Next Steps",
+              badge: "Planned",
+              items: latestSummary?.nextSteps,
+            },
+            {
+              title: "Action Items",
+              badge: "Owners",
+              items: latestSummary?.actionItems,
+            },
           ].map((block) => (
             <div
               key={block.title}
-              className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm"
+              className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300"
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-slate-900">
@@ -264,8 +294,28 @@ export function TranscriptionClient() {
                 {block.items && block.items.length ? (
                   <ul className="list-disc space-y-1 pl-4">
                     {block.items.map((item, idx) => (
-                      <li key={`${block.title}-${idx}`}>
-                        {typeof item === "string" ? item : item.text}
+                      <li key={`${block.title}-${idx}`} className="leading-relaxed">
+                        {typeof item === "string" ? (
+                          item
+                        ) : block.title === "Action Items" ? (
+                          <div className="flex flex-col gap-1">
+                            <span>{item.text}</span>
+                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                              {item.priority && (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                                  {item.priority}
+                                </span>
+                              )}
+                              <span>
+                                {item.assignee && item.assignee.trim()
+                                  ? item.assignee
+                                  : "Unassigned"}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          item.text
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -285,11 +335,13 @@ export function TranscriptionClient() {
 
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Transcriptions</h2>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Transcriptions
+            </h2>
             <button
               type="button"
               onClick={loadItems}
-              className="text-sm font-medium text-slate-500 hover:text-slate-700"
+              className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
             >
               Refresh
             </button>
@@ -304,7 +356,7 @@ export function TranscriptionClient() {
               {sortedItems.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-2xl border border-slate-200 p-4"
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -316,38 +368,42 @@ export function TranscriptionClient() {
                         {item.status}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={item.template || "default"}
-                        disabled={item.status === "processing"}
-                        onChange={(e) =>
-                          handleTemplateUpdate(item.id, e.target.value)
-                        }
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600"
-                      >
-                        {templates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleProcess(item.id, item.template)}
                         disabled={
                           processingId === item.id || item.status !== "uploaded"
                         }
-                        className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"
+                        className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
                       >
                         {processingId === item.id ? "Processing..." : "Process"}
                       </button>
+                      {item.transcript && (
+                        <button
+                          type="button"
+                          onClick={() => toggleTranscript(item.id)}
+                          className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+                        >
+                          {expandedTranscripts[item.id]
+                            ? "Hide Transcript"
+                            : "View Transcript"}
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {item.transcript && (
-                    <div className="mt-3 text-sm text-slate-600">
-                      <p className="font-medium text-slate-900">Transcript</p>
-                      <p className="mt-1 whitespace-pre-wrap">
+                  {item.transcript && expandedTranscripts[item.id] && (
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-600">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Transcript
+                        </p>
+                        <span className="text-xs text-slate-400">
+                          {item.transcript.length.toLocaleString()} chars
+                        </span>
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap leading-relaxed">
                         {item.transcript}
                       </p>
                     </div>
@@ -363,7 +419,9 @@ export function TranscriptionClient() {
         <section className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-400">AI ASSISTANT</p>
+              <p className="text-xs font-semibold text-slate-400">
+                AI ASSISTANT
+              </p>
               <h3 className="text-lg font-semibold text-slate-900">
                 Ask me to edit your notes
               </h3>
@@ -375,9 +433,7 @@ export function TranscriptionClient() {
 
           <div className="flex-1 overflow-y-auto">
             <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                🤖
-              </div>
+              🤖
               <div>
                 <p className="text-sm font-medium text-slate-900">
                   How can I help with these notes?
