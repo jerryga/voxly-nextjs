@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useId, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 
 type ActionItem = {
   text: string;
@@ -30,6 +31,7 @@ type ApiResponse = {
 export function TranscriptionClient() {
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const assistantInputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<Transcription[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -42,6 +44,23 @@ export function TranscriptionClient() {
   const [expandedTranscripts, setExpandedTranscripts] = useState<
     Record<string, boolean>
   >({});
+  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantSummary, setAssistantSummary] = useState<{
+    decisions?: string[];
+    keyPoints?: string[];
+    nextSteps?: string[];
+    actionItems?: ActionItem[];
+  } | null>(null);
+  const [assistantMessages, setAssistantMessages] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([
+    {
+      role: "assistant",
+      content: "Hi! I can edit these notes or answer questions about them.",
+    },
+  ]);
 
   const templates = [
     { id: "default", label: "Default Template (Default)" },
@@ -50,6 +69,7 @@ export function TranscriptionClient() {
     { id: "lecture_notes", label: "Lecture Notes" },
     { id: "voice_memo", label: "Voice Memo Notes" },
   ];
+  const isDev = process.env.NODE_ENV !== "production";
 
   const sortedItems = useMemo(() => {
     return [...items].sort(
@@ -61,6 +81,7 @@ export function TranscriptionClient() {
   const latestSummary = useMemo(() => {
     return sortedItems.find((item) => item.status === "done") || null;
   }, [sortedItems]);
+  const displaySummary = assistantSummary || latestSummary;
 
   async function loadItems() {
     setLoading(true);
@@ -165,6 +186,103 @@ export function TranscriptionClient() {
     }));
   }
 
+  async function handleAssistantSubmit(promptText?: string) {
+    const text = (promptText ?? assistantPrompt).trim();
+    if (!text) return;
+    if (!latestSummary) {
+      setAssistantError("No summary available yet.");
+      return;
+    }
+
+    setAssistantBusy(true);
+    setAssistantError(null);
+    const nextMessages = [
+      ...assistantMessages,
+      { role: "user", content: text },
+    ];
+    setAssistantMessages(nextMessages);
+    try {
+      const summaryPayload = {
+        decisions: latestSummary.decisions || [],
+        keyPoints: latestSummary.keyPoints || [],
+        nextSteps: latestSummary.nextSteps || [],
+        actionItems: latestSummary.actionItems || [],
+      };
+
+      const [editResp, chatResp] = await Promise.all([
+        fetch("/api/assistant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: text, summary: summaryPayload }),
+        }).then(async (response) => ({
+          ok: response.ok,
+          data: await response.json().catch(() => ({})),
+        })),
+        fetch("/api/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: nextMessages,
+            summary: summaryPayload,
+          }),
+        }).then(async (response) => ({
+          ok: response.ok,
+          data: await response.json().catch(() => ({})),
+        })),
+      ]);
+
+      if (!editResp.ok) {
+        throw new Error(editResp.data?.error || "Assistant edit failed");
+      }
+      if (!chatResp.ok) {
+        throw new Error(chatResp.data?.error || "Assistant chat failed");
+      }
+
+      const updatedSummary = editResp.data?.summary || null;
+      setAssistantSummary(updatedSummary);
+      if (updatedSummary && latestSummary?.id) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === latestSummary.id
+              ? {
+                  ...item,
+                  decisions: updatedSummary.decisions || [],
+                  keyPoints: updatedSummary.keyPoints || [],
+                  nextSteps: updatedSummary.nextSteps || [],
+                  actionItems: updatedSummary.actionItems || [],
+                }
+              : item,
+          ),
+        );
+      }
+      const assistantReply = chatResp.data?.message || "(No reply)";
+      setAssistantMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: assistantReply },
+      ]);
+      setAssistantPrompt("");
+    } catch (err) {
+      setAssistantError(
+        err instanceof Error ? err.message : "Assistant request failed",
+      );
+      setAssistantMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Sorry, I couldn’t update the notes. Please try again.",
+        },
+      ]);
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
+
+  function handleAssistantSuggestion(text: string) {
+    setAssistantPrompt(text);
+    handleAssistantSubmit(text);
+    requestAnimationFrame(() => assistantInputRef.current?.focus());
+  }
+
   return (
     <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_420px] items-start">
       <div className="space-y-6 min-w-0">
@@ -238,14 +356,21 @@ export function TranscriptionClient() {
               >
                 Select Files
               </label>
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                onClick={handleLoadTestData}
-                disabled={testDataLoading}
-              >
-                {testDataLoading ? "Loading..." : "Load Test Data"}
-              </button>
+              {isDev && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                    onClick={handleLoadTestData}
+                    disabled={testDataLoading}
+                  >
+                    {testDataLoading ? "Loading..." : "Train"}
+                  </button>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                    Dev only
+                  </span>
+                </div>
+              )}
             </div>
             {testDataStatus && (
               <p className="mt-4 text-sm font-medium text-emerald-600">
@@ -282,15 +407,15 @@ export function TranscriptionClient() {
           {[
             {
               title: "Decisions",
-              items: latestSummary?.decisions,
+              items: displaySummary?.decisions,
             },
             {
               title: "Key Points",
-              items: latestSummary?.keyPoints,
+              items: displaySummary?.keyPoints,
             },
             {
               title: "Next Steps",
-              items: latestSummary?.nextSteps,
+              items: displaySummary?.nextSteps,
             },
           ].map((block) => (
             <div key={block.title} className="space-y-3">
@@ -332,9 +457,9 @@ export function TranscriptionClient() {
               Action Items
             </h3>
             <div className="space-y-3">
-              {latestSummary?.actionItems &&
-              latestSummary.actionItems.length ? (
-                latestSummary.actionItems.map((item, idx) => (
+              {displaySummary?.actionItems &&
+              displaySummary.actionItems.length ? (
+                displaySummary.actionItems.map((item, idx) => (
                   <div
                     key={`Action Items-${idx}`}
                     className="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4"
@@ -521,7 +646,7 @@ export function TranscriptionClient() {
           </div>
 
           <div className="flex-1 overflow-y-auto py-4">
-            <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 backdrop-blur-sm p-4 shadow-sm">
               <span className="text-2xl">🤖</span>
               <div>
                 <p className="text-sm font-bold text-slate-900">
@@ -544,6 +669,7 @@ export function TranscriptionClient() {
                 <button
                   key={text}
                   type="button"
+                  onClick={() => handleAssistantSuggestion(text)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:shadow-md active:scale-98"
                 >
                   {text}
@@ -551,23 +677,98 @@ export function TranscriptionClient() {
               ))}
             </div>
 
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-600">
-                Hi! I can edit these notes or answer questions about them.
-              </p>
-            </div>
+            {assistantMessages.length > 0 && (
+              <div className="mt-4 space-y-4">
+                {assistantMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {message.role === "assistant" && (
+                      <div className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md">
+                        <span className="text-sm">🤖</span>
+                      </div>
+                    )}
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
+                        message.role === "user"
+                          ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-blue-200"
+                          : "border border-slate-200 bg-white text-slate-800 shadow-slate-200"
+                      }`}
+                    >
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => (
+                            <p className="text-sm leading-relaxed mb-2 last:mb-0 text-inherit">
+                              {children}
+                            </p>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="text-sm leading-relaxed list-disc ml-4 mb-2 last:mb-0 text-inherit">
+                              {children}
+                            </ul>
+                          ),
+                          ol: ({ children }) => (
+                            <ol className="text-sm leading-relaxed list-decimal ml-4 mb-2 last:mb-0 text-inherit">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }) => (
+                            <li className="text-sm leading-relaxed text-inherit">
+                              {children}
+                            </li>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="font-bold text-inherit">
+                              {children}
+                            </strong>
+                          ),
+                          em: ({ children }) => (
+                            <em className="italic text-inherit">{children}</em>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                    {message.role === "user" && (
+                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-600 to-slate-700 shadow-md">
+                        <span className="text-sm">👤</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
             <div className="flex items-center gap-2">
               <input
                 placeholder="Ask me to edit your notes..."
+                ref={assistantInputRef}
+                value={assistantPrompt}
+                onChange={(event) => setAssistantPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handleAssistantSubmit();
+                  }
+                }}
                 className="flex-1 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
-              <button className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg active:scale-95">
+              <button
+                type="button"
+                onClick={() => handleAssistantSubmit()}
+                disabled={assistantBusy}
+                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
                 Send
               </button>
             </div>
+            {assistantError && (
+              <p className="text-xs text-red-600">{assistantError}</p>
+            )}
             <p className="text-xs leading-relaxed text-slate-500">
               Ready to help. Choose a suggestion or type your own request.
             </p>
