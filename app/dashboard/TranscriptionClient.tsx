@@ -166,24 +166,26 @@ export function TranscriptionClient() {
   }
 
   return (
-    <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_450px] items-start">
-      <div className="space-y-8 min-w-0">
-        <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="flex flex-col gap-3">
-            <h2 className="text-3xl font-semibold text-slate-900">
+    <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_420px] items-start">
+      <div className="space-y-6 min-w-0">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-10 shadow-sm">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-3xl font-bold tracking-tight text-slate-900">
               What would you like to voxly?
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-base text-slate-600">
               Upload your meeting recordings to get started.
             </p>
           </div>
-          <div className="mt-4 flex justify-center">
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500 shadow-sm">
-              <span className="font-medium">Template:</span>
+          <div className="mt-6 flex justify-center">
+            <div className="flex items-center gap-3 rounded-full border border-slate-300 bg-gradient-to-br from-slate-50 to-white px-5 py-2.5 shadow-sm">
+              <span className="text-sm font-semibold text-slate-700">
+                Template:
+              </span>
               <select
                 value={uploadTemplate}
                 onChange={(e) => setUploadTemplate(e.target.value)}
-                className="bg-transparent text-xs font-medium text-slate-700 outline-none"
+                className="bg-transparent text-sm font-medium text-slate-900 outline-none cursor-pointer"
               >
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -194,16 +196,33 @@ export function TranscriptionClient() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-gradient-to-br from-slate-50 to-white px-6 py-10 text-center">
-            <h3 className="text-lg font-semibold text-slate-900">
-              Upload audio or video
-            </h3>
-            <p className="mt-2 text-sm text-slate-500">
-              Drag and drop your files here, or click to browse.
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Supports MP3, M4A, WAV (up to 500MB)
-            </p>
+          <div className="mt-8 rounded-2xl border border-dashed border-slate-200 bg-gradient-to-br from-blue-50/50 via-slate-50/50 to-indigo-50/50 px-8 py-12 text-center hover:border-slate-300 hover:bg-gradient-to-br hover:from-blue-50 hover:via-slate-50 hover:to-indigo-50 transition-all duration-200">
+            <div className="mx-auto max-w-sm">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg">
+                <svg
+                  className="w-8 h-8 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">
+                Upload audio or video
+              </h3>
+              <p className="mt-3 text-sm text-slate-600 leading-relaxed">
+                Drag and drop your files here, or click to browse.
+              </p>
+              <p className="mt-2 text-xs text-slate-500 font-medium">
+                Supports MP3, M4A, WAV (up to 500MB)
+              </p>
+            </div>
             <input
               id={fileInputId}
               ref={fileInputRef}
@@ -212,16 +231,16 @@ export function TranscriptionClient() {
               onChange={(e) => setFile(e.target.files?.[0] || null)}
               className="hidden"
             />
-            <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <label
                 htmlFor={fileInputId}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 hover:shadow-md active:scale-95"
               >
                 Select Files
               </label>
               <button
                 type="button"
-                className="rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
+                className="rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
                 onClick={handleLoadTestData}
                 disabled={testDataLoading}
               >
@@ -229,144 +248,214 @@ export function TranscriptionClient() {
               </button>
             </div>
             {testDataStatus && (
-              <p className="mt-3 text-xs text-emerald-600">{testDataStatus}</p>
+              <p className="mt-4 text-sm font-medium text-emerald-600">
+                {testDataStatus}
+              </p>
             )}
             <form
               onSubmit={handleUpload}
-              className="mt-5 flex flex-col items-center gap-2"
+              className="mt-6 flex flex-col items-center gap-3"
             >
               <button
                 type="submit"
                 disabled={!file || uploading}
-                className="rounded-full bg-slate-900 px-6 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+                className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 disabled:active:scale-100"
               >
                 {uploading ? "Uploading..." : "Upload"}
               </button>
               {file && (
-                <span className="text-xs text-slate-500">{file.name}</span>
+                <span className="text-sm font-medium text-slate-700 bg-slate-100 px-4 py-1.5 rounded-full">
+                  {file.name}
+                </span>
               )}
             </form>
           </div>
 
           {error && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mt-6 rounded-xl border border-red-300 bg-gradient-to-br from-red-50 to-red-100/50 px-5 py-4 text-sm font-medium text-red-800 shadow-sm">
               {error}
             </div>
           )}
         </section>
 
-        <section className="space-y-3">
+        <section className="space-y-8">
           {[
             {
               title: "Decisions",
-              badge: "Final",
               items: latestSummary?.decisions,
             },
             {
               title: "Key Points",
-              badge: "Highlights",
               items: latestSummary?.keyPoints,
             },
             {
               title: "Next Steps",
-              badge: "Planned",
               items: latestSummary?.nextSteps,
             },
-            {
-              title: "Action Items",
-              badge: "Owners",
-              items: latestSummary?.actionItems,
-            },
           ].map((block) => (
-            <div
-              key={block.title}
-              className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300"
-            >
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  {block.title}
-                </h3>
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-500">
-                  {block.badge}
-                </span>
-              </div>
-              <div className="mt-2 text-xs text-slate-500">
+            <div key={block.title} className="space-y-3">
+              <h3 className="text-xl font-semibold text-slate-900">
+                {block.title}
+              </h3>
+              <div className="space-y-3">
                 {block.items && block.items.length ? (
-                  <ul className="list-disc space-y-1 pl-4">
-                    {block.items.map((item, idx) => (
-                      <li key={`${block.title}-${idx}`} className="leading-relaxed">
-                        {typeof item === "string" ? (
-                          item
-                        ) : block.title === "Action Items" ? (
-                          <div className="flex flex-col gap-1">
-                            <span>{item.text}</span>
-                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                              {item.priority && (
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
-                                  {item.priority}
-                                </span>
-                              )}
-                              <span>
-                                {item.assignee && item.assignee.trim()
-                                  ? item.assignee
-                                  : "Unassigned"}
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          item.text
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  block.items.map((item, idx) => (
+                    <div
+                      key={`${block.title}-${idx}`}
+                      className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4"
+                    >
+                      <div className="w-1.5 rounded-full bg-slate-300" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                          {typeof item === "string" ? item : item.text}
+                        </p>
+                        {typeof item !== "string" &&
+                          item.text !== item.assignee && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {item.assignee}
+                            </p>
+                          )}
+                      </div>
+                    </div>
+                  ))
                 ) : (
-                  <p>No data yet.</p>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-400">
+                    No data yet.
+                  </div>
                 )}
               </div>
             </div>
           ))}
+
+          <div className="space-y-3">
+            <h3 className="text-xl font-semibold text-slate-900">
+              Action Items
+            </h3>
+            <div className="space-y-3">
+              {latestSummary?.actionItems &&
+              latestSummary.actionItems.length ? (
+                latestSummary.actionItems.map((item, idx) => (
+                  <div
+                    key={`Action Items-${idx}`}
+                    className="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4"
+                  >
+                    <div className="mt-1 h-5 w-5 rounded-full border border-slate-300 bg-white" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                        {item.text}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span
+                          className={`rounded-full px-2.5 py-1 font-bold ${
+                            item.priority === "HIGH"
+                              ? "bg-red-100 text-red-700"
+                              : item.priority === "MEDIUM"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {item.priority || "MEDIUM"}
+                        </span>
+                        <span className="text-slate-500">
+                          @
+                          {item.assignee && item.assignee.trim()
+                            ? item.assignee
+                            : "Unassigned"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-400">
+                  No data yet.
+                </div>
+              )}
+            </div>
+          </div>
         </section>
 
-        <div className="flex items-center justify-center gap-6 text-xs text-slate-400">
-          <span>• Fast processing</span>
-          <span>• AI summaries</span>
-          <span>• Private & secure</span>
+        <div className="flex items-center justify-center gap-8 py-4 text-sm font-medium text-slate-500">
+          <span className="flex items-center gap-2">
+            <span className="text-green-500">●</span> Fast processing
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="text-blue-500">●</span> AI summaries
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="text-purple-500">●</span> Private & secure
+          </span>
         </div>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Transcriptions
-            </h2>
+        <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <h2 className="text-xl font-bold text-slate-900">Transcriptions</h2>
             <button
               type="button"
               onClick={loadItems}
-              className="text-sm font-medium text-slate-500 transition hover:text-slate-700"
+              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 active:scale-95"
             >
               Refresh
             </button>
           </div>
 
           {loading ? (
-            <p className="mt-4 text-sm text-slate-400">Loading...</p>
+            <p className="mt-6 text-sm text-slate-400 text-center">
+              Loading...
+            </p>
           ) : sortedItems.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-400">No uploads yet.</p>
+            <div className="mt-6 py-12 text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+                <svg
+                  className="w-8 h-8 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+              <p className="text-sm font-medium text-slate-600">
+                No uploads yet.
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Upload your first recording to get started.
+              </p>
+            </div>
           ) : (
-            <div className="mt-4 space-y-4">
+            <div className="mt-6 space-y-4">
               {sortedItems.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
+                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
                 >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex-1">
+                      <p className="text-base font-bold text-slate-900">
                         {item.fileName}
                       </p>
-                      <p className="text-xs text-slate-400">
-                        {new Date(item.createdAt).toLocaleString()} •{" "}
-                        {item.status}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                        <p className="text-xs text-slate-500">
+                          {new Date(item.createdAt).toLocaleString()}
+                        </p>
+                        <span className="text-slate-300">•</span>
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                            item.status === "done"
+                              ? "bg-green-100 text-green-700"
+                              : item.status === "processing"
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
@@ -375,7 +464,7 @@ export function TranscriptionClient() {
                         disabled={
                           processingId === item.id || item.status !== "uploaded"
                         }
-                        className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
                       >
                         {processingId === item.id ? "Processing..." : "Process"}
                       </button>
@@ -383,7 +472,7 @@ export function TranscriptionClient() {
                         <button
                           type="button"
                           onClick={() => toggleTranscript(item.id)}
-                          className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+                          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95"
                         >
                           {expandedTranscripts[item.id]
                             ? "Hide Transcript"
@@ -394,16 +483,16 @@ export function TranscriptionClient() {
                   </div>
 
                   {item.transcript && expandedTranscripts[item.id] && (
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-600">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    <div className="mt-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100/50 p-5">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                           Transcript
                         </p>
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
                           {item.transcript.length.toLocaleString()} chars
                         </span>
                       </div>
-                      <p className="mt-3 whitespace-pre-wrap leading-relaxed">
+                      <p className="mt-4 whitespace-pre-wrap leading-relaxed text-sm text-slate-700">
                         {item.transcript}
                       </p>
                     </div>
@@ -416,29 +505,29 @@ export function TranscriptionClient() {
       </div>
 
       <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] self-start">
-        <section className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
+        <section className="flex h-full flex-col rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/30 p-6 shadow-sm">
+          <div className="flex items-start justify-between border-b border-slate-200 pb-5">
             <div>
-              <p className="text-xs font-semibold text-slate-400">
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
                 AI ASSISTANT
               </p>
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="mt-1 text-xl font-bold text-slate-900">
                 Ask me to edit your notes
               </h3>
             </div>
-            <button className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600">
+            <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 active:scale-95">
               Refresh notes
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              🤖
+          <div className="flex-1 overflow-y-auto py-4">
+            <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+              <span className="text-2xl">🤖</span>
               <div>
-                <p className="text-sm font-medium text-slate-900">
+                <p className="text-sm font-bold text-slate-900">
                   How can I help with these notes?
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-2 text-xs leading-relaxed text-slate-600">
                   I can directly edit your notes – add key points, update action
                   items, change priorities, and more.
                 </p>
@@ -455,29 +544,31 @@ export function TranscriptionClient() {
                 <button
                   key={text}
                   type="button"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-600 transition hover:bg-slate-50"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:shadow-md active:scale-98"
                 >
                   {text}
                 </button>
               ))}
             </div>
 
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-500">
-              Hi! I can edit these notes or answer questions about them.
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-sm text-slate-600">
+                Hi! I can edit these notes or answer questions about them.
+              </p>
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
             <div className="flex items-center gap-2">
               <input
                 placeholder="Ask me to edit your notes..."
-                className="w-full rounded-full border border-slate-200 px-4 py-2 text-xs text-slate-600 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className="flex-1 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
-              <button className="rounded-full bg-blue-500 px-4 py-2 text-xs font-medium text-white hover:bg-blue-600">
+              <button className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg active:scale-95">
                 Send
               </button>
             </div>
-            <p className="mt-3 text-xs text-slate-400">
+            <p className="text-xs leading-relaxed text-slate-500">
               Ready to help. Choose a suggestion or type your own request.
             </p>
           </div>
