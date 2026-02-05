@@ -630,7 +630,7 @@ export function TranscriptionClient() {
       </div>
 
       <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] self-start">
-        <section className="flex h-full flex-col rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/30 p-6 shadow-sm">
+        <section className="flex h-full flex-col rounded-2xl border border-slate-200  from-white via-blue-50/30 to-indigo-50/30 p-6 shadow-sm">
           <div className="flex items-start justify-between border-b border-slate-200 pb-5">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
@@ -646,7 +646,7 @@ export function TranscriptionClient() {
           </div>
 
           <div className="flex-1 overflow-y-auto py-4">
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 backdrop-blur-sm p-4 shadow-sm">
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-blue-200  from-blue-50/80 to-indigo-50/80 backdrop-blur-sm p-4 shadow-sm">
               <span className="text-2xl">🤖</span>
               <div>
                 <p className="text-sm font-bold text-slate-900">
