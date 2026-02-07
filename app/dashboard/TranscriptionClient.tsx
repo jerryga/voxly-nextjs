@@ -196,7 +196,7 @@ export function TranscriptionClient() {
 
     setAssistantBusy(true);
     setAssistantError(null);
-    const nextMessages = [
+    const nextMessages: typeof assistantMessages = [
       ...assistantMessages,
       { role: "user", content: text },
     ];
@@ -256,22 +256,28 @@ export function TranscriptionClient() {
         );
       }
       const assistantReply = chatResp.data?.message || "(No reply)";
-      setAssistantMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: assistantReply },
-      ]);
+      setAssistantMessages((prev) => {
+        const newMessages: typeof assistantMessages = [
+          ...prev,
+          { role: "assistant", content: assistantReply },
+        ];
+        return newMessages;
+      });
       setAssistantPrompt("");
     } catch (err) {
       setAssistantError(
         err instanceof Error ? err.message : "Assistant request failed",
       );
-      setAssistantMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, I couldn’t update the notes. Please try again.",
-        },
-      ]);
+      setAssistantMessages((prev) => {
+        const errorMessages: typeof assistantMessages = [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Sorry, I couldn't update the notes. Please try again.",
+          },
+        ];
+        return errorMessages;
+      });
     } finally {
       setAssistantBusy(false);
     }
@@ -423,26 +429,37 @@ export function TranscriptionClient() {
                 {block.title}
               </h3>
               <div className="space-y-3">
-                {block.items && block.items.length ? (
-                  block.items.map((item, idx) => (
-                    <div
-                      key={`${block.title}-${idx}`}
-                      className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4"
-                    >
-                      <div className="w-1.5 rounded-full bg-slate-300" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-slate-900 leading-relaxed">
-                          {typeof item === "string" ? item : item.text}
-                        </p>
-                        {typeof item !== "string" &&
-                          item.text !== item.assignee && (
+                {block.items &&
+                Array.isArray(block.items) &&
+                block.items.length ? (
+                  block.items.map((item, idx) => {
+                    const itemText =
+                      typeof item === "string"
+                        ? item
+                        : (item as ActionItem)?.text;
+                    const itemAssignee =
+                      typeof item === "string"
+                        ? undefined
+                        : (item as ActionItem)?.assignee;
+                    return (
+                      <div
+                        key={`${block.title}-${idx}`}
+                        className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="w-1.5 rounded-full bg-slate-300" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                            {itemText}
+                          </p>
+                          {itemAssignee && itemText !== itemAssignee && (
                             <p className="mt-1 text-xs text-slate-500">
-                              {item.assignee}
+                              {itemAssignee}
                             </p>
                           )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-400">
                     No data yet.
