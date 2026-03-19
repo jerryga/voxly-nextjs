@@ -35,7 +35,6 @@ export function TranscriptionClient() {
   const [items, setItems] = useState<Transcription[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [processingId, setProcessingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploadTemplate, setUploadTemplate] = useState("default");
@@ -130,30 +129,6 @@ export function TranscriptionClient() {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function handleProcess(id: string, template?: string | null) {
-    setProcessingId(id);
-    setError(null);
-    try {
-      const res = await fetch("/api/transcriptions/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcriptionId: id,
-          template: template || undefined,
-        }),
-      });
-      const payload = await res.json();
-      if (!res.ok) {
-        throw new Error(payload?.error || "Processing failed");
-      }
-      await loadItems();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Processing failed");
-    } finally {
-      setProcessingId(null);
     }
   }
 
@@ -392,7 +367,7 @@ export function TranscriptionClient() {
                 disabled={!file || uploading}
                 className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 disabled:active:scale-100"
               >
-                {uploading ? "Uploading..." : "Upload"}
+                {uploading ? "Starting Voxly..." : "Start Voxly"}
               </button>
               {file && (
                 <span className="text-sm font-medium text-slate-700 bg-slate-100 px-4 py-1.5 rounded-full">
@@ -600,16 +575,6 @@ export function TranscriptionClient() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleProcess(item.id, item.template)}
-                        disabled={
-                          processingId === item.id || item.status !== "uploaded"
-                        }
-                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                      >
-                        {processingId === item.id ? "Processing..." : "Process"}
-                      </button>
                       {item.transcript && (
                         <button
                           type="button"
