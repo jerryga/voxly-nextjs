@@ -35,6 +35,7 @@ export function TranscriptionClient() {
   const [items, setItems] = useState<Transcription[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploadTemplate, setUploadTemplate] = useState("default");
@@ -154,6 +155,59 @@ export function TranscriptionClient() {
     }
   }
 
+  async function handleProcess(id: string, template?: string | null) {
+    setError(null);
+    try {
+      const res = await fetch("/api/transcriptions/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcriptionId: id,
+          template: template || undefined,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || "Processing failed");
+      }
+      await loadItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Processing failed");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const confirmed = window.confirm(
+      "Delete this transcription from history? This cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setDeletingId(id);
+    setError(null);
+    try {
+      const res = await fetch("/api/transcriptions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || "Delete failed");
+      }
+
+      setExpandedTranscripts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await loadItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   function toggleTranscript(id: string) {
     setExpandedTranscripts((prev) => ({
       ...prev,
@@ -267,7 +321,10 @@ export function TranscriptionClient() {
   return (
     <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_420px] items-start">
       <div className="space-y-6 min-w-0">
-        <section className="rounded-2xl border border-slate-200/80 bg-white p-10 shadow-sm">
+        <section
+          id="upload"
+          className="rounded-2xl border border-slate-200/80 bg-white p-10 shadow-sm"
+        >
           <div className="flex flex-col gap-2">
             <h2 className="text-3xl font-bold tracking-tight text-slate-900">
               What would you like to voxly?
@@ -504,7 +561,10 @@ export function TranscriptionClient() {
           </span>
         </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+        <section
+          id="transcriptions"
+          className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+        >
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <h2 className="text-xl font-bold text-slate-900">Transcriptions</h2>
             <button
@@ -546,72 +606,98 @@ export function TranscriptionClient() {
             </div>
           ) : (
             <div className="mt-6 space-y-4">
-              {sortedItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
-                >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex-1">
-                      <p className="text-base font-bold text-slate-900">
-                        {item.fileName}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                        <p className="text-xs text-slate-500">
-                          {new Date(item.createdAt).toLocaleString()}
+              {sortedItems.map((item) => {
+                const canProcess =
+                  item.status === "uploaded" || item.status === "done";
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex-1">
+                        <p className="text-base font-bold text-slate-900">
+                          {item.fileName}
                         </p>
-                        <span className="text-slate-300">•</span>
-                        <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                            item.status === "done"
-                              ? "bg-green-100 text-green-700"
-                              : item.status === "processing"
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {item.status}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                          <p className="text-xs text-slate-500">
+                            {new Date(item.createdAt).toLocaleString()}
+                          </p>
+                          <span className="text-slate-300">•</span>
+                          <span
+                            className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                              item.status === "done"
+                                ? "bg-green-100 text-green-700"
+                                : item.status === "processing"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {item.transcript && (
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => toggleTranscript(item.id)}
-                          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95"
+                          onClick={() => handleProcess(item.id, item.template)}
+                          disabled={!canProcess}
+                          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
                         >
-                          {expandedTranscripts[item.id]
-                            ? "Hide Transcript"
-                            : "View Transcript"}
+                          Process
                         </button>
-                      )}
-                    </div>
-                  </div>
 
-                  {item.transcript && expandedTranscripts[item.id] && (
-                    <div className="mt-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100/50 p-5">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                          Transcript
-                        </p>
-                        <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
-                          {item.transcript.length.toLocaleString()} chars
-                        </span>
+                        {item.transcript && (
+                          <button
+                            type="button"
+                            onClick={() => toggleTranscript(item.id)}
+                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95"
+                          >
+                            {expandedTranscripts[item.id]
+                              ? "Hide Transcript"
+                              : "View Transcript"}
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={deletingId === item.id}
+                          className="rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                        >
+                          {deletingId === item.id ? "Deleting..." : "Delete"}
+                        </button>
                       </div>
-                      <p className="mt-4 whitespace-pre-wrap leading-relaxed text-sm text-slate-700">
-                        {item.transcript}
-                      </p>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {item.transcript && expandedTranscripts[item.id] && (
+                      <div className="mt-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100/50 p-5">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                            Transcript
+                          </p>
+                          <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
+                            {item.transcript.length.toLocaleString()} chars
+                          </span>
+                        </div>
+                        <p className="mt-4 whitespace-pre-wrap leading-relaxed text-sm text-slate-700">
+                          {item.transcript}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
       </div>
 
-      <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] self-start">
+      <aside
+        id="assistant"
+        className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] self-start"
+      >
         <section className="flex h-full flex-col rounded-2xl border border-slate-200  from-white via-blue-50/30 to-indigo-50/30 p-6 shadow-sm">
           <div className="flex items-start justify-between border-b border-slate-200 pb-5">
             <div>

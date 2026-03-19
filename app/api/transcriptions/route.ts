@@ -79,3 +79,41 @@ export async function PATCH(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email?.toLowerCase().trim();
+
+    if (!email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const id = typeof body?.id === "string" ? body.id : "";
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const deleted = await prisma.transcription.deleteMany({
+      where: { id, userId: user.id },
+    });
+
+    if (deleted.count === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: getApiErrorMessage(err) },
+      { status: getApiErrorStatus(err) },
+    );
+  }
+}
