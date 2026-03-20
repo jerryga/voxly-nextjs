@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { uploadToS3 } from "@/lib/storage/s3";
+import { deleteFromS3, uploadToS3 } from "@/lib/storage/s3";
 import { inngest } from "@/inngest/client";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
+import { ensureCreditsAvailableForExpectedProcessing } from "@/lib/billing";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { processUploadedAudio } from "@/lib/transcriptions/process";
 import {
@@ -29,6 +30,9 @@ function shouldProcessInline(err: unknown) {
 }
 
 export async function POST(request: Request) {
+  let transcriptionId: string | null = null;
+  let uploadedKey: string | null = null;
+
   try {
     const originError = enforceSameOrigin(request);
     if (originError) {
@@ -58,14 +62,26 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("file");
     const templateField = formData.get("template");
+    const estimatedDurationField = formData.get("estimatedDurationSeconds");
     const template =
       typeof templateField === "string" && templateField.trim()
         ? normalizeTemplate(templateField)
         : "default";
+    const estimatedDurationSeconds =
+      typeof estimatedDurationField === "string" &&
+      estimatedDurationField.trim() &&
+      Number.isFinite(Number(estimatedDurationField))
+        ? Number(estimatedDurationField)
+        : null;
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
     }
+
+    await ensureCreditsAvailableForExpectedProcessing(
+      user.id,
+      estimatedDurationSeconds,
+    );
 
     if (file.size === 0) {
       return NextResponse.json({ error: "Uploaded file is empty" }, { status: 400 });
@@ -88,6 +104,19 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const safeName = sanitizeFilename(file.name || "upload");
     const key = `users/${user.id}/${Date.now()}-${safeName}`;
+    uploadedKey = key;
+
+    const transcription = await prisma.transcription.create({
+      data: {
+        userId: user.id,
+        fileName: file.name || safeName,
+        fileUrl: key,
+        status: "uploading",
+        template,
+      },
+      select: { id: true },
+    });
+    transcriptionId = transcription.id;
 
     const upload = await uploadToS3({
       key,
@@ -95,15 +124,12 @@ export async function POST(request: Request) {
       contentType: file.type || "application/octet-stream",
     });
 
-    const transcription = await prisma.transcription.create({
+    await prisma.transcription.update({
+      where: { id: transcription.id },
       data: {
-        userId: user.id,
-        fileName: file.name || safeName,
         fileUrl: upload.key,
-        status: "processing",
-        template,
+        status: "uploaded",
       },
-      select: { id: true },
     });
 
     const inngestEnv = process.env.INNGEST_ENV?.trim();
@@ -134,6 +160,12 @@ export async function POST(request: Request) {
         });
       }
 
+      try {
+        await deleteFromS3({ key: upload.key });
+      } catch (cleanupError) {
+        console.warn("Failed to clean up uploaded file after enqueue error", cleanupError);
+      }
+
       await prisma.transcription.update({
         where: { id: transcription.id },
         data: { status: "error" },
@@ -150,9 +182,33 @@ export async function POST(request: Request) {
       queued: true,
     });
   } catch (err) {
+    if (transcriptionId) {
+      try {
+        await prisma.transcription.update({
+          where: { id: transcriptionId },
+          data: { status: "error" },
+        });
+      } catch (updateError) {
+        console.warn("Failed to mark upload error state", updateError);
+      }
+    }
+
+    if (uploadedKey) {
+      try {
+        await deleteFromS3({ key: uploadedKey });
+      } catch (cleanupError) {
+        console.warn("Failed to clean up uploaded file after upload error", cleanupError);
+      }
+    }
+
     return NextResponse.json(
       { error: getApiErrorMessage(err) },
-      { status: getApiErrorStatus(err) },
+      {
+        status:
+          err instanceof Error && "statusCode" in err && typeof err.statusCode === "number"
+            ? err.statusCode
+            : getApiErrorStatus(err),
+      },
     );
   }
 }

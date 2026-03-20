@@ -46,6 +46,18 @@ function getAllowedOrigins(request: Request) {
     }
   }
 
+  const configuredOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+  for (const origin of configuredOrigins) {
+    const trimmed = origin.trim();
+    if (!trimmed) continue;
+
+    try {
+      allowed.add(new URL(trimmed).origin);
+    } catch {
+      // Ignore malformed configured origins.
+    }
+  }
+
   return allowed;
 }
 
@@ -107,4 +119,3 @@ export function enforceRateLimit(
   rateLimitStore.set(bucketKey, existing);
   return null;
 }
-

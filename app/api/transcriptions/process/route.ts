@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inngest } from "@/inngest/client";
+import { ensureCreditsAvailableForExpectedProcessing } from "@/lib/billing";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { processUploadedAudio } from "@/lib/transcriptions/process";
@@ -66,6 +67,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    await ensureCreditsAvailableForExpectedProcessing(
+      user.id,
+      transcription.duration,
+    );
+
     const key = transcription.fileUrl;
     if (!key) {
       return NextResponse.json({ error: "Missing file key" }, { status: 400 });
@@ -120,7 +126,12 @@ export async function POST(request: Request) {
   } catch (err) {
     return NextResponse.json(
       { error: getApiErrorMessage(err) },
-      { status: getApiErrorStatus(err) },
+      {
+        status:
+          err instanceof Error && "statusCode" in err && typeof err.statusCode === "number"
+            ? err.statusCode
+            : getApiErrorStatus(err),
+      },
     );
   }
 }

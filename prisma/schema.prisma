@@ -21,6 +21,7 @@ model User {
   sessions       Session[]
   transcriptions Transcription[]
   subscription   Subscription?
+  creditTransactions CreditTransaction[]
 }
 
 model Account {
@@ -83,10 +84,46 @@ model Subscription {
   stripeSubscriptionId   String?   @unique
   stripePriceId          String?
   stripeCurrentPeriodEnd DateTime?
+  billingInterval        String    @default("monthly")
+  cancelAtPeriodEnd      Boolean   @default(false)
+  lastCreditRefreshAt    DateTime?
   status String @default("free")
   plan   String @default("free")
   creditsRemaining Int @default(0)
   creditsTotal     Int @default(0)
+  monthlyCreditsRemaining Int @default(0)
+  monthlyCreditsTotal     Int @default(0)
+  topUpCreditsRemaining   Int @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model CreditTransaction {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String
+  amount          Int
+  balanceAfter    Int
+  monthlyAfter    Int?
+  topUpAfter      Int?
+  transcriptionId String?
+  stripeEventId   String?
+  stripeInvoiceId String?
+  stripeSessionId String?
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([stripeEventId])
+}
+
+model StripeWebhookEvent {
+  id            String   @id @default(cuid())
+  stripeEventId String   @unique
+  eventType     String
+  status        String   @default("processing")
+  error         String?
+  processedAt   DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

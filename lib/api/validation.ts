@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { normalizeTemplate } from "@/lib/llm/promptBuilder";
 
-const emailSchema = z.email().transform((value) => value.trim().toLowerCase());
+const emailSchema = z
+  .email("Enter a valid email address.")
+  .transform((value) => value.trim().toLowerCase());
 
 const nameSchema = z
   .string()
@@ -11,7 +13,10 @@ const nameSchema = z
   .optional()
   .transform((value) => value || undefined);
 
-const passwordSchema = z.string().min(8).max(128);
+const passwordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters.")
+  .max(128, "Password must be 128 characters or fewer.");
 
 const idSchema = z.string().trim().min(1).max(128);
 
@@ -21,6 +26,15 @@ const templateSchema = z
   .min(1)
   .max(40)
   .transform((value) => normalizeTemplate(value));
+
+const relativePathSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => value.startsWith("/") && !value.startsWith("//"), {
+    message: "Expected a relative path",
+  });
 
 const actionItemSchema = z.object({
   text: z.string().trim().min(1).max(300),
@@ -82,6 +96,25 @@ export const transcriptionProcessSchema = z.object({
     .transform((value) => (value ? normalizeTemplate(value) : undefined)),
 });
 
+export const billingCheckoutSchema = z.discriminatedUnion("purchaseType", [
+  z.object({
+    purchaseType: z.literal("subscription"),
+    plan: z.enum(["starter", "pro", "team"]),
+    successPath: relativePathSchema.optional(),
+    cancelPath: relativePathSchema.optional(),
+  }),
+  z.object({
+    purchaseType: z.literal("topup"),
+    creditPack: z.enum(["pack_100", "pack_500"]),
+    successPath: relativePathSchema.optional(),
+    cancelPath: relativePathSchema.optional(),
+  }),
+]);
+
+export const billingPortalSchema = z.object({
+  returnPath: relativePathSchema.optional(),
+});
+
 export const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
 
 export const ALLOWED_UPLOAD_MIME_TYPES = new Set([
@@ -98,4 +131,3 @@ export const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "video/quicktime",
   "video/webm",
 ]);
-

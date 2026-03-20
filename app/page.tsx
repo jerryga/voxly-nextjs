@@ -44,9 +44,9 @@ const pricingTiers = [
     price: "$19",
     audience: "For solo creators and early workflows",
     features: [
-      "5 hours of transcription per month",
-      "AI summaries and key takeaways",
-      "Upload and transcript history",
+      "300 credits every month",
+      "AI summaries and key takeaways included",
+      "Ideal for interviews, notes, and weekly uploads",
     ],
   },
   {
@@ -54,20 +54,20 @@ const pricingTiers = [
     price: "$49",
     audience: "For teams shipping content every week",
     features: [
-      "25 hours of transcription per month",
-      "Shared workspace and assistant tools",
-      "Priority processing and richer exports",
+      "1,200 credits every month",
+      "Shared workflow with assistant-powered follow-up",
+      "Best fit for recurring production and client work",
     ],
     featured: true,
   },
   {
-    name: "Enterprise",
-    price: "Custom",
+    name: "Team",
+    price: "$149",
     audience: "For high-volume and multi-team operations",
     features: [
-      "Custom usage limits",
-      "Support, onboarding, and tailored workflows",
-      "Security and compliance review",
+      "4,000 credits every month",
+      "Built for larger shared workloads and pooled usage",
+      "Add top-up credits whenever production spikes",
     ],
   },
 ];
@@ -78,9 +78,7 @@ export default async function Home() {
   const navItems = isAuthenticated
     ? [
         { label: "Dashboard", href: "/dashboard" },
-        { label: "Upload", href: "/dashboard#upload" },
-        { label: "Transcriptions", href: "/dashboard#transcriptions" },
-        { label: "Assistant", href: "/dashboard#assistant" },
+        { label: "Billing", href: "/billing" },
         { label: "Pricing", href: "#pricing" },
         { label: "Contact", href: "#contact" },
       ]
@@ -95,7 +93,7 @@ export default async function Home() {
     <main className="min-h-screen overflow-x-hidden bg-[#f4efe7] text-slate-950">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.18),transparent_34%),linear-gradient(180deg,#f6f1e8_0%,#f9f7f2_48%,#ffffff_100%)]" />
 
-      <header className="sticky top-0 z-50 px-4 py-4 sm:px-6">
+      <header className="fixed inset-x-0 top-0 z-50 px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-full border border-white/70 bg-white/80 px-5 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
           <Link href="/" className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0f172a] text-sm font-semibold text-white">
@@ -195,7 +193,7 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="px-4 pb-18 pt-8 sm:px-6 sm:pb-24 sm:pt-12">
+      <section className="px-4 pb-18 pt-32 sm:px-6 sm:pb-24 sm:pt-36">
         <div className="mx-auto grid w-full max-w-7xl gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
@@ -245,15 +243,23 @@ export default async function Home() {
             <div className="mt-10 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
               <div className="rounded-3xl border border-white/80 bg-white/75 p-4 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.35)]">
                 <p className="text-2xl font-semibold text-slate-950">3x</p>
-                <p className="mt-1">Faster post-call notes and recap creation</p>
+                <p className="mt-1">
+                  Faster post-call notes and recap creation
+                </p>
               </div>
               <div className="rounded-3xl border border-white/80 bg-white/75 p-4 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.35)]">
                 <p className="text-2xl font-semibold text-slate-950">1 hub</p>
-                <p className="mt-1">Uploads, transcripts, and assistant answers in one place</p>
+                <p className="mt-1">
+                  Uploads, transcripts, and assistant answers in one place
+                </p>
               </div>
               <div className="rounded-3xl border border-white/80 bg-white/75 p-4 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.35)]">
-                <p className="text-2xl font-semibold text-slate-950">0 guesswork</p>
-                <p className="mt-1">Clear transcripts and summaries without digging through audio</p>
+                <p className="text-2xl font-semibold text-slate-950">
+                  0 guesswork
+                </p>
+                <p className="mt-1">
+                  Clear transcripts and summaries without digging through audio
+                </p>
               </div>
             </div>
           </div>
@@ -291,8 +297,8 @@ export default async function Home() {
                       Assistant
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-200">
-                      Asked: &quot;What decisions were made?&quot; Returned the launch
-                      owner, due dates, and unresolved blockers.
+                      Asked: &quot;What decisions were made?&quot; Returned the
+                      launch owner, due dates, and unresolved blockers.
                     </p>
                   </div>
                 </div>
@@ -324,7 +330,8 @@ export default async function Home() {
                         26:12 Next steps
                       </p>
                       <p className="mt-1 text-sm leading-6 text-slate-600">
-                        Assigned recap, content draft, and follow-up review date.
+                        Assigned recap, content draft, and follow-up review
+                        date.
                       </p>
                     </div>
                   </div>
@@ -383,7 +390,10 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="pricing" className="bg-[#f8f5ef] px-4 py-18 sm:px-6 sm:py-24">
+      <section
+        id="pricing"
+        className="bg-[#f8f5ef] px-4 py-18 sm:px-6 sm:py-24"
+      >
         <div className="mx-auto w-full max-w-7xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
@@ -394,16 +404,24 @@ export default async function Home() {
                 Clear plans that map to real usage
               </h2>
               <p className="mt-4 text-lg leading-8 text-slate-600">
-                Start with a small workflow, then scale when your team needs
-                more hours, collaboration, or support.
+                Voxly uses monthly subscriptions with included credits, so your
+                bill stays predictable while usage still scales cleanly.
               </p>
             </div>
             <Link
-              href={isAuthenticated ? "/dashboard" : "/auth/sign-up"}
+              href={isAuthenticated ? "/billing" : "/auth/sign-up"}
               className="inline-flex w-fit items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:border-slate-400"
             >
-              {isAuthenticated ? "Open Workspace" : "Start Free"}
+              {isAuthenticated ? "Open Billing" : "Start Free"}
             </Link>
+          </div>
+
+          <div className="mt-6 rounded-[28px] border border-orange-200 bg-white px-6 py-4 text-sm text-slate-700 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.25)]">
+            <span className="font-semibold text-slate-950">
+              How credits work:
+            </span>{" "}
+            1 credit covers roughly 1 minute of uploaded audio. Need more room
+            in a busy month? Buy top-up credit packs without changing your plan.
           </div>
 
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
@@ -451,7 +469,10 @@ export default async function Home() {
                   }`}
                 >
                   {tier.features.map((feature) => (
-                    <li key={feature} className="rounded-2xl bg-white/8 px-4 py-3">
+                    <li
+                      key={feature}
+                      className="rounded-2xl bg-white/8 px-4 py-3"
+                    >
                       {feature}
                     </li>
                   ))}
@@ -510,16 +531,16 @@ export default async function Home() {
             <p className="mt-3 text-sm leading-7 text-slate-300">
               Email{" "}
               <a
-                href="mailto:hello@voxly.ai"
+                href="mailto:support@chason.app"
                 className="font-semibold text-white underline decoration-white/30 underline-offset-4"
               >
-                hello@voxly.ai
+                support@chason.app
               </a>{" "}
               or start free and explore the workspace right away.
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <a
-                href="mailto:hello@voxly.ai"
+                href="mailto:support@chason.app"
                 className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950"
               >
                 Contact Sales

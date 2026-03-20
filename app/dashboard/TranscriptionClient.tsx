@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, useId, useRef } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import type { BillingInfo, BillingResponse } from "@/lib/billing-types";
 
 type ActionItem = {
   text: string;
@@ -15,6 +17,7 @@ type Transcription = {
   status: string;
   template?: string | null;
   createdAt: string;
+  duration?: number | null;
   transcript?: string | null;
   decisions?: string[];
   keyPoints?: string[];
@@ -38,6 +41,10 @@ export function TranscriptionClient() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [estimatedDurationSeconds, setEstimatedDurationSeconds] = useState<
+    number | null
+  >(null);
+  const [durationLoading, setDurationLoading] = useState(false);
   const [uploadTemplate, setUploadTemplate] = useState("default");
   const [testDataLoading, setTestDataLoading] = useState(false);
   const [testDataStatus, setTestDataStatus] = useState<string | null>(null);
@@ -47,6 +54,8 @@ export function TranscriptionClient() {
   const [assistantPrompt, setAssistantPrompt] = useState("");
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [billing, setBilling] = useState<BillingInfo | null>(null);
+  const [billingLoading, setBillingLoading] = useState(true);
   const [assistantSummary, setAssistantSummary] = useState<{
     decisions?: string[];
     keyPoints?: string[];
@@ -82,6 +91,53 @@ export function TranscriptionClient() {
     return sortedItems.find((item) => item.status === "done") || null;
   }, [sortedItems]);
   const displaySummary = assistantSummary || latestSummary;
+  const estimatedCredits =
+    estimatedDurationSeconds && estimatedDurationSeconds > 0
+      ? Math.max(1, Math.ceil(estimatedDurationSeconds / 60))
+      : null;
+  const hasEnoughEstimatedCredits =
+    !estimatedCredits || !billing
+      ? true
+      : billing.creditsRemaining >= estimatedCredits;
+
+  async function readMediaDuration(fileToRead: File) {
+    setDurationLoading(true);
+    try {
+      const objectUrl = URL.createObjectURL(fileToRead);
+      const media = document.createElement(
+        fileToRead.type.startsWith("video/") ? "video" : "audio",
+      );
+      media.preload = "metadata";
+
+      const duration = await new Promise<number | null>((resolve) => {
+        const cleanup = () => {
+          URL.revokeObjectURL(objectUrl);
+          media.removeAttribute("src");
+          media.load();
+        };
+
+        media.onloadedmetadata = () => {
+          const nextDuration =
+            Number.isFinite(media.duration) && media.duration > 0
+              ? media.duration
+              : null;
+          cleanup();
+          resolve(nextDuration);
+        };
+
+        media.onerror = () => {
+          cleanup();
+          resolve(null);
+        };
+
+        media.src = objectUrl;
+      });
+
+      setEstimatedDurationSeconds(duration);
+    } finally {
+      setDurationLoading(false);
+    }
+  }
 
   async function loadItems() {
     setLoading(true);
@@ -100,8 +156,26 @@ export function TranscriptionClient() {
     }
   }
 
+  async function loadBilling() {
+    setBillingLoading(true);
+    try {
+      const res = await fetch("/api/billing/subscription");
+      const payload = (await res.json()) as BillingResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to load billing");
+      }
+
+      setBilling(payload.billing || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load billing");
+    } finally {
+      setBillingLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadItems();
+    loadBilling();
   }, []);
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -115,6 +189,12 @@ export function TranscriptionClient() {
 
     try {
       formData.append("template", uploadTemplate);
+      if (estimatedDurationSeconds) {
+        formData.append(
+          "estimatedDurationSeconds",
+          String(estimatedDurationSeconds),
+        );
+      }
 
       const res = await fetch("/api/uploads", {
         method: "POST",
@@ -125,7 +205,9 @@ export function TranscriptionClient() {
         throw new Error(payload?.error || "Upload failed");
       }
       setFile(null);
+      setEstimatedDurationSeconds(null);
       await loadItems();
+      await loadBilling();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -171,6 +253,7 @@ export function TranscriptionClient() {
         throw new Error(payload?.error || "Processing failed");
       }
       await loadItems();
+      await loadBilling();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Processing failed");
     }
@@ -363,6 +446,131 @@ export function TranscriptionClient() {
             </div>
           </div>
         </section>
+        <section className="rounded-[30px] border border-white/80 bg-white/88 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Billing
+              </p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
+                Credits snapshot
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
+                Keep an eye on your remaining balance while you work, then open
+                the full billing page for plans, top-ups, and payment history.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/billing"
+                className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Open Billing
+              </Link>
+              <button
+                type="button"
+                onClick={loadBilling}
+                disabled={billingLoading}
+                className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {billingLoading ? "Refreshing..." : "Refresh Credits"}
+              </button>
+            </div>
+          </div>
+
+          {billingLoading ? (
+            <p className="mt-6 text-sm text-slate-500">Loading billing details...</p>
+          ) : billing ? (
+            <>
+              <div className="mt-6 grid gap-4 md:grid-cols-4">
+                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Current Plan
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold capitalize text-slate-950">
+                    {billing.plan}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500 capitalize">
+                    {billing.status}
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Total Credits
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {billing.creditsRemaining}
+                    <span className="ml-1 text-sm font-medium text-slate-500">
+                      / {billing.creditsTotal}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Available right now
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Monthly Bucket
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {billing.monthlyCreditsRemaining}
+                    <span className="ml-1 text-sm font-medium text-slate-500">
+                      / {billing.monthlyCreditsTotal}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Included with your plan
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Top-up Credits
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {billing.topUpCreditsRemaining}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Purchased separately
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                <div className="rounded-[26px] border border-slate-200 bg-[#fffdf9] p-5">
+                  <p className="text-sm font-semibold text-slate-950">
+                    {billing.hasActiveSubscription
+                      ? `You're on the ${billing.plan} plan with ${billing.monthlyCreditsRemaining} monthly credits and ${billing.topUpCreditsRemaining} top-up credits available.`
+                      : "You do not have an active subscription yet. Open billing to choose a plan or purchase credits."}
+                  </p>
+                  {billing.stripeCurrentPeriodEnd ? (
+                    <p className="mt-2 text-sm text-slate-500">
+                      Next renewal:{" "}
+                      {new Date(billing.stripeCurrentPeriodEnd).toLocaleDateString()}
+                    </p>
+                  ) : null}
+                  {billing.cancelAtPeriodEnd ? (
+                    <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      Your subscription is set to cancel at the end of the
+                      current billing period.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex justify-start lg:justify-end">
+                  <Link
+                    href="/billing"
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f8f5ef]"
+                  >
+                    View plans, top-ups, and history
+                  </Link>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="mt-6 text-sm text-slate-500">
+              Billing details are not available yet.
+            </p>
+          )}
+        </section>
         <section
           id="upload"
           className="rounded-[30px] border border-white/80 bg-white/88 p-10 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]"
@@ -429,7 +637,14 @@ export function TranscriptionClient() {
               ref={fileInputRef}
               type="file"
               accept="audio/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const nextFile = e.target.files?.[0] || null;
+                setFile(nextFile);
+                setEstimatedDurationSeconds(null);
+                if (nextFile) {
+                  void readMediaDuration(nextFile);
+                }
+              }}
               className="hidden"
             />
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -443,7 +658,7 @@ export function TranscriptionClient() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                     onClick={handleLoadTestData}
                     disabled={testDataLoading}
                   >
@@ -466,16 +681,46 @@ export function TranscriptionClient() {
             >
               <button
                 type="submit"
-                disabled={!file || uploading}
-                className="rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 disabled:active:scale-100"
+                disabled={
+                  !file || uploading || durationLoading || !hasEnoughEstimatedCredits
+                }
+                className="cursor-pointer rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 disabled:active:scale-100"
               >
-                {uploading ? "Starting Voxly..." : "Start Voxly"}
+                {uploading
+                  ? "Starting Voxly..."
+                  : durationLoading
+                    ? "Reading duration..."
+                    : "Start Voxly"}
               </button>
               {file && (
-                <span className="rounded-full bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
-                  {file.name}
-                </span>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <span className="rounded-full bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
+                    {file.name}
+                  </span>
+                  {estimatedDurationSeconds ? (
+                    <span className="rounded-full border border-orange-200 bg-orange-50 px-4 py-1.5 text-sm font-medium text-orange-700 shadow-sm">
+                      ~{Math.ceil(estimatedDurationSeconds / 60)} credits
+                    </span>
+                  ) : null}
+                </div>
               )}
+              {estimatedDurationSeconds ? (
+                <p className="text-xs text-slate-500">
+                  Estimated duration:{" "}
+                  {Math.round(estimatedDurationSeconds)} seconds
+                </p>
+              ) : null}
+              <p className="text-xs text-slate-500">
+                Once the upload finishes, Voxly can keep processing in the
+                background even if you leave this page.
+              </p>
+              {!hasEnoughEstimatedCredits && estimatedCredits ? (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  This file is estimated to require {estimatedCredits} credits,
+                  but your account currently has only{" "}
+                  {billing?.creditsRemaining ?? 0} remaining.
+                </p>
+              ) : null}
             </form>
           </div>
 
@@ -615,7 +860,7 @@ export function TranscriptionClient() {
             <button
               type="button"
               onClick={loadItems}
-              className="rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
+              className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
             >
               Refresh
             </button>
@@ -674,6 +919,10 @@ export function TranscriptionClient() {
                             className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                               item.status === "done"
                                 ? "bg-green-100 text-green-700"
+                                : item.status === "uploaded"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : item.status === "uploading"
+                                    ? "bg-orange-100 text-orange-700"
                                 : item.status === "processing"
                                   ? "bg-blue-100 text-blue-700"
                                   : "bg-slate-100 text-slate-700"
@@ -681,6 +930,15 @@ export function TranscriptionClient() {
                           >
                             {item.status}
                           </span>
+                          {item.duration ? (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-xs text-slate-500">
+                                {Math.max(1, Math.ceil(item.duration / 60))}{" "}
+                                credits
+                              </span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -688,7 +946,7 @@ export function TranscriptionClient() {
                           type="button"
                           onClick={() => handleProcess(item.id, item.template)}
                           disabled={!canProcess}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                         >
                           Process
                         </button>
@@ -697,7 +955,7 @@ export function TranscriptionClient() {
                           <button
                             type="button"
                             onClick={() => toggleTranscript(item.id)}
-                            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
+                            className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
                           >
                             {expandedTranscripts[item.id]
                               ? "Hide Transcript"
@@ -709,7 +967,7 @@ export function TranscriptionClient() {
                           type="button"
                           onClick={() => handleDelete(item.id)}
                           disabled={deletingId === item.id}
-                          className="rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                          className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                         >
                           {deletingId === item.id ? "Deleting..." : "Delete"}
                         </button>
@@ -753,7 +1011,10 @@ export function TranscriptionClient() {
                 Ask me to edit your notes
               </h3>
             </div>
-            <button className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95">
+            <button
+              type="button"
+              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95"
+            >
               Refresh notes
             </button>
           </div>
@@ -783,7 +1044,7 @@ export function TranscriptionClient() {
                   key={text}
                   type="button"
                   onClick={() => handleAssistantSuggestion(text)}
-                  className="w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
+                  className="cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
                 >
                   {text}
                 </button>
@@ -874,7 +1135,7 @@ export function TranscriptionClient() {
                 type="button"
                 onClick={() => handleAssistantSubmit()}
                 disabled={assistantBusy}
-                className="rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                className="cursor-pointer rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Send
               </button>

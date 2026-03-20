@@ -1,9 +1,18 @@
 import { prisma } from "@/lib/prisma";
+import {
+  applyUsageCredits,
+  ensureCreditsAvailableForProcessing,
+  hasUsageCreditsApplied,
+  refundUsageCredits,
+} from "@/lib/billing";
 import { getSignedFileUrl } from "@/lib/storage/s3";
 import { transcribeFromUrl } from "@/lib/deepgram";
 import { summarizeTranscript } from "@/lib/llm/agent";
 
 type DeepgramResult = {
+  metadata?: {
+    duration?: number;
+  };
   results?: {
     channels?: Array<{
       alternatives?: Array<{
@@ -17,6 +26,13 @@ function extractTranscript(result: DeepgramResult) {
   return (
     result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
   ).trim();
+}
+
+function extractDurationSeconds(result: DeepgramResult) {
+  const duration = result?.metadata?.duration;
+  return typeof duration === "number" && Number.isFinite(duration)
+    ? duration
+    : null;
 }
 
 export async function markTranscriptionError(transcriptionId: string) {
@@ -47,7 +63,7 @@ export async function processUploadedAudio({
 
   const transcription = await prisma.transcription.findUnique({
     where: { id: transcriptionId },
-    select: { id: true, template: true },
+    select: { id: true, template: true, userId: true, status: true },
   });
 
   if (!transcription) {
@@ -55,6 +71,16 @@ export async function processUploadedAudio({
   }
 
   const effectiveTemplate = template || transcription.template || "default";
+  const hasExistingUsageCharge = await hasUsageCreditsApplied(transcriptionId);
+  if (!hasExistingUsageCharge) {
+    await ensureCreditsAvailableForProcessing(transcription.userId);
+  }
+
+  if (
+    !["uploaded", "processing", "done", "error"].includes(transcription.status)
+  ) {
+    throw new Error(`Transcription is not ready for processing: ${transcription.status}`);
+  }
 
   await prisma.transcription.update({
     where: { id: transcriptionId },
@@ -70,6 +96,7 @@ export async function processUploadedAudio({
 
     const deepgramResult = await transcribeFromUrl(signedUrl);
     const transcriptText = extractTranscript(deepgramResult);
+    const durationSeconds = extractDurationSeconds(deepgramResult);
 
     if (!transcriptText) {
       throw new Error("Transcription returned empty text");
@@ -79,10 +106,17 @@ export async function processUploadedAudio({
       template: effectiveTemplate,
     });
 
+    await applyUsageCredits({
+      userId: transcription.userId,
+      transcriptionId,
+      durationSeconds,
+    });
+
     await prisma.transcription.update({
       where: { id: transcriptionId },
       data: {
         transcript: transcriptText,
+        duration: durationSeconds ? Math.round(durationSeconds) : null,
         decisions: summary.decisions,
         keyPoints: summary.keyPoints,
         nextSteps: summary.nextSteps,
@@ -93,8 +127,12 @@ export async function processUploadedAudio({
 
     return { transcriptionId };
   } catch (err) {
+    await refundUsageCredits({
+      userId: transcription.userId,
+      transcriptionId,
+      reason: "Credits restored after processing failed",
+    });
     await markTranscriptionError(transcriptionId);
     throw err;
   }
 }
-

@@ -24,8 +24,26 @@ export async function POST(request: Request) {
 
     const parsed = signupSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
+      const flattened = parsed.error.flatten();
+      const fieldErrors = Object.fromEntries(
+        Object.entries(flattened.fieldErrors).map(([key, value]) => [
+          key,
+          value?.[0],
+        ]),
+      );
+
+      const preferredMessage =
+        fieldErrors.password ||
+        fieldErrors.email ||
+        fieldErrors.name ||
+        flattened.formErrors[0] ||
+        "Please check your signup details and try again.";
+
       return NextResponse.json(
-        { error: "Invalid signup payload" },
+        {
+          error: preferredMessage,
+          fieldErrors,
+        },
         { status: 400 },
       );
     }
