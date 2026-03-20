@@ -46,7 +46,58 @@ Top-up products:
 - `100-credit pack` for $9
 - `500-credit pack` for $39
 
-## 3. Stripe Responsibilities vs Voxly Responsibilities
+## 3. Cost Per Plan Estimate
+
+The following unit-cost estimate is a planning model for Voxly as of `March 20, 2026`.
+
+Assumptions:
+
+- `1 credit = 1 minute of uploaded audio`
+- transcription uses Deepgram `nova-3` monolingual with smart formatting, matching [lib/deepgram.js](/Users/chason/Documents/GitHub/voxly-nextjs/lib/deepgram.js)
+- summarization and assistant calls use OpenAI `gpt-4o-mini` by default, matching [lib/llm/openai.js](/Users/chason/Documents/GitHub/voxly-nextjs/lib/llm/openai.js)
+- Stripe fees use standard domestic card pricing
+- S3 storage is estimated conservatively and remains a minor cost compared with transcription
+
+Vendor reference pricing:
+
+- Deepgram `nova-3` monolingual: `$0.0077/min`
+  - source: [Deepgram pricing](https://deepgram.com/pricing)
+- OpenAI `gpt-4o-mini`: `$0.15 / 1M input tokens`, `$0.60 / 1M output tokens`
+  - source: [OpenAI pricing](https://platform.openai.com/docs/pricing/) and [gpt-4o-mini model page](https://platform.openai.com/docs/models/gpt-4o-mini)
+- Stripe standard domestic card fees: `2.9% + 30 cents`
+  - source: [Stripe pricing](https://stripe.com/us/pricing)
+- AWS S3 pricing varies by region; for planning, assume standard low single-digit cents per GB-month and note that storage is not the dominant cost driver
+  - source: [Amazon S3 pricing](https://aws.amazon.com/s3/pricing)
+
+Estimated monthly cost by plan:
+
+| Plan | Public price | Net after Stripe | Deepgram | OpenAI | S3 | Estimated vendor cost | Estimated gross margin |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Starter `300 credits` | `$19.00` | `$18.15` | `$2.31` | `$0.02-$0.05` | `~$0.01` | `~$2.35` | `~87%` |
+| Pro `1,200 credits` | `$49.00` | `$47.28` | `$9.24` | `$0.06-$0.15` | `~$0.03` | `~$9.40` | `~80%` |
+| Team `4,000 credits` | `$149.00` | `$144.38` | `$30.80` | `$0.20-$0.50` | `~$0.09` | `~$31.50` | `~78%` |
+
+Interpretation:
+
+- Deepgram is the main variable cost in Voxly.
+- OpenAI cost is comparatively small because Voxly uses it for transcript summarization and assistant responses, not for speech-to-text.
+- S3 cost is operationally important but financially minor at current plan sizes.
+- The current pricing model leaves healthy margin room for app hosting, database, support, retries, and moderate usage variance.
+
+Important caveats:
+
+- these estimates do not include app hosting, Supabase/Postgres, monitoring, support, refunds, fraud losses, or engineering overhead
+- if Deepgram diarization or additional speech features are enabled later, per-minute transcription cost will increase
+- if assistant usage grows far beyond current assumptions, OpenAI cost will rise, but it is still unlikely to overtake transcription cost
+- if users store large media libraries long-term, S3 cost should be revisited with the exact AWS region and retention policy
+
+Practical conclusion:
+
+- `Starter` is financially comfortable
+- `Pro` remains strong and likely becomes the best-value growth plan
+- `Team` is still healthy, but it is the plan most worth watching if transcription-heavy teams start consuming near the full `4,000` credits every month
+
+## 4. Stripe Responsibilities vs Voxly Responsibilities
 
 ### Stripe is the billing source of truth
 
@@ -71,7 +122,7 @@ Voxly should own:
 - top-up credits
 - access gating when credits are insufficient
 
-## 4. Core Rule
+## 5. Core Rule
 
 Never trust the frontend for:
 
@@ -85,7 +136,7 @@ All billing and credit state changes must come from:
 - Stripe webhooks
 - controlled server-side deduction logic
 
-## 5. Recommended Stripe Products and Prices
+## 6. Recommended Stripe Products and Prices
 
 Create these Stripe products:
 
@@ -108,7 +159,7 @@ References:
 - [Stripe Checkout subscriptions](https://docs.stripe.com/payments/subscriptions)
 - [Stripe customer portal](https://docs.stripe.com/customer-management/configure-portal)
 
-## 6. Recommended User Flows
+## 7. Recommended User Flows
 
 ### A. Subscribe to a plan
 
@@ -134,7 +185,7 @@ References:
 4. Stripe sends webhook events.
 5. Voxly updates local state based on webhook events.
 
-## 7. Current Voxly Schema
+## 8. Current Voxly Schema
 
 Current billing-related schema already exists in [prisma/schema.prisma](/Users/chason/Documents/GitHub/voxly-nextjs/prisma/schema.prisma):
 
@@ -149,7 +200,7 @@ Current billing-related schema already exists in [prisma/schema.prisma](/Users/c
 
 This is a good start, but it is not yet enough for safe financial tracking.
 
-## 8. Required Schema Changes
+## 9. Required Schema Changes
 
 Add stronger billing and auditability support.
 
@@ -223,7 +274,7 @@ Purpose:
 - deduplicate webhook deliveries
 - prevent duplicate credit grants
 
-## 9. Credit Rules
+## 10. Credit Rules
 
 ### Monthly subscription credits
 
