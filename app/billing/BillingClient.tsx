@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type {
   BillingHistoryEntry,
   BillingHistoryResponse,
   BillingInfo,
+  PromoRedeemResponse,
   BillingResponse,
 } from "@/lib/billing-types";
 
@@ -19,6 +20,8 @@ function formatBillingEntryType(type: string) {
       return "Usage charge";
     case "usage_refund":
       return "Usage refund";
+    case "promo_credit":
+      return "Promotion credit";
     default:
       return type.replaceAll("_", " ");
   }
@@ -33,6 +36,9 @@ export function BillingClient() {
   );
   const [billingHistoryLoading, setBillingHistoryLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [promoMessage, setPromoMessage] = useState<string | null>(null);
   const hasConfiguredPlans =
     billing?.availablePlans.some((plan) => plan.configured) ?? false;
   const hasConfiguredTopUps =
@@ -168,6 +174,38 @@ export function BillingClient() {
     }
   }
 
+  async function handleRedeemPromo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPromoBusy(true);
+    setPromoMessage(null);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/billing/promo/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promoCode }),
+      });
+      const payload = (await res.json()) as PromoRedeemResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to redeem promotion code");
+      }
+
+      setPromoCode("");
+      setPromoMessage(
+        `${payload.creditsGranted || 0} free credits were added from code ${payload.code}.`,
+      );
+      await loadBilling();
+      await loadBillingHistory();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to redeem promotion code",
+      );
+    } finally {
+      setPromoBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-8">
       <section className="rounded-[30px] border border-white/80 bg-white/88 p-8 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]">
@@ -232,6 +270,47 @@ export function BillingClient() {
                 plan or buy credits.
               </div>
             ) : null}
+
+            <div className="mt-6 rounded-[26px] border border-slate-200 bg-[#fffdf9] p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    Promotion code
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Redeem a time-limited code for free credits. Each code can
+                    only be used once per user.
+                  </p>
+                </div>
+                <div className="text-sm text-slate-500">
+                  Eligibility is verified after you submit a code.
+                </div>
+              </div>
+              <form
+                onSubmit={handleRedeemPromo}
+                className="mt-4 flex flex-col gap-3 sm:flex-row"
+              >
+                <input
+                  value={promoCode}
+                  onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+                  placeholder="Enter promo code"
+                  disabled={promoBusy}
+                  className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-medium uppercase tracking-[0.12em] text-slate-900 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                />
+                <button
+                  type="submit"
+                  disabled={!promoCode.trim() || promoBusy}
+                  className="cursor-pointer rounded-full bg-[#f97316] px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {promoBusy ? "Applying..." : "Apply Code"}
+                </button>
+              </form>
+              {promoMessage ? (
+                <p className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  {promoMessage}
+                </p>
+              ) : null}
+            </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">

@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
-import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
+import {
+  enforceRateLimit,
+  enforceRateLimitForValue,
+  enforceSameOrigin,
+  getClientIp,
+} from "@/lib/api/security";
 import { signupSchema } from "@/lib/api/validation";
 
 export const runtime = "nodejs";
@@ -20,6 +25,30 @@ export async function POST(request: Request) {
     });
     if (rateLimitError) {
       return rateLimitError;
+    }
+
+    const ipAddress = getClientIp(request);
+    if (ipAddress !== "unknown") {
+      const dailyIpLimitError = enforceRateLimitForValue(
+        ipAddress,
+        "signup-daily",
+        {
+          limit: 3,
+          windowMs: 86_400_000,
+        },
+      );
+      if (dailyIpLimitError) {
+        return NextResponse.json(
+          {
+            error:
+              "Too many new accounts have been created from this network today. Please try again later.",
+          },
+          {
+            status: 429,
+            headers: dailyIpLimitError.headers,
+          },
+        );
+      }
     }
 
     const parsed = signupSchema.safeParse(await request.json().catch(() => ({})));

@@ -115,6 +115,42 @@ export const billingPortalSchema = z.object({
   returnPath: relativePathSchema.optional(),
 });
 
+export const billingPromoRedeemSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1, "Enter a promotion code.")
+    .max(64, "Promotion code is too long.")
+    .transform((value) => value.toUpperCase()),
+});
+
+export const adminPromotionCreateSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1, "Enter a promotion code.")
+    .max(64, "Promotion code is too long.")
+    .transform((value) => value.toUpperCase()),
+  creditsAmount: z.coerce
+    .number()
+    .int("Credits must be a whole number.")
+    .min(1, "Credits must be at least 1.")
+    .max(100000, "Credits amount is too large."),
+  startsAt: z.coerce.date(),
+  endsAt: z.coerce.date(),
+  maxRedemptions: z
+    .union([z.coerce.number().int().min(1), z.literal(""), z.undefined()])
+    .transform((value) => (value === "" || typeof value === "undefined" ? undefined : value)),
+  newUsersOnly: z
+    .union([z.boolean(), z.string()])
+    .transform((value) => value === true || value === "true" || value === "on"),
+});
+
+export const adminPromotionStatusSchema = z.object({
+  promotionId: z.string().trim().min(1).max(128),
+  status: z.enum(["active", "inactive"]),
+});
+
 export const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
 
 export const ALLOWED_UPLOAD_MIME_TYPES = new Set([

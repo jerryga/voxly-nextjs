@@ -49,6 +49,12 @@ export type BillingHistoryEntry = {
   createdAt: string;
 };
 
+function createBillingError(message: string, statusCode = 400) {
+  const error = new Error(message) as Error & { statusCode?: number };
+  error.statusCode = statusCode;
+  return error;
+}
+
 const BILLING_PLANS: Record<BillingPlanKey, BillingPlanConfig> = {
   starter: {
     plan: "starter",
@@ -244,6 +250,35 @@ export function getBillableCreditsForDuration(durationSeconds?: number | null) {
   }
 
   return Math.max(1, Math.ceil(durationSeconds / 60));
+}
+
+async function hasPaidBillingHistory(userId: string) {
+  const [subscription, paidCreditTransaction] = await prisma.$transaction([
+    prisma.subscription.findUnique({
+      where: { userId },
+      select: {
+        stripeSubscriptionId: true,
+        stripeCustomerId: true,
+        plan: true,
+        status: true,
+      },
+    }),
+    prisma.creditTransaction.findFirst({
+      where: {
+        userId,
+        OR: [{ type: "top_up" }, { type: "monthly_refill" }],
+      },
+      select: { id: true },
+    }),
+  ]);
+
+  return Boolean(
+    paidCreditTransaction ||
+      subscription?.stripeSubscriptionId ||
+      (subscription?.stripeCustomerId &&
+        subscription.plan !== "free" &&
+        subscription.status !== "free"),
+  );
 }
 
 async function findUserByStripeCustomerId(stripeCustomerId: string) {
@@ -520,6 +555,7 @@ export async function getBillingSnapshotForUser(userId: string) {
   const subscription = await prisma.subscription.findUnique({
     where: { userId },
   });
+  const canRedeemPromoCredits = !(await hasPaidBillingHistory(userId));
 
   return {
     plan: subscription?.plan || "free",
@@ -541,6 +577,7 @@ export async function getBillingSnapshotForUser(userId: string) {
     ),
     availablePlans: getPublicBillingPlans(),
     availableCreditPacks: getPublicCreditPacks(),
+    canRedeemPromoCredits,
   };
 }
 
@@ -575,6 +612,127 @@ export async function getBillingHistoryForUser(
 
 export async function ensureCreditsAvailableForProcessing(userId: string) {
   return ensureCreditsAvailableForExpectedProcessing(userId, 60);
+}
+
+export async function redeemPromotionCode({
+  userId,
+  code,
+  ipHash,
+  userAgentHash,
+}: {
+  userId: string;
+  code: string;
+  ipHash?: string | null;
+  userAgentHash?: string | null;
+}) {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) {
+    throw createBillingError("Enter a promotion code.");
+  }
+
+  const now = new Date();
+  const promotion = await prisma.promotion.findUnique({
+    where: { code: normalizedCode },
+    include: {
+      _count: {
+        select: { redemptions: true },
+      },
+    },
+  });
+
+  if (!promotion || promotion.status !== "active") {
+    throw createBillingError("This promotion code is not valid.", 404);
+  }
+
+  if (promotion.startsAt > now) {
+    throw createBillingError("This promotion code is not active yet.");
+  }
+
+  if (promotion.endsAt < now) {
+    throw createBillingError("This promotion code has expired.");
+  }
+
+  if (
+    typeof promotion.maxRedemptions === "number" &&
+    promotion._count.redemptions >= promotion.maxRedemptions
+  ) {
+    throw createBillingError("This promotion code has reached its redemption limit.");
+  }
+
+  const paidHistory = promotion.newUsersOnly
+    ? await hasPaidBillingHistory(userId)
+    : false;
+
+  if (paidHistory) {
+    throw createBillingError(
+      "This promotion code is only available to accounts without prior purchases.",
+      403,
+    );
+  }
+
+  const existingRedemption = await prisma.promotionRedemption.findUnique({
+    where: {
+      promotionId_userId: {
+        promotionId: promotion.id,
+        userId,
+      },
+    },
+    select: { id: true },
+  });
+
+  if (existingRedemption) {
+    throw createBillingError("You have already used this promotion code.", 409);
+  }
+
+  const currentSubscription = await prisma.subscription.upsert({
+    where: { userId },
+    update: {},
+    create: { userId },
+  });
+
+  const nextTopUpRemaining =
+    currentSubscription.topUpCreditsRemaining + promotion.creditsAmount;
+  const aggregates = calculateAggregateCredits({
+    monthlyCreditsRemaining: currentSubscription.monthlyCreditsRemaining,
+    monthlyCreditsTotal: currentSubscription.monthlyCreditsTotal,
+    topUpCreditsRemaining: nextTopUpRemaining,
+  });
+
+  await prisma.$transaction([
+    prisma.subscription.update({
+      where: { userId },
+      data: {
+        topUpCreditsRemaining: nextTopUpRemaining,
+        creditsRemaining: aggregates.creditsRemaining,
+        creditsTotal: aggregates.creditsTotal,
+      },
+    }),
+    prisma.creditTransaction.create({
+      data: {
+        userId,
+        type: "promo_credit",
+        amount: promotion.creditsAmount,
+        balanceAfter: aggregates.creditsRemaining,
+        monthlyAfter: currentSubscription.monthlyCreditsRemaining,
+        topUpAfter: nextTopUpRemaining,
+        note: `Promotion code ${promotion.code} redeemed`,
+      },
+    }),
+    prisma.promotionRedemption.create({
+      data: {
+        promotionId: promotion.id,
+        userId,
+        creditsGranted: promotion.creditsAmount,
+        ipHash: ipHash || null,
+        userAgentHash: userAgentHash || null,
+      },
+    }),
+  ]);
+
+  return {
+    code: promotion.code,
+    creditsGranted: promotion.creditsAmount,
+  };
 }
 
 export async function ensureCreditsAvailableForExpectedProcessing(

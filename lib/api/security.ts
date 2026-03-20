@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "crypto";
 
 type RateLimitEntry = {
   count: number;
@@ -73,13 +74,32 @@ export function enforceSameOrigin(request: Request) {
   return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
 }
 
-function getClientIp(request: Request) {
+export function getClientIp(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
     return forwardedFor.split(",")[0]?.trim() || "unknown";
   }
 
   return request.headers.get("x-real-ip") || "unknown";
+}
+
+export function getUserAgent(request: Request) {
+  return request.headers.get("user-agent")?.trim() || "unknown";
+}
+
+export function hashSecurityValue(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function getRequestSecurityFingerprints(request: Request) {
+  const ip = getClientIp(request);
+  const userAgent = getUserAgent(request);
+
+  return {
+    ipHash: ip === "unknown" ? null : hashSecurityValue(ip),
+    userAgentHash:
+      userAgent === "unknown" ? null : hashSecurityValue(userAgent),
+  };
 }
 
 export function enforceRateLimit(
@@ -95,6 +115,44 @@ export function enforceRateLimit(
 ) {
   const now = Date.now();
   const bucketKey = `${key}:${getClientIp(request)}`;
+  const existing = rateLimitStore.get(bucketKey);
+
+  if (!existing || existing.resetAt <= now) {
+    rateLimitStore.set(bucketKey, { count: 1, resetAt: now + windowMs });
+    return null;
+  }
+
+  if (existing.count >= limit) {
+    const retryAfter = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+    return NextResponse.json(
+      { error: "Too many requests" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(retryAfter),
+        },
+      },
+    );
+  }
+
+  existing.count += 1;
+  rateLimitStore.set(bucketKey, existing);
+  return null;
+}
+
+export function enforceRateLimitForValue(
+  value: string,
+  key: string,
+  {
+    limit,
+    windowMs,
+  }: {
+    limit: number;
+    windowMs: number;
+  },
+) {
+  const now = Date.now();
+  const bucketKey = `${key}:${value}`;
   const existing = rateLimitStore.get(bucketKey);
 
   if (!existing || existing.resetAt <= now) {

@@ -24,6 +24,7 @@ export type BillingInfo = {
     credits: number;
     configured: boolean;
   }>;
+  canRedeemPromoCredits: boolean;
 };
 
 export type BillingResponse = {
@@ -49,5 +50,12 @@ export type BillingHistoryEntry = {
 export type BillingHistoryResponse = {
   ok?: boolean;
   history?: BillingHistoryEntry[];
+  error?: string;
+};
+
+export type PromoRedeemResponse = {
+  ok?: boolean;
+  creditsGranted?: number;
+  code?: string;
   error?: string;
 };

@@ -22,6 +22,7 @@ model User {
   transcriptions Transcription[]
   subscription   Subscription?
   creditTransactions CreditTransaction[]
+  promoRedemptions PromotionRedemption[]
 }
 
 model Account {
@@ -116,6 +117,38 @@ model CreditTransaction {
 
   @@index([userId, createdAt])
   @@index([stripeEventId])
+}
+
+model Promotion {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  status         String   @default("active")
+  creditsAmount  Int
+  startsAt       DateTime
+  endsAt         DateTime
+  maxRedemptions Int?
+  newUsersOnly   Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  redemptions    PromotionRedemption[]
+
+  @@index([code, status])
+}
+
+model PromotionRedemption {
+  id            String    @id @default(cuid())
+  promotionId   String
+  promotion     Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditsGranted Int
+  ipHash        String?
+  userAgentHash String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([promotionId, userId])
+  @@index([userId, createdAt])
+  @@index([ipHash, createdAt])
 }
 
 model StripeWebhookEvent {
