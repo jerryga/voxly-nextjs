@@ -5,10 +5,6 @@ export function getApiErrorMessage(err: unknown) {
     return "Database is unavailable. Please check connectivity and DATABASE_URL.";
   }
 
-  if (err instanceof Error) {
-    return err.message;
-  }
-
   return "Internal server error";
 }
 

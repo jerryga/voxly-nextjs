@@ -1,25 +1,38 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
+import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
+import { signupSchema } from "@/lib/api/validation";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const email = typeof body?.email === "string" ? body.email.trim() : "";
-    const password = typeof body?.password === "string" ? body.password : "";
-    const name = typeof body?.name === "string" ? body.name.trim() : null;
+    const originError = enforceSameOrigin(request);
+    if (originError) {
+      return originError;
+    }
 
-    if (!email || !password) {
+    const rateLimitError = enforceRateLimit(request, "signup", {
+      limit: 5,
+      windowMs: 60_000,
+    });
+    if (rateLimitError) {
+      return rateLimitError;
+    }
+
+    const parsed = signupSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Email and password are required" },
+        { error: "Invalid signup payload" },
         { status: 400 },
       );
     }
 
+    const { email, password, name } = parsed.data;
     const existing = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email },
     });
 
     if (existing) {
@@ -33,7 +46,7 @@ export async function POST(request: Request) {
 
     const user = await prisma.user.create({
       data: {
-        email: email.toLowerCase(),
+        email,
         password: hashed,
         name: name || null,
       },
@@ -44,8 +57,8 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Signup error", error);
     return NextResponse.json(
-      { error: "Failed to create user" },
-      { status: 500 },
+      { error: getApiErrorMessage(error) },
+      { status: getApiErrorStatus(error) },
     );
   }
 }

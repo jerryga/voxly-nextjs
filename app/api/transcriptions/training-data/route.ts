@@ -32,6 +32,10 @@ function normalizeTemplateParam(value?: string | null) {
 }
 
 export async function GET(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const session = await getServerSession(authOptions);
   const email = session?.user?.email?.toLowerCase();
 

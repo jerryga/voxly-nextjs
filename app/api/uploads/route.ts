@@ -5,7 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { uploadToS3 } from "@/lib/storage/s3";
 import { inngest } from "@/inngest/client";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
+import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { processUploadedAudio } from "@/lib/transcriptions/process";
+import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  MAX_UPLOAD_SIZE_BYTES,
+} from "@/lib/api/validation";
+import { normalizeTemplate } from "@/lib/llm/promptBuilder";
 
 export const runtime = "nodejs";
 
@@ -24,6 +30,19 @@ function shouldProcessInline(err: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const originError = enforceSameOrigin(request);
+    if (originError) {
+      return originError;
+    }
+
+    const rateLimitError = enforceRateLimit(request, "upload", {
+      limit: 10,
+      windowMs: 60_000,
+    });
+    if (rateLimitError) {
+      return rateLimitError;
+    }
+
     const session = await getServerSession(authOptions);
     const email = session?.user?.email?.toLowerCase().trim();
 
@@ -41,11 +60,29 @@ export async function POST(request: Request) {
     const templateField = formData.get("template");
     const template =
       typeof templateField === "string" && templateField.trim()
-        ? templateField.trim()
+        ? normalizeTemplate(templateField)
         : "default";
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    }
+
+    if (file.size === 0) {
+      return NextResponse.json({ error: "Uploaded file is empty" }, { status: 400 });
+    }
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: "File exceeds the 500MB upload limit" },
+        { status: 413 },
+      );
+    }
+
+    if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.type)) {
+      return NextResponse.json(
+        { error: "Unsupported file type" },
+        { status: 415 },
+      );
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());

@@ -4,7 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inngest } from "@/inngest/client";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
+import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { processUploadedAudio } from "@/lib/transcriptions/process";
+import { transcriptionProcessSchema } from "@/lib/api/validation";
 
 export const runtime = "nodejs";
 
@@ -19,6 +21,19 @@ function shouldProcessInline(err: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const originError = enforceSameOrigin(request);
+    if (originError) {
+      return originError;
+    }
+
+    const rateLimitError = enforceRateLimit(request, "transcription-process", {
+      limit: 20,
+      windowMs: 60_000,
+    });
+    if (rateLimitError) {
+      return rateLimitError;
+    }
+
     const session = await getServerSession(authOptions);
     const email = session?.user?.email?.toLowerCase().trim();
 
@@ -31,18 +46,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json().catch(() => ({}));
-    const transcriptionId =
-      typeof body?.transcriptionId === "string" ? body.transcriptionId : "";
-    const templateOverride =
-      typeof body?.template === "string" ? body.template : undefined;
-
-    if (!transcriptionId) {
+    const parsed = transcriptionProcessSchema.safeParse(
+      await request.json().catch(() => ({})),
+    );
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "transcriptionId is required" },
+        { error: "Invalid request body" },
         { status: 400 },
       );
     }
+
+    const { transcriptionId, template: templateOverride } = parsed.data;
 
     const transcription = await prisma.transcription.findFirst({
       where: { id: transcriptionId, userId: user.id },
