@@ -319,29 +319,74 @@ export function TranscriptionClient() {
   }
 
   return (
-    <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_420px] items-start">
-      <div className="space-y-6 min-w-0">
+    <div className="mt-6 grid grid-cols-1 items-start gap-8 lg:grid-cols-[1fr_420px]">
+      <div className="min-w-0 space-y-6">
+        <section className="rounded-[30px] border border-white/80 bg-white/72 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Workspace
+              </p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+                Turn raw recordings into clean notes and next steps.
+              </h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
+                Upload audio, generate transcripts, and use the assistant to
+                shape the output into something your team can act on.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[24px] border border-white/80 bg-[#fffdf9] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Uploads
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-slate-950">
+                  {items.length}
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-white/80 bg-[#fffdf9] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Ready
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-slate-950">
+                  {items.filter((item) => item.status === "done").length}
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-white/80 bg-[#fffdf9] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Assistant
+                </p>
+                <p className="mt-2 text-sm font-semibold text-emerald-700">
+                  Ready to help
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
         <section
           id="upload"
-          className="rounded-2xl border border-slate-200/80 bg-white p-10 shadow-sm"
+          className="rounded-[30px] border border-white/80 bg-white/88 p-10 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]"
         >
           <div className="flex flex-col gap-2">
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
+              Upload
+            </p>
+            <h2 className="text-3xl font-semibold tracking-tight text-slate-950">
               What would you like to voxly?
             </h2>
-            <p className="text-base text-slate-600">
+            <p className="text-base leading-7 text-slate-600">
               Upload your meeting recordings to get started.
             </p>
           </div>
           <div className="mt-6 flex justify-center">
-            <div className="flex items-center gap-3 rounded-full border border-slate-300 bg-gradient-to-br from-slate-50 to-white px-5 py-2.5 shadow-sm">
+            <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-[#fcfbf8] px-5 py-2.5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.25)]">
               <span className="text-sm font-semibold text-slate-700">
                 Template:
               </span>
               <select
                 value={uploadTemplate}
                 onChange={(e) => setUploadTemplate(e.target.value)}
-                className="bg-transparent text-sm font-medium text-slate-900 outline-none cursor-pointer"
+                className="cursor-pointer bg-transparent text-sm font-medium text-slate-900 outline-none"
               >
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -352,11 +397,11 @@ export function TranscriptionClient() {
             </div>
           </div>
 
-          <div className="mt-8 rounded-2xl border border-dashed border-slate-200 bg-gradient-to-br from-blue-50/50 via-slate-50/50 to-indigo-50/50 px-8 py-12 text-center hover:border-slate-300 hover:bg-gradient-to-br hover:from-blue-50 hover:via-slate-50 hover:to-indigo-50 transition-all duration-200">
+          <div className="mt-8 rounded-[28px] border border-dashed border-[#dfd7cb] bg-[#f8f5ef] px-8 py-12 text-center transition-all duration-200 hover:border-[#cfc2af] hover:bg-[#f5f1ea]">
             <div className="mx-auto max-w-sm">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 mb-4 shadow-lg">
+              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#f97316] shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)]">
                 <svg
-                  className="w-8 h-8 text-white"
+                  className="h-8 w-8 text-white"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -372,7 +417,7 @@ export function TranscriptionClient() {
               <h3 className="text-xl font-bold text-slate-900">
                 Upload audio or video
               </h3>
-              <p className="mt-3 text-sm text-slate-600 leading-relaxed">
+              <p className="mt-3 text-sm leading-relaxed text-slate-600">
                 Drag and drop your files here, or click to browse.
               </p>
               <p className="mt-2 text-xs text-slate-500 font-medium">
@@ -390,7 +435,7 @@ export function TranscriptionClient() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <label
                 htmlFor={fileInputId}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 hover:shadow-md active:scale-95"
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 hover:shadow-md active:scale-95"
               >
                 Select Files
               </label>
@@ -398,7 +443,7 @@ export function TranscriptionClient() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                    className="rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                     onClick={handleLoadTestData}
                     disabled={testDataLoading}
                   >
@@ -422,12 +467,12 @@ export function TranscriptionClient() {
               <button
                 type="submit"
                 disabled={!file || uploading}
-                className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-3 text-sm font-bold text-white shadow-lg hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 disabled:active:scale-100"
+                className="rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 disabled:active:scale-100"
               >
                 {uploading ? "Starting Voxly..." : "Start Voxly"}
               </button>
               {file && (
-                <span className="text-sm font-medium text-slate-700 bg-slate-100 px-4 py-1.5 rounded-full">
+                <span className="rounded-full bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
                   {file.name}
                 </span>
               )}
@@ -435,7 +480,7 @@ export function TranscriptionClient() {
           </div>
 
           {error && (
-            <div className="mt-6 rounded-xl border border-red-300 bg-gradient-to-br from-red-50 to-red-100/50 px-5 py-4 text-sm font-medium text-red-800 shadow-sm">
+            <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-800 shadow-sm">
               {error}
             </div>
           )}
@@ -476,9 +521,9 @@ export function TranscriptionClient() {
                     return (
                       <div
                         key={`${block.title}-${idx}`}
-                        className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4"
+                        className="flex gap-4 rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]"
                       >
-                        <div className="w-1.5 rounded-full bg-slate-300" />
+                        <div className="w-1.5 rounded-full bg-orange-300" />
                         <div className="flex-1">
                           <p className="text-sm font-semibold text-slate-900 leading-relaxed">
                             {itemText}
@@ -493,7 +538,7 @@ export function TranscriptionClient() {
                     );
                   })
                 ) : (
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-400">
+                  <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
                     No data yet.
                   </div>
                 )}
@@ -511,9 +556,9 @@ export function TranscriptionClient() {
                 displaySummary.actionItems.map((item, idx) => (
                   <div
                     key={`Action Items-${idx}`}
-                    className="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4"
+                    className="flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]"
                   >
-                    <div className="mt-1 h-5 w-5 rounded-full border border-slate-300 bg-white" />
+                    <div className="mt-1 h-5 w-5 rounded-full border border-orange-300 bg-orange-50" />
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-slate-900 leading-relaxed">
                         {item.text}
@@ -524,7 +569,7 @@ export function TranscriptionClient() {
                             item.priority === "HIGH"
                               ? "bg-red-100 text-red-700"
                               : item.priority === "MEDIUM"
-                                ? "bg-amber-100 text-amber-700"
+                                ? "bg-orange-100 text-orange-700"
                                 : "bg-slate-100 text-slate-700"
                           }`}
                         >
@@ -541,7 +586,7 @@ export function TranscriptionClient() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-400">
+                <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
                   No data yet.
                 </div>
               )}
@@ -549,28 +594,28 @@ export function TranscriptionClient() {
           </div>
         </section>
 
-        <div className="flex items-center justify-center gap-8 py-4 text-sm font-medium text-slate-500">
+        <div className="flex items-center justify-center gap-8 py-2 text-sm font-medium text-slate-500">
           <span className="flex items-center gap-2">
             <span className="text-green-500">●</span> Fast processing
           </span>
           <span className="flex items-center gap-2">
-            <span className="text-blue-500">●</span> AI summaries
+            <span className="text-orange-500">●</span> AI summaries
           </span>
           <span className="flex items-center gap-2">
-            <span className="text-purple-500">●</span> Private & secure
+            <span className="text-sky-500">●</span> Private & secure
           </span>
         </div>
 
         <section
           id="transcriptions"
-          className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"
+          className="rounded-[30px] border border-white/80 bg-white/88 p-8 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]"
         >
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <h2 className="text-xl font-bold text-slate-900">Transcriptions</h2>
             <button
               type="button"
               onClick={loadItems}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 active:scale-95"
+              className="rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
             >
               Refresh
             </button>
@@ -613,7 +658,7 @@ export function TranscriptionClient() {
                 return (
                   <div
                     key={item.id}
-                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
+                    className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.22)] transition-all hover:border-slate-300 hover:shadow-md"
                   >
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex-1">
@@ -643,7 +688,7 @@ export function TranscriptionClient() {
                           type="button"
                           onClick={() => handleProcess(item.id, item.template)}
                           disabled={!canProcess}
-                          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                         >
                           Process
                         </button>
@@ -652,7 +697,7 @@ export function TranscriptionClient() {
                           <button
                             type="button"
                             onClick={() => toggleTranscript(item.id)}
-                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95"
+                            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
                           >
                             {expandedTranscripts[item.id]
                               ? "Hide Transcript"
@@ -664,7 +709,7 @@ export function TranscriptionClient() {
                           type="button"
                           onClick={() => handleDelete(item.id)}
                           disabled={deletingId === item.id}
-                          className="rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                          className="rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-bold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
                         >
                           {deletingId === item.id ? "Deleting..." : "Delete"}
                         </button>
@@ -672,12 +717,12 @@ export function TranscriptionClient() {
                     </div>
 
                     {item.transcript && expandedTranscripts[item.id] && (
-                      <div className="mt-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100/50 p-5">
+                      <div className="mt-5 rounded-[24px] border border-slate-200 bg-[#f8f5ef] p-5">
                         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
                             Transcript
                           </p>
-                          <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
+                          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">
                             {item.transcript.length.toLocaleString()} chars
                           </span>
                         </div>
@@ -698,23 +743,23 @@ export function TranscriptionClient() {
         id="assistant"
         className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] self-start"
       >
-        <section className="flex h-full flex-col rounded-2xl border border-slate-200  from-white via-blue-50/30 to-indigo-50/30 p-6 shadow-sm">
+        <section className="flex h-full flex-col rounded-[30px] border border-white/80 bg-white/88 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]">
           <div className="flex items-start justify-between border-b border-slate-200 pb-5">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
+              <p className="text-xs font-bold uppercase tracking-wider text-orange-700">
                 AI ASSISTANT
               </p>
               <h3 className="mt-1 text-xl font-bold text-slate-900">
                 Ask me to edit your notes
               </h3>
             </div>
-            <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-blue-50 hover:text-blue-700 active:scale-95">
+            <button className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95">
               Refresh notes
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto py-4">
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-blue-200  from-blue-50/80 to-indigo-50/80 backdrop-blur-sm p-4 shadow-sm">
+            <div className="mt-4 flex items-start gap-3 rounded-[24px] border border-orange-200 bg-[#fff4ec] p-4 shadow-sm">
               <span className="text-2xl">🤖</span>
               <div>
                 <p className="text-sm font-bold text-slate-900">
@@ -738,7 +783,7 @@ export function TranscriptionClient() {
                   key={text}
                   type="button"
                   onClick={() => handleAssistantSuggestion(text)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-blue-400 hover:bg-blue-50 hover:shadow-md active:scale-98"
+                  className="w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
                 >
                   {text}
                 </button>
@@ -753,15 +798,15 @@ export function TranscriptionClient() {
                     className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     {message.role === "assistant" && (
-                      <div className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md">
+                      <div className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#f97316] shadow-md">
                         <span className="text-sm">🤖</span>
                       </div>
                     )}
                     <div
                       className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
                         message.role === "user"
-                          ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-blue-200"
-                          : "border border-slate-200 bg-white text-slate-800 shadow-slate-200"
+                          ? "bg-slate-950 text-white"
+                          : "border border-slate-200 bg-[#fffdf9] text-slate-800 shadow-slate-200"
                       }`}
                     >
                       <ReactMarkdown
@@ -800,7 +845,7 @@ export function TranscriptionClient() {
                       </ReactMarkdown>
                     </div>
                     {message.role === "user" && (
-                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-600 to-slate-700 shadow-md">
+                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 shadow-md">
                         <span className="text-sm">👤</span>
                       </div>
                     )}
@@ -823,13 +868,13 @@ export function TranscriptionClient() {
                     handleAssistantSubmit();
                   }
                 }}
-                className="flex-1 rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="flex-1 rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
               />
               <button
                 type="button"
                 onClick={() => handleAssistantSubmit()}
                 disabled={assistantBusy}
-                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 hover:shadow-lg active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Send
               </button>
