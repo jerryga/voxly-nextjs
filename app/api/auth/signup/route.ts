@@ -9,6 +9,7 @@ import {
   getClientIp,
 } from "@/lib/api/security";
 import { signupSchema } from "@/lib/api/validation";
+import { sendVerificationEmail } from "@/lib/email-verification";
 
 export const runtime = "nodejs";
 
@@ -100,7 +101,9 @@ export async function POST(request: Request) {
       select: { id: true, email: true },
     });
 
-    return NextResponse.json({ ok: true, user });
+    await sendVerificationEmail(email);
+
+    return NextResponse.json({ ok: true, user, verificationRequired: true });
   } catch (error) {
     console.error("Signup error", error);
     return NextResponse.json(

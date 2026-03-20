@@ -9,12 +9,19 @@ export default function SignUpPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
 
     const response = await fetch("/api/auth/signup", {
@@ -31,7 +38,9 @@ export default function SignUpPage() {
       return;
     }
 
-    router.push("/auth/sign-in?created=1");
+    router.push(
+      `/auth/verify-email/check-inbox?email=${encodeURIComponent(email)}`,
+    );
   }
 
   return (
@@ -75,7 +84,7 @@ export default function SignUpPage() {
                 Create account
               </h1>
               <p className="mt-1 text-sm text-slate-500">
-                Start by setting your account details.
+                Start by setting your account details and verifying your email.
               </p>
             </div>
           </div>
@@ -109,6 +118,18 @@ export default function SignUpPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 w-full rounded-2xl border border-slate-200 bg-[#fcfbf8] px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">
+                Confirm password
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 className="mt-1 w-full rounded-2xl border border-slate-200 bg-[#fcfbf8] px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-orange-400 focus:ring-4 focus:ring-orange-100"
                 required
               />

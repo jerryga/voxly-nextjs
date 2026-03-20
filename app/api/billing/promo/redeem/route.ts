@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/security";
 import { billingPromoRedeemSchema } from "@/lib/api/validation";
 import { redeemPromotionCode } from "@/lib/billing";
+import { isEmailVerified } from "@/lib/email-verification";
 
 export const runtime = "nodejs";
 
@@ -62,6 +63,17 @@ export async function POST(request: Request) {
     });
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const verified = await isEmailVerified(email);
+    if (!verified) {
+      return NextResponse.json(
+        {
+          error:
+            "Please verify your email before redeeming a promotion code.",
+        },
+        { status: 403 },
+      );
     }
 
     const parsed = billingPromoRedeemSchema.safeParse(

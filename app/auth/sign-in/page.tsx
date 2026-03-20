@@ -3,14 +3,18 @@
 import { useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function SignInPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const created = searchParams.get("created") === "1";
+  const verified = searchParams.get("verified") === "1";
+  const createdEmail = searchParams.get("email");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,6 +31,11 @@ export default function SignInPage() {
     setLoading(false);
 
     if (result?.error) {
+      if (result.error === "EmailNotVerified") {
+        setError("Please verify your email before signing in.");
+        return;
+      }
+
       setError("Invalid email or password");
       return;
     }
@@ -78,6 +87,28 @@ export default function SignInPage() {
             </div>
           </div>
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            {created ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                Account created. Check your email to verify it before signing
+                in.
+                {createdEmail ? (
+                  <>
+                    {" "}
+                    <Link
+                      href={`/auth/verify-email/resend?email=${encodeURIComponent(createdEmail)}`}
+                      className="font-semibold underline"
+                    >
+                      Resend email
+                    </Link>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            {verified ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                Email verified. You can now access promotion codes normally.
+              </div>
+            ) : null}
             <div>
               <label className="text-sm font-medium text-slate-700">
                 Email
@@ -105,6 +136,18 @@ export default function SignInPage() {
             {error && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
+                {error === "Please verify your email before signing in." &&
+                email ? (
+                  <>
+                    {" "}
+                    <Link
+                      href={`/auth/verify-email/resend?email=${encodeURIComponent(email.trim().toLowerCase())}`}
+                      className="font-semibold underline"
+                    >
+                      Resend email
+                    </Link>
+                  </>
+                ) : null}
               </div>
             )}
             <button
