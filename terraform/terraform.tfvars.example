@@ -1,0 +1,83 @@
+aws_region = "ca-central-1"
+
+project_name     = "voxly"
+environment_name = "staging"
+
+elastic_beanstalk_application_name = "voxly"
+elastic_beanstalk_environment_name = "voxly-staging"
+
+elastic_beanstalk_service_role_arn     = "arn:aws:iam::123456789012:role/aws-elasticbeanstalk-service-role"
+elastic_beanstalk_ec2_instance_profile = "aws-elasticbeanstalk-ec2-role"
+instance_type                          = "t3.small"
+
+create_network = true
+availability_zones = [
+  "ca-central-1a",
+  "ca-central-1b",
+]
+public_subnet_cidr_blocks = [
+  "10.0.1.0/24",
+  "10.0.2.0/24",
+]
+private_subnet_cidr_blocks = [
+  "10.0.11.0/24",
+  "10.0.12.0/24",
+]
+
+# If create_network = false, provide existing network IDs instead.
+vpc_id             = ""
+public_subnet_ids  = []
+private_subnet_ids = []
+
+allowed_app_cidr_blocks = [
+  "10.0.0.0/16",
+]
+
+uploads_bucket_name = "voxly-staging-uploads-example"
+
+create_secrets_manager_secret = false
+secrets_manager_secret_name   = "voxly/staging/app"
+secrets_manager_values        = {}
+
+create_rds             = true
+db_identifier          = "voxly-staging-postgres"
+db_name                = "voxly"
+db_username            = "voxly_admin"
+db_password            = "replace-me"
+db_instance_class      = "db.t4g.micro"
+db_allocated_storage   = 20
+db_engine_version      = "16.3"
+db_multi_az            = false
+db_skip_final_snapshot = true
+
+create_elasticache         = true
+elasticache_serverless_name = "voxly-staging-redis"
+
+create_dns             = false
+route53_zone_name      = ""
+app_domain_name        = "staging.example.com"
+create_acm_certificate = true
+
+app_environment = {
+  NEXTAUTH_URL                 = "https://staging.example.com"
+  NEXTAUTH_SECRET              = "replace-me"
+  DATABASE_URL                 = "replace-me"
+  DIRECT_URL                   = "replace-me"
+  OPENAI_API_KEY               = "replace-me"
+  DEEPGRAM_API_KEY             = "replace-me"
+  STRIPE_SECRET_KEY            = "replace-me"
+  STRIPE_WEBHOOK_SECRET        = "replace-me"
+  STRIPE_PRICE_STARTER_MONTHLY = "price_replace_me"
+  STRIPE_PRICE_PRO_MONTHLY     = "price_replace_me"
+  STRIPE_PRICE_TEAM_MONTHLY    = "price_replace_me"
+  STRIPE_PRICE_TOPUP_100       = "price_replace_me"
+  STRIPE_PRICE_TOPUP_500       = "price_replace_me"
+  RESEND_API_KEY               = "replace-me"
+  EMAIL_FROM                   = "Voxly <no-reply@example.com>"
+  ADMIN_EMAILS                 = "admin@example.com"
+  AWS_REGION                   = "ca-central-1"
+}
+
+tags = {
+  Owner = "voxly-team"
+}

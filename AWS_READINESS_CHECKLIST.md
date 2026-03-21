@@ -2,6 +2,10 @@
 
 This checklist records what Voxly already has in place for AWS deployment, what should be completed before staging, and what should be hardened before production.
 
+For the database migration sequence itself, use the companion runbook:
+
+- [Migration runbook](/Users/chason/Documents/GitHub/voxly-nextjs/MIGRATION_RUNBOOK.md)
+
 ## 1. Readiness Summary
 
 Current status:
@@ -157,10 +161,18 @@ Configure a public HTTPS URL so the following work correctly:
 - Stripe success/cancel redirects
 - email verification links
 
-Recommended AWS services:
+Recommended setup for your current domain arrangement:
 
-- `Route 53`
-- `ACM`
+- use `Cloudflare` for public DNS
+- use `ACM` for the AWS-side certificate when Beanstalk HTTPS is enabled
+- point your Cloudflare app subdomain to the Elastic Beanstalk environment CNAME
+
+Recommended Cloudflare posture:
+
+- use a dedicated app subdomain such as `app.yourdomain.com`
+- set `NEXTAUTH_URL` to that public HTTPS domain
+- use `Full (strict)` SSL mode once AWS-side TLS is configured correctly
+- if Stripe webhooks or auth callbacks behave oddly through the proxy, temporarily switch that subdomain to `DNS only` while validating behavior
 
 ### Migrations
 
@@ -188,7 +200,8 @@ Before staging goes live:
 - File storage: `Amazon S3`
 - Secrets: `AWS Secrets Manager`
 - Logging and metrics: `CloudWatch`
-- DNS and TLS: `Route 53 + ACM`
+- Public DNS: `Cloudflare`
+- AWS-side TLS: `ACM`
 - Optional protection layer: `AWS WAF`
 - Optional shared limiter/cache: `ElastiCache Redis`
 

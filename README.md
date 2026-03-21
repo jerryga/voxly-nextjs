@@ -50,6 +50,16 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## AWS Deployment Notes
+
+For this project specifically, see:
+
+- [AWS readiness checklist](/Users/chason/Documents/GitHub/voxly-nextjs/AWS_READINESS_CHECKLIST.md)
+- [Elastic Beanstalk deployment guide](/Users/chason/Documents/GitHub/voxly-nextjs/ELASTIC_BEANSTALK_DEPLOYMENT.md)
+- [Migration runbook](/Users/chason/Documents/GitHub/voxly-nextjs/MIGRATION_RUNBOOK.md)
+- [Launch runbook](/Users/chason/Documents/GitHub/voxly-nextjs/LAUNCH_RUNBOOK.md)
+- [Terraform starter](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/README.md)
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
