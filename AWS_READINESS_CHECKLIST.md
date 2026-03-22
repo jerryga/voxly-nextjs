@@ -102,7 +102,7 @@ Choose one AWS runtime path:
 
 Recommended first choice:
 
-- `App Runner` for the simplest managed staging deployment
+- `Elastic Beanstalk` for this project, because it fits the current Voxly deployment plan and surrounding documentation
 
 ### Database target
 
@@ -113,8 +113,8 @@ Choose one:
 
 Recommendation:
 
-- staging can keep `Supabase` temporarily if speed matters
-- production should move to `RDS PostgreSQL` if the goal is a more AWS-native deployment
+- keep `Supabase` for the current rollout to reduce cost and deployment risk
+- move to `RDS PostgreSQL` later only if you specifically want an AWS-native database migration or the assignment requires it
 
 ### Object storage
 
@@ -152,6 +152,11 @@ Before staging, move app secrets out of local-only `.env` usage and into:
 or
 - `AWS Systems Manager Parameter Store`
 
+Current practical note:
+
+- the current cost-effective starter uses `terraform.tfvars` plus Elastic Beanstalk environment variables
+- Secrets Manager is still a good later hardening step, but it is not required for the first Beanstalk + Supabase rollout
+
 ### Public domain and HTTPS
 
 Configure a public HTTPS URL so the following work correctly:
@@ -187,16 +192,17 @@ Before staging goes live:
 
 ### Simple staging architecture
 
-- Web app: `AWS App Runner`
-- Database: `Supabase` or `RDS PostgreSQL`
+- Web app: `AWS Elastic Beanstalk`
+- Database: `Supabase`
 - File storage: `Amazon S3`
-- Secrets: `AWS Secrets Manager`
+- Public DNS: `Cloudflare`
+- AWS-side TLS: `ACM`
 - Logs: `Amazon CloudWatch`
 
 ### Stronger production architecture
 
-- Web app: `ECS Fargate` or `App Runner`
-- Database: `Amazon RDS for PostgreSQL`
+- Web app: `Elastic Beanstalk`, `ECS Fargate`, or `App Runner`
+- Database: `Supabase` or `Amazon RDS for PostgreSQL`
 - File storage: `Amazon S3`
 - Secrets: `AWS Secrets Manager`
 - Logging and metrics: `CloudWatch`

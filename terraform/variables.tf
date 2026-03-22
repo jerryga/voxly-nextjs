@@ -37,11 +37,19 @@ variable "solution_stack_name" {
 variable "elastic_beanstalk_service_role_arn" {
   description = "Existing Elastic Beanstalk service role ARN."
   type        = string
+  default     = ""
 }
 
 variable "elastic_beanstalk_ec2_instance_profile" {
   description = "Existing EC2 instance profile name for Elastic Beanstalk instances."
   type        = string
+  default     = ""
+}
+
+variable "create_beanstalk_iam_roles" {
+  description = "Whether Terraform should create the Elastic Beanstalk service role and EC2 instance profile."
+  type        = bool
+  default     = true
 }
 
 variable "instance_type" {

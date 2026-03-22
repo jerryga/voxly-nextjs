@@ -6,6 +6,7 @@ environment_name = "staging"
 elastic_beanstalk_application_name = "voxly"
 elastic_beanstalk_environment_name = "voxly-staging"
 
+create_beanstalk_iam_roles         = true
 elastic_beanstalk_service_role_arn     = "arn:aws:iam::123456789012:role/aws-elasticbeanstalk-service-role"
 elastic_beanstalk_ec2_instance_profile = "aws-elasticbeanstalk-ec2-role"
 instance_type                          = "t3.small"

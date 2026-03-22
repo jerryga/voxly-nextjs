@@ -24,7 +24,7 @@ Start with these in order:
 1. choose whether to create a dedicated network or use an existing VPC
 2. S3 upload bucket
 3. Elastic Beanstalk application and environment
-4. existing IAM roles and instance profile
+4. Elastic Beanstalk IAM roles and instance profile
 5. app environment variables
 6. optional RDS, Secrets Manager, DNS/TLS, and Redis
 
@@ -39,6 +39,7 @@ After that, add:
 
 - [versions.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/versions.tf)
 - [network.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/network.tf)
+- [iam.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/iam.tf)
 - [variables.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/variables.tf)
 - [main.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/main.tf)
 - [outputs.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/outputs.tf)
@@ -48,14 +49,22 @@ After that, add:
 
 - an AWS account
 - AWS credentials configured locally
-- an existing Elastic Beanstalk service role
-- an existing EC2 instance profile for Elastic Beanstalk
 - an application package or CI/CD path for deploying Voxly code
 
-If `create_network = false`, this starter expects the following to already exist:
+If `create_beanstalk_iam_roles = true`, Terraform will create:
+
+- the Elastic Beanstalk service role
+- the Elastic Beanstalk EC2 role
+- the EC2 instance profile
+- a bucket access policy for the uploads bucket
+
+If `create_beanstalk_iam_roles = false`, this starter expects the following to already exist:
 
 - `elastic_beanstalk_service_role_arn`
 - `elastic_beanstalk_ec2_instance_profile`
+
+If `create_network = false`, this starter expects the following to already exist:
+
 - `vpc_id`
 - subnet IDs
 

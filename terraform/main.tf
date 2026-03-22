@@ -11,6 +11,8 @@ locals {
   resolved_vpc_id             = var.create_network ? aws_vpc.voxly[0].id : var.vpc_id
   resolved_public_subnet_ids  = var.create_network ? aws_subnet.public[*].id : var.public_subnet_ids
   resolved_private_subnet_ids = var.create_network ? aws_subnet.private[*].id : var.private_subnet_ids
+  resolved_beanstalk_service_role_arn = var.create_beanstalk_iam_roles ? aws_iam_role.beanstalk_service[0].arn : var.elastic_beanstalk_service_role_arn
+  resolved_beanstalk_instance_profile = var.create_beanstalk_iam_roles ? aws_iam_instance_profile.beanstalk_ec2[0].name : var.elastic_beanstalk_ec2_instance_profile
   use_private_subnets         = length(local.resolved_private_subnet_ids) > 0
   use_public_subnets          = length(local.resolved_public_subnet_ids) > 0
   create_zone_lookup          = var.create_dns || var.create_acm_certificate
@@ -308,13 +310,13 @@ resource "aws_elastic_beanstalk_environment" "voxly" {
   setting {
     namespace = "aws:elasticbeanstalk:environment"
     name      = "ServiceRole"
-    value     = var.elastic_beanstalk_service_role_arn
+    value     = local.resolved_beanstalk_service_role_arn
   }
 
   setting {
     namespace = "aws:autoscaling:launchconfiguration"
     name      = "IamInstanceProfile"
-    value     = var.elastic_beanstalk_ec2_instance_profile
+    value     = local.resolved_beanstalk_instance_profile
   }
 
   setting {

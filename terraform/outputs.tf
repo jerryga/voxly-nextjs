@@ -18,6 +18,16 @@ output "private_subnet_ids" {
   value       = local.resolved_private_subnet_ids
 }
 
+output "elastic_beanstalk_service_role_arn" {
+  description = "Elastic Beanstalk service role ARN in use."
+  value       = local.resolved_beanstalk_service_role_arn
+}
+
+output "elastic_beanstalk_ec2_instance_profile" {
+  description = "Elastic Beanstalk EC2 instance profile in use."
+  value       = local.resolved_beanstalk_instance_profile
+}
+
 output "elastic_beanstalk_application_name" {
   description = "Elastic Beanstalk application name."
   value       = aws_elastic_beanstalk_application.voxly.name

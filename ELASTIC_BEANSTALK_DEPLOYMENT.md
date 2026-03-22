@@ -81,14 +81,16 @@ If Redis is added later:
 Pair Beanstalk with:
 
 - `S3` for uploads
-- `RDS PostgreSQL` or temporary `Supabase`
-- `Secrets Manager` for secret storage
+- `Supabase PostgreSQL` for the current rollout
+- `terraform.tfvars` + Elastic Beanstalk environment variables for the current cost-effective secret/config path
 - `Cloudflare` for public DNS
 - `ACM` for the AWS-side TLS certificate
 - `CloudWatch` for logs
 
 Optional later:
 
+- `RDS PostgreSQL`
+- `Secrets Manager`
 - `ElastiCache Redis` for shared rate limiting
 
 ## 5. Prisma Migration Strategy
