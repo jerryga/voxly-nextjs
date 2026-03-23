@@ -23,7 +23,6 @@ function sanitizeFilename(name: string) {
 function shouldProcessInline(err: unknown) {
   const message = err instanceof Error ? err.message : String(err);
   return (
-    process.env.NODE_ENV !== "production" &&
     (message.includes("Branch environment name is required") ||
       message.includes("Branch environment does not exist"))
   );

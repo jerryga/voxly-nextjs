@@ -4,7 +4,7 @@ import { processMeetingAudio } from "@/inngest/functions";
 
 export const runtime = "nodejs";
 
-export const { GET, POST } = serve({
+export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [processMeetingAudio],
 });

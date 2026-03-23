@@ -83,6 +83,11 @@ npx prisma migrate deploy
 npx prisma generate
 ```
 
+For Beanstalk specifically:
+
+- ensure the generated Prisma client includes the Linux target `rhel-openssl-3.0.x`
+- then build the deploy artifact with `npm run package:beanstalk`
+
 Run this once in a controlled deployment context.
 
 Do not rely on every application instance to run migrations automatically.

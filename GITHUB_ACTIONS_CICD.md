@@ -148,6 +148,11 @@ That is enough for CI builds because the pipeline validates compile-time behavio
 
 Runtime secrets still belong in Elastic Beanstalk environment configuration.
 
+Prisma note:
+
+- the schema includes `binaryTargets = ["native", "rhel-openssl-3.0.x"]`
+- that ensures GitHub Actions and local packaging include the Linux query engine Beanstalk needs
+
 ## First Deployment Checklist
 
 Before enabling automatic deploys from `main`, confirm:

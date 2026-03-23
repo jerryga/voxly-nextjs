@@ -26,6 +26,14 @@ if [ -d prisma ]; then
   cp -R prisma "$DIST_DIR/prisma"
 fi
 
+if [ -d .platform ]; then
+  cp -R .platform "$DIST_DIR/.platform"
+fi
+
+if [ -d .ebextensions ]; then
+  cp -R .ebextensions "$DIST_DIR/.ebextensions"
+fi
+
 cat > "$DIST_DIR/Procfile" <<'EOF'
 web: HOSTNAME=0.0.0.0 PORT=${PORT:-8080} node server.js
 EOF

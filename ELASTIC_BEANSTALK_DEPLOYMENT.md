@@ -55,6 +55,17 @@ This is safer for Voxly because it:
 - reduces memory pressure during deployment
 - behaves more predictably than uploading the whole repo
 
+Important Prisma note:
+
+- the Beanstalk artifact must include the Linux Prisma engine for `rhel-openssl-3.0.x`
+- this is configured in [prisma/schema.prisma](/Users/chason/Documents/GitHub/voxly-nextjs/prisma/schema.prisma) via `binaryTargets`
+- always run `npx prisma generate` before packaging the Beanstalk artifact
+
+Important upload note:
+
+- Beanstalk nginx must allow large request bodies before uploads ever reach Next.js
+- this repo includes [upload-limits.conf](/Users/chason/Documents/GitHub/voxly-nextjs/.platform/nginx/conf.d/upload-limits.conf) to raise the reverse-proxy limit for audio uploads
+
 ## 3. Required Environment Variables
 
 At minimum, configure these in Elastic Beanstalk:
@@ -86,6 +97,16 @@ If Redis is added later:
 - `REDIS_HOST`
 - `REDIS_PORT`
 - `REDIS_URL` if using a single connection string
+
+If you use Inngest Cloud:
+
+- set `INNGEST_EVENT_KEY`
+- set `INNGEST_ENV` if your key belongs to a branch environment that requires it
+
+Current app behavior:
+
+- if Inngest returns `Branch environment name is required` or `Branch environment does not exist`, Voxly falls back to inline processing instead of hard-failing uploads
+- the Inngest sync endpoint at `/api/inngest` must support `GET`, `POST`, and `PUT` for cloud sync and deploy checks
 
 ## 4. Recommended AWS Wiring
 
