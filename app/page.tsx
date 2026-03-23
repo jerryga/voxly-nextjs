@@ -75,6 +75,10 @@ const pricingTiers = [
 export default async function Home() {
   const session = await getServerSession(authOptions);
   const isAuthenticated = Boolean(session?.user);
+  const pricingCtaHref = isAuthenticated
+    ? "/billing"
+    : "/auth/sign-in?callbackUrl=%2Fbilling";
+  const pricingCtaLabel = isAuthenticated ? "Choose Plan" : "Sign In to Buy";
   const navItems = isAuthenticated
     ? [
         { label: "Dashboard", href: "/dashboard" },
@@ -477,6 +481,16 @@ export default async function Home() {
                     </li>
                   ))}
                 </ul>
+                <Link
+                  href={pricingCtaHref}
+                  className={`mt-8 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition ${
+                    tier.featured
+                      ? "bg-white text-slate-950 hover:bg-orange-50"
+                      : "border border-slate-300 bg-[#fcfbf8] text-slate-950 hover:border-slate-400 hover:bg-[#fff4ec]"
+                  }`}
+                >
+                  {pricingCtaLabel}
+                </Link>
               </article>
             ))}
           </div>

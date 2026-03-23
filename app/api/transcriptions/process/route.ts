@@ -6,7 +6,10 @@ import { inngest } from "@/inngest/client";
 import { ensureCreditsAvailableForExpectedProcessing } from "@/lib/billing";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
-import { processUploadedAudio } from "@/lib/transcriptions/process";
+import {
+  hasPersistedTranscriptionResult,
+  processUploadedAudio,
+} from "@/lib/transcriptions/process";
 import { transcriptionProcessSchema } from "@/lib/api/validation";
 
 export const runtime = "nodejs";
@@ -57,6 +60,7 @@ export async function POST(request: Request) {
     }
 
     const { transcriptionId, template: templateOverride } = parsed.data;
+    const effectiveTemplate = templateOverride || undefined;
 
     const transcription = await prisma.transcription.findFirst({
       where: { id: transcriptionId, userId: user.id },
@@ -64,6 +68,19 @@ export async function POST(request: Request) {
 
     if (!transcription) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const currentTemplate = transcription.template || "default";
+    if (
+      (!effectiveTemplate || effectiveTemplate === currentTemplate) &&
+      hasPersistedTranscriptionResult(transcription)
+    ) {
+      return NextResponse.json({
+        ok: true,
+        transcriptionId: transcription.id,
+        queued: false,
+        reusedExisting: true,
+      });
     }
 
     await ensureCreditsAvailableForExpectedProcessing(
@@ -89,15 +106,15 @@ export async function POST(request: Request) {
         data: {
           transcriptionId: transcription.id,
           fileKey: key,
-          template: templateOverride || transcription.template || "default",
+          template: effectiveTemplate || currentTemplate,
         },
       }, inngestEnv ? { env: inngestEnv } : undefined);
     } catch (err) {
       if (shouldProcessInline(err)) {
-        await processUploadedAudio({
+        const result = await processUploadedAudio({
           transcriptionId: transcription.id,
           fileKey: key,
-          template: templateOverride || transcription.template || "default",
+          template: effectiveTemplate || currentTemplate,
         });
 
         return NextResponse.json({
@@ -105,6 +122,7 @@ export async function POST(request: Request) {
           transcriptionId: transcription.id,
           queued: false,
           processedInline: true,
+          reusedExisting: result.reusedExisting ?? false,
         });
       }
 

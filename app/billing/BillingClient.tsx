@@ -326,13 +326,10 @@ export function BillingClient() {
               </div>
               <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Total Credits
+                  Available Credits
                 </p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">
                   {billing.creditsRemaining}
-                  <span className="ml-1 text-sm font-medium text-slate-500">
-                    / {billing.creditsTotal}
-                  </span>
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
                   Available right now
@@ -340,7 +337,7 @@ export function BillingClient() {
               </div>
               <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Monthly Bucket
+                  Plan Credits
                 </p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">
                   {billing.monthlyCreditsRemaining}
@@ -354,13 +351,13 @@ export function BillingClient() {
               </div>
               <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  Top-up Credits
+                  Bonus Credits
                 </p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">
                   {billing.topUpCreditsRemaining}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Purchased separately
+                  Promo and purchased credits remaining
                 </p>
               </div>
             </div>

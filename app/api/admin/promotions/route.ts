@@ -39,9 +39,11 @@ export async function GET() {
       },
     });
 
+    type PromotionWithRedemptionCount = (typeof promotions)[number];
+
     return NextResponse.json({
       ok: true,
-      promotions: promotions.map((promotion) => ({
+      promotions: promotions.map((promotion: PromotionWithRedemptionCount) => ({
         id: promotion.id,
         code: promotion.code,
         status: promotion.status,

@@ -70,6 +70,7 @@ export const assistantEditSchema = z.object({
 });
 
 export const assistantChatSchema = z.object({
+  transcriptionId: idSchema,
   messages: z.array(chatMessageSchema).min(1).max(30),
   summary: summarySchema.default({}),
   provider: z.string().trim().max(40).optional(),
