@@ -3,6 +3,11 @@ output "uploads_bucket_name" {
   value       = aws_s3_bucket.uploads.bucket
 }
 
+output "deploy_bucket_name" {
+  description = "S3 bucket used for Elastic Beanstalk deployment artifacts."
+  value       = aws_s3_bucket.deploy_artifacts.bucket
+}
+
 output "vpc_id" {
   description = "Effective VPC ID used by the stack."
   value       = local.resolved_vpc_id
@@ -26,6 +31,11 @@ output "elastic_beanstalk_service_role_arn" {
 output "elastic_beanstalk_ec2_instance_profile" {
   description = "Elastic Beanstalk EC2 instance profile in use."
   value       = local.resolved_beanstalk_instance_profile
+}
+
+output "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions deploys."
+  value       = var.create_github_actions_oidc_role ? aws_iam_role.github_actions_deploy[0].arn : null
 }
 
 output "elastic_beanstalk_application_name" {

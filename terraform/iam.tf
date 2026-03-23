@@ -94,3 +94,89 @@ resource "aws_iam_instance_profile" "beanstalk_ec2" {
 
   tags = local.base_tags
 }
+
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+
+  tags = local.base_tags
+}
+
+data "aws_iam_policy_document" "github_actions_assume_role" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github_actions[0].arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:${var.github_repository}:environment:${var.github_environment_name}",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_actions_deploy" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  name               = var.github_actions_role_name
+  assume_role_policy = data.aws_iam_policy_document.github_actions_assume_role[0].json
+
+  tags = local.base_tags
+}
+
+data "aws_iam_policy_document" "github_actions_deploy" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  statement {
+    actions = [
+      "s3:ListBucket",
+    ]
+    resources = [aws_s3_bucket.deploy_artifacts.arn]
+  }
+
+  statement {
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["${aws_s3_bucket.deploy_artifacts.arn}/*"]
+  }
+
+  statement {
+    actions = [
+      "elasticbeanstalk:CreateApplicationVersion",
+      "elasticbeanstalk:UpdateEnvironment",
+      "elasticbeanstalk:DescribeApplications",
+      "elasticbeanstalk:DescribeApplicationVersions",
+      "elasticbeanstalk:DescribeEnvironments",
+      "elasticbeanstalk:DescribeEvents",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_actions_deploy" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  name   = "${var.project_name}-${var.environment_name}-github-actions-deploy"
+  role   = aws_iam_role.github_actions_deploy[0].id
+  policy = data.aws_iam_policy_document.github_actions_deploy[0].json
+}

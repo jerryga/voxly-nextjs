@@ -8,6 +8,10 @@ elastic_beanstalk_environment_name = "voxly-staging"
 
 create_beanstalk_iam_roles         = true
 attach_beanstalk_managed_updates_policy = false
+create_github_actions_oidc_role    = true
+github_repository                  = "jerryga/voxly-nextjs"
+github_environment_name            = "staging"
+github_actions_role_name           = "voxly-github-actions-beanstalk-deploy"
 elastic_beanstalk_service_role_arn     = "arn:aws:iam::123456789012:role/aws-elasticbeanstalk-service-role"
 elastic_beanstalk_ec2_instance_profile = "aws-elasticbeanstalk-ec2-role"
 instance_type                          = "t3.small"
@@ -36,6 +40,7 @@ allowed_app_cidr_blocks = [
 ]
 
 uploads_bucket_name = "voxly-staging-uploads-example"
+deploy_bucket_name  = "voxly-staging-deployments-example"
 
 create_secrets_manager_secret = false
 secrets_manager_secret_name   = "voxly/staging/app"
@@ -65,7 +70,6 @@ app_environment = {
   NEXTAUTH_URL                 = "https://staging.example.com"
   NEXTAUTH_SECRET              = "replace-me"
   DATABASE_URL                 = "replace-me"
-  DIRECT_URL                   = "replace-me"
   OPENAI_API_KEY               = "replace-me"
   DEEPGRAM_API_KEY             = "replace-me"
   STRIPE_SECRET_KEY            = "replace-me"

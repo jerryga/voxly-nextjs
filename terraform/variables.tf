@@ -58,6 +58,30 @@ variable "attach_beanstalk_managed_updates_policy" {
   default     = false
 }
 
+variable "create_github_actions_oidc_role" {
+  description = "Whether Terraform should create the GitHub Actions OIDC provider and deploy role."
+  type        = bool
+  default     = true
+}
+
+variable "github_repository" {
+  description = "GitHub repository in owner/name format for OIDC trust, for example jerryga/voxly-nextjs."
+  type        = string
+  default     = "jerryga/voxly-nextjs"
+}
+
+variable "github_environment_name" {
+  description = "GitHub Actions environment name used by the deploy job."
+  type        = string
+  default     = "staging"
+}
+
+variable "github_actions_role_name" {
+  description = "IAM role name for GitHub Actions deploys."
+  type        = string
+  default     = "voxly-github-actions-beanstalk-deploy"
+}
+
 variable "instance_type" {
   description = "EC2 instance type used by Elastic Beanstalk."
   type        = string
@@ -120,6 +144,11 @@ variable "allowed_app_cidr_blocks" {
 
 variable "uploads_bucket_name" {
   description = "S3 bucket name for Voxly uploads."
+  type        = string
+}
+
+variable "deploy_bucket_name" {
+  description = "S3 bucket name for Elastic Beanstalk deployment artifacts."
   type        = string
 }
 

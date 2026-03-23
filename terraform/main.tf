@@ -121,6 +121,45 @@ resource "aws_s3_bucket_public_access_block" "uploads" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket" "deploy_artifacts" {
+  bucket = var.deploy_bucket_name
+
+  tags = merge(
+    local.base_tags,
+    {
+      Name = var.deploy_bucket_name
+      Role = "deploy-artifacts"
+    },
+  )
+}
+
+resource "aws_s3_bucket_versioning" "deploy_artifacts" {
+  bucket = aws_s3_bucket.deploy_artifacts.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "deploy_artifacts" {
+  bucket = aws_s3_bucket.deploy_artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "deploy_artifacts" {
+  bucket = aws_s3_bucket.deploy_artifacts.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 resource "aws_secretsmanager_secret" "app" {
   count = var.create_secrets_manager_secret ? 1 : 0
 

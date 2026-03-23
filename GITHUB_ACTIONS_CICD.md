@@ -39,6 +39,8 @@ Use GitHub repository or environment variables for non-secret values:
 - `AWS_BEANSTALK_ENVIRONMENT_NAME`
 - `AWS_BEANSTALK_DEPLOY_BUCKET`
 
+`AWS_BEANSTALK_DEPLOY_BUCKET` should be the dedicated deployment-artifacts bucket, not the runtime uploads bucket.
+
 Use GitHub secrets for sensitive values:
 
 - `AWS_ROLE_TO_ASSUME`
@@ -119,6 +121,12 @@ Replace:
 
 If you prefer AWS CLI, you can use the example script above after replacing the placeholders.
 
+If you manage AWS with Terraform, this repo can now create the GitHub OIDC provider and deploy role for you. After `tofu apply`, use the Terraform output:
+
+- [github_actions_role_arn](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/outputs.tf)
+
+and copy that value into the GitHub secret `AWS_ROLE_TO_ASSUME`.
+
 ## Required GitHub Variables
 
 Set these in the repository or the `staging` environment:
@@ -127,7 +135,7 @@ Set these in the repository or the `staging` environment:
 AWS_REGION=ca-central-1
 AWS_BEANSTALK_APPLICATION_NAME=voxly
 AWS_BEANSTALK_ENVIRONMENT_NAME=voxly-staging
-AWS_BEANSTALK_DEPLOY_BUCKET=your-beanstalk-deploy-bucket
+AWS_BEANSTALK_DEPLOY_BUCKET=your-beanstalk-deployments-bucket
 ```
 
 Set this as a secret:
@@ -163,6 +171,10 @@ Before enabling automatic deploys from `main`, confirm:
 - the OIDC role can be assumed from GitHub Actions
 - the Beanstalk environment variables are configured in AWS
 - the GitHub `staging` environment exists and has protection rules if desired
+
+If you manage infrastructure with Terraform, the deploy bucket is now provisioned separately from the uploads bucket. Use the Terraform output:
+
+- [deploy_bucket_name](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/outputs.tf)
 
 ## Why the Trust Policy Uses the Environment Subject
 
