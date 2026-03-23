@@ -48,6 +48,9 @@ export function TranscriptionClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const assistantInputRef = useRef<HTMLInputElement | null>(null);
   const resultAreaRef = useRef<HTMLElement | null>(null);
+  const tipsTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(
+    null,
+  );
   const [items, setItems] = useState<Transcription[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -83,6 +86,7 @@ export function TranscriptionClient() {
   } | null>(null);
   const [assistantMessages, setAssistantMessages] =
     useState<AssistantMessage[]>(defaultAssistantMessages);
+  const [completionTip, setCompletionTip] = useState<string | null>(null);
 
   const templates = [
     { id: "default", label: "Default Template (Default)" },
@@ -112,6 +116,7 @@ export function TranscriptionClient() {
   }, [focusedSummaryId, latestSummary, sortedItems]);
   const displaySummary = assistantSummary || focusedSummary;
   const activeTranscriptionId = focusedSummary?.id || null;
+  const hasProcessedSummary = focusedSummary?.status === "done";
   const estimatedCredits =
     estimatedDurationSeconds && estimatedDurationSeconds > 0
       ? Math.max(1, Math.ceil(estimatedDurationSeconds / 60))
@@ -218,6 +223,27 @@ export function TranscriptionClient() {
     });
   }, [focusedSummary, focusedSummaryId]);
 
+  useEffect(() => {
+    return () => {
+      if (tipsTimeoutRef.current) {
+        window.clearTimeout(tipsTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function showCompletionTip(message: string) {
+    setCompletionTip(message);
+
+    if (tipsTimeoutRef.current) {
+      window.clearTimeout(tipsTimeoutRef.current);
+    }
+
+    tipsTimeoutRef.current = window.setTimeout(() => {
+      setCompletionTip(null);
+      tipsTimeoutRef.current = null;
+    }, 4500);
+  }
+
   async function loadAssistantMessages(transcriptionId: string) {
     setAssistantHistoryLoading(true);
     setAssistantError(null);
@@ -276,9 +302,11 @@ export function TranscriptionClient() {
 
       if (currentItem.status === "done" || currentItem.status === "error") {
         await loadBilling();
-        break;
+        return currentItem;
       }
     }
+
+    return null;
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -361,14 +389,21 @@ export function TranscriptionClient() {
       }
       const nextItems = await loadItems({ showLoading: false });
       await loadBilling();
-      const currentItem = nextItems?.find((item) => item.id === id) || null;
+      let currentItem = nextItems?.find((item) => item.id === id) || null;
 
       if (
         payload?.queued ||
         currentItem?.status === "processing" ||
         currentItem?.status === "uploaded"
       ) {
-        await pollForProcessedResult(id);
+        currentItem = await pollForProcessedResult(id);
+      }
+
+      if (currentItem?.status === "done") {
+        setFocusedSummaryId(currentItem.id);
+        showCompletionTip(
+          "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Processing failed");
@@ -557,7 +592,26 @@ export function TranscriptionClient() {
   }
 
   return (
-    <div className="mt-6 grid grid-cols-1 items-start gap-8 lg:grid-cols-[1fr_420px]">
+    <div className="relative mt-6">
+      {completionTip ? (
+        <div className="pointer-events-none fixed left-1/2 top-24 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2">
+          <div className="rounded-[22px] border border-emerald-200 bg-emerald-50/95 px-4 py-3 text-sm text-emerald-900 shadow-[0_18px_48px_-24px_rgba(16,185,129,0.75)] backdrop-blur">
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700">
+                !
+              </div>
+              <div>
+                <p className="font-bold">Tips unlocked</p>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-800">
+                  {completionTip}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[1fr_420px]">
       <div className="min-w-0 space-y-4">
         <section className="rounded-[24px] border border-white/80 bg-white/72 p-4 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.28)] backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -680,7 +734,7 @@ export function TranscriptionClient() {
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               <div className="min-w-0 rounded-[18px] border border-slate-200 bg-[#fffaf3] px-3 py-3">
-                <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="break-words text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Formats
                 </p>
                 <p className="mt-1 text-xs text-slate-950">
@@ -688,7 +742,7 @@ export function TranscriptionClient() {
                 </p>
               </div>
               <div className="min-w-0 rounded-[18px] border border-slate-200 bg-[#fffaf3] px-3 py-3">
-                <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="break-words text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Upload Limit
                 </p>
                 <p className="mt-1 text-xs text-slate-950">
@@ -696,7 +750,7 @@ export function TranscriptionClient() {
                 </p>
               </div>
               <div className="min-w-0 rounded-[18px] border border-slate-200 bg-[#fffaf3] px-3 py-3">
-                <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <p className="break-words text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Processing
                 </p>
                 <p className="mt-1 text-xs text-slate-950">
@@ -1238,23 +1292,30 @@ export function TranscriptionClient() {
               </div>
             </div>
 
-            <div className="mt-4 space-y-2">
-              {[
-                "Summarize the meeting in 3 bullets",
-                "List owners for each action item",
-                "Draft a follow-up email for attendees",
-                "Create a risk list from the discussion",
-              ].map((text) => (
-                <button
-                  key={text}
-                  type="button"
-                  onClick={() => handleAssistantSuggestion(text)}
-                  className="cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
-                >
-                  {text}
-                </button>
-              ))}
-            </div>
+            {hasProcessedSummary ? (
+              <div className="mt-4 space-y-2">
+                {[
+                  "Summarize the meeting in 3 bullets",
+                  "List owners for each action item",
+                  "Draft a follow-up email for attendees",
+                  "Create a risk list from the discussion",
+                ].map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    onClick={() => handleAssistantSuggestion(text)}
+                    className="cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[20px] border border-dashed border-slate-200 bg-[#fcfbf8] px-4 py-4 text-xs leading-relaxed text-slate-500">
+                Prompts will appear here after Start Voxly finishes and the
+                recording has been processed.
+              </div>
+            )}
 
             {assistantMessages.length > 0 && (
               <div className="mt-4 space-y-4">
@@ -1327,7 +1388,7 @@ export function TranscriptionClient() {
                 placeholder="Ask me to edit your notes..."
                 ref={assistantInputRef}
                 value={assistantPrompt}
-                disabled={assistantBusy}
+                disabled={assistantBusy || !hasProcessedSummary}
                 onChange={(event) => setAssistantPrompt(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -1340,7 +1401,7 @@ export function TranscriptionClient() {
               <button
                 type="button"
                 onClick={() => handleAssistantSubmit()}
-                disabled={assistantBusy}
+                disabled={assistantBusy || !hasProcessedSummary}
                 className="cursor-pointer rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Send
@@ -1353,11 +1414,14 @@ export function TranscriptionClient() {
               <p className="text-xs text-slate-500">Loading notes history...</p>
             ) : null}
             <p className="text-xs leading-relaxed text-slate-500">
-              Ready to help. Choose a suggestion or type your own request.
+              {hasProcessedSummary
+                ? "Ready to help. Choose a suggestion or type your own request."
+                : "Process a recording to unlock prompts and assistant edits."}
             </p>
           </div>
         </section>
       </aside>
+      </div>
     </div>
   );
 }
