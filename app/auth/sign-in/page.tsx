@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BrandLink } from "@/app/components/BrandLink";
 
 function SignInContent() {
   const router = useRouter();
@@ -50,17 +51,7 @@ function SignInContent() {
         <nav className="fixed left-0 right-0 top-0 z-50 px-6 py-4">
           <div className="mx-auto w-full max-w-300">
             <div className="flex flex-wrap items-center justify-between gap-4 rounded-full border border-white/70 bg-white/80 px-6 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-xs font-semibold text-white shadow-sm">
-                  V
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Voxly</p>
-                  <p className="text-[11px] text-slate-500">
-                    Voice Intelligence
-                  </p>
-                </div>
-              </Link>
+              <BrandLink href="/" />
 
               <div className="flex items-center gap-2">
                 <Link

@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { SignOutButton } from "@/app/dashboard/SignOutButton";
+import { BrandLink } from "@/app/components/BrandLink";
 import { BillingClient } from "./BillingClient";
 
 export default async function BillingPage() {
@@ -20,19 +21,7 @@ export default async function BillingPage() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_30%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.14),transparent_32%),linear-gradient(180deg,#f6f1e8_0%,#f8f4ee_48%,#fcfbf8_100%)]" />
       <header className="sticky top-0 z-40 px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-400 items-center gap-3 rounded-full border border-white/70 bg-white/82 px-5 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
-          <a href="/dashboard" className="inline-flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-xs font-bold text-white">
-              V
-            </span>
-            <span>
-              <span className="block text-sm font-bold tracking-tight text-slate-900">
-                Voxly
-              </span>
-              <span className="block text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                Voice Intelligence
-              </span>
-            </span>
-          </a>
+          <BrandLink href="/dashboard" />
 
           <nav className="hidden items-center gap-1 rounded-full border border-slate-200 bg-[#f8f5ef] p-1 md:flex">
             {[

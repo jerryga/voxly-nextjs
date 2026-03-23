@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { BrandLink } from "@/app/components/BrandLink";
 
 const productHighlights = [
   {
@@ -99,19 +100,7 @@ export default async function Home() {
 
       <header className="fixed inset-x-0 top-0 z-50 px-4 py-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-full border border-white/70 bg-white/80 px-5 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0f172a] text-sm font-semibold text-white">
-              V
-            </span>
-            <span>
-              <span className="block text-sm font-semibold tracking-tight text-slate-950">
-                Voxly
-              </span>
-              <span className="block text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                Voice Intelligence
-              </span>
-            </span>
-          </Link>
+          <BrandLink href="/" />
 
           <nav className="hidden items-center gap-1 rounded-full border border-slate-200 bg-[#f8f5ef] p-1 md:flex">
             {navItems.map((item) => (

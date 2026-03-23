@@ -445,6 +445,19 @@ export async function grantMonthlyCreditsFromInvoice({
     return;
   }
 
+  const existingRefill = await prisma.creditTransaction.findFirst({
+    where: {
+      userId,
+      type: "monthly_refill",
+      stripeInvoiceId: invoice.id,
+    },
+    select: { id: true },
+  });
+
+  if (existingRefill) {
+    return;
+  }
+
   const currentSubscription = await prisma.subscription.findUnique({
     where: { userId },
   });
@@ -512,6 +525,19 @@ export async function grantTopUpCreditsFromCheckout({
     throw new Error("Unknown credit pack");
   }
 
+  const existingTopUp = await prisma.creditTransaction.findFirst({
+    where: {
+      userId,
+      type: "top_up",
+      stripeSessionId: session.id,
+    },
+    select: { id: true },
+  });
+
+  if (existingTopUp) {
+    return;
+  }
+
   const currentSubscription = await prisma.subscription.upsert({
     where: { userId },
     update: {},
@@ -549,6 +575,68 @@ export async function grantTopUpCreditsFromCheckout({
       },
     }),
   ]);
+}
+
+export async function confirmCheckoutSessionForUser({
+  sessionId,
+  userId,
+}: {
+  sessionId: string;
+  userId: string;
+}) {
+  const stripe = getStripe();
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["subscription", "invoice"],
+  });
+
+  const sessionUserId = session.metadata?.userId || session.client_reference_id;
+  if (!sessionUserId || sessionUserId !== userId) {
+    const error = new Error("Checkout session does not belong to this user.") as Error & {
+      statusCode?: number;
+    };
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (
+    session.mode === "payment" &&
+    session.payment_status === "paid" &&
+    session.metadata?.purchaseType === "topup"
+  ) {
+    await grantTopUpCreditsFromCheckout({
+      session,
+      stripeEventId: `checkout_session:${session.id}`,
+    });
+
+    return { purchaseType: "topup" as const };
+  }
+
+  if (session.mode === "subscription") {
+    const stripeSubscription =
+      typeof session.subscription === "string"
+        ? await stripe.subscriptions.retrieve(session.subscription)
+        : session.subscription;
+
+    if (stripeSubscription) {
+      await syncSubscriptionFromStripeSubscription(stripeSubscription);
+    }
+
+    const invoice =
+      typeof session.invoice === "string"
+        ? await stripe.invoices.retrieve(session.invoice)
+        : session.invoice;
+
+    if (invoice && invoice.status === "paid") {
+      await grantMonthlyCreditsFromInvoice({
+        invoice,
+        stripeEventId: `checkout_session_invoice:${invoice.id}`,
+      });
+    }
+
+    return { purchaseType: "subscription" as const };
+  }
+
+  return { purchaseType: "unknown" as const };
 }
 
 export async function getBillingSnapshotForUser(userId: string) {
