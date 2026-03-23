@@ -35,6 +35,39 @@ function extractDurationSeconds(result: DeepgramResult) {
     : null;
 }
 
+export function hasPersistedTranscriptionResult(transcription: {
+  status?: string | null;
+  transcript?: string | null;
+  decisions?: unknown;
+  keyPoints?: unknown;
+  nextSteps?: unknown;
+  actionItems?: unknown;
+}) {
+  const decisionsCount = Array.isArray(transcription.decisions)
+    ? transcription.decisions.length
+    : 0;
+  const keyPointsCount = Array.isArray(transcription.keyPoints)
+    ? transcription.keyPoints.length
+    : 0;
+  const nextStepsCount = Array.isArray(transcription.nextSteps)
+    ? transcription.nextSteps.length
+    : 0;
+  const actionItemsCount = Array.isArray(transcription.actionItems)
+    ? transcription.actionItems.length
+    : 0;
+
+  return (
+    transcription.status === "done" &&
+    !!transcription.transcript &&
+    (
+      decisionsCount > 0 ||
+      keyPointsCount > 0 ||
+      nextStepsCount > 0 ||
+      actionItemsCount > 0
+    )
+  );
+}
+
 export async function markTranscriptionError(transcriptionId: string) {
   try {
     await prisma.transcription.update({
@@ -63,7 +96,17 @@ export async function processUploadedAudio({
 
   const transcription = await prisma.transcription.findUnique({
     where: { id: transcriptionId },
-    select: { id: true, template: true, userId: true, status: true },
+    select: {
+      id: true,
+      template: true,
+      userId: true,
+      status: true,
+      transcript: true,
+      decisions: true,
+      keyPoints: true,
+      nextSteps: true,
+      actionItems: true,
+    },
   });
 
   if (!transcription) {
@@ -71,6 +114,13 @@ export async function processUploadedAudio({
   }
 
   const effectiveTemplate = template || transcription.template || "default";
+  if (
+    effectiveTemplate === (transcription.template || "default") &&
+    hasPersistedTranscriptionResult(transcription)
+  ) {
+    return { transcriptionId, reusedExisting: true };
+  }
+
   const hasExistingUsageCharge = await hasUsageCreditsApplied(transcriptionId);
   if (!hasExistingUsageCharge) {
     await ensureCreditsAvailableForProcessing(transcription.userId);

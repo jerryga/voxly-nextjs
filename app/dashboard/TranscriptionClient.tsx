@@ -35,6 +35,7 @@ export function TranscriptionClient() {
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const assistantInputRef = useRef<HTMLInputElement | null>(null);
+  const resultAreaRef = useRef<HTMLElement | null>(null);
   const [items, setItems] = useState<Transcription[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -51,6 +52,10 @@ export function TranscriptionClient() {
   const [expandedTranscripts, setExpandedTranscripts] = useState<
     Record<string, boolean>
   >({});
+  const [processingIds, setProcessingIds] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [focusedSummaryId, setFocusedSummaryId] = useState<string | null>(null);
   const [assistantPrompt, setAssistantPrompt] = useState("");
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
@@ -90,7 +95,14 @@ export function TranscriptionClient() {
   const latestSummary = useMemo(() => {
     return sortedItems.find((item) => item.status === "done") || null;
   }, [sortedItems]);
-  const displaySummary = assistantSummary || latestSummary;
+  const focusedSummary = useMemo(() => {
+    if (!focusedSummaryId) {
+      return latestSummary;
+    }
+
+    return sortedItems.find((item) => item.id === focusedSummaryId) || latestSummary;
+  }, [focusedSummaryId, latestSummary, sortedItems]);
+  const displaySummary = assistantSummary || focusedSummary;
   const estimatedCredits =
     estimatedDurationSeconds && estimatedDurationSeconds > 0
       ? Math.max(1, Math.ceil(estimatedDurationSeconds / 60))
@@ -139,8 +151,11 @@ export function TranscriptionClient() {
     }
   }
 
-  async function loadItems() {
-    setLoading(true);
+  async function loadItems(options?: { showLoading?: boolean }) {
+    const showLoading = options?.showLoading ?? true;
+    if (showLoading) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch("/api/transcriptions");
@@ -148,11 +163,16 @@ export function TranscriptionClient() {
       if (!res.ok) {
         throw new Error(payload?.error || "Failed to load transcriptions");
       }
-      setItems(payload.items || []);
+      const nextItems = payload.items || [];
+      setItems(nextItems);
+      return nextItems;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
+      return null;
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   }
 
@@ -174,9 +194,40 @@ export function TranscriptionClient() {
   }
 
   useEffect(() => {
-    loadItems();
-    loadBilling();
+    void loadItems();
+    void loadBilling();
   }, []);
+
+  useEffect(() => {
+    if (!focusedSummaryId || !focusedSummary || focusedSummary.status !== "done") {
+      return;
+    }
+
+    resultAreaRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [focusedSummary, focusedSummaryId]);
+
+  async function pollForProcessedResult(id: string) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const nextItems = await loadItems({ showLoading: false });
+      if (!nextItems) {
+        continue;
+      }
+
+      const currentItem = nextItems.find((item) => item.id === id);
+      if (!currentItem) {
+        break;
+      }
+
+      if (currentItem.status === "done" || currentItem.status === "error") {
+        await loadBilling();
+        break;
+      }
+    }
+  }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -239,6 +290,10 @@ export function TranscriptionClient() {
 
   async function handleProcess(id: string, template?: string | null) {
     setError(null);
+    setAssistantError(null);
+    setAssistantSummary(null);
+    setFocusedSummaryId(id);
+    setProcessingIds((prev) => ({ ...prev, [id]: true }));
     try {
       const res = await fetch("/api/transcriptions/process", {
         method: "POST",
@@ -252,10 +307,25 @@ export function TranscriptionClient() {
       if (!res.ok) {
         throw new Error(payload?.error || "Processing failed");
       }
-      await loadItems();
+      const nextItems = await loadItems({ showLoading: false });
       await loadBilling();
+      const currentItem = nextItems?.find((item) => item.id === id) || null;
+
+      if (
+        payload?.queued ||
+        currentItem?.status === "processing" ||
+        currentItem?.status === "uploaded"
+      ) {
+        await pollForProcessedResult(id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Processing failed");
+    } finally {
+      setProcessingIds((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     }
   }
 
@@ -403,75 +473,68 @@ export function TranscriptionClient() {
 
   return (
     <div className="mt-6 grid grid-cols-1 items-start gap-8 lg:grid-cols-[1fr_420px]">
-      <div className="min-w-0 space-y-6">
-        <section className="rounded-[30px] border border-white/80 bg-white/72 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <div className="min-w-0 space-y-4">
+        <section className="rounded-[24px] border border-white/80 bg-white/72 p-4 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.28)] backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
                 Workspace
               </p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-[2rem]">
                 Turn raw recordings into clean notes and next steps.
               </h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-                Upload audio, generate transcripts, and use the assistant to
-                shape the output into something your team can act on.
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                Upload audio, generate transcripts, and shape the output into
+                something your team can act on.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[24px] border border-white/80 bg-[#fffdf9] px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-[18px] border border-white/80 bg-[#fffdf9] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Uploads
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-slate-950">
+                <p className="mt-1 text-xl font-semibold text-slate-950">
                   {items.length}
                 </p>
               </div>
-              <div className="rounded-[24px] border border-white/80 bg-[#fffdf9] px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              <div className="rounded-[18px] border border-white/80 bg-[#fffdf9] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Ready
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-slate-950">
+                <p className="mt-1 text-xl font-semibold text-slate-950">
                   {items.filter((item) => item.status === "done").length}
                 </p>
               </div>
-              <div className="rounded-[24px] border border-white/80 bg-[#fffdf9] px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              <div className="rounded-[18px] border border-white/80 bg-[#fffdf9] px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Assistant
                 </p>
-                <p className="mt-2 text-sm font-semibold text-emerald-700">
+                <p className="mt-1 text-xs font-semibold text-emerald-700">
                   Ready to help
                 </p>
               </div>
             </div>
           </div>
         </section>
-        <section className="rounded-[30px] border border-white/80 bg-white/88 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <section className="rounded-[22px] border border-white/80 bg-white/88 p-3.5 shadow-[0_14px_34px_-30px_rgba(15,23,42,0.24)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
                 Billing
               </p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
-                Credits snapshot
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">
+                Credits
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-                Keep an eye on your remaining balance while you work, then open
-                the full billing page for plans, top-ups, and payment history.
+              <p className="mt-1 text-xs text-slate-500">
+                Quick balance view.
               </p>
             </div>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/billing"
-                className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                Open Billing
-              </Link>
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={loadBilling}
                 disabled={billingLoading}
-                className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] disabled:cursor-not-allowed disabled:opacity-50"
+                className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-[#f5f1ea] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {billingLoading ? "Refreshing..." : "Refresh Credits"}
               </button>
@@ -479,88 +542,29 @@ export function TranscriptionClient() {
           </div>
 
           {billingLoading ? (
-            <p className="mt-6 text-sm text-slate-500">Loading billing details...</p>
+            <p className="mt-3 text-sm text-slate-500">Loading billing details...</p>
           ) : billing ? (
             <>
-              <div className="mt-6 grid gap-4 md:grid-cols-4">
-                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Current Plan
+              <div className="mt-3 flex flex-col gap-2 rounded-[18px] border border-slate-200 bg-[#fffdf9] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Available Credits
                   </p>
-                  <p className="mt-2 text-2xl font-semibold capitalize text-slate-950">
-                    {billing.plan}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500 capitalize">
-                    {billing.status}
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Total Credits
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                  <p className="mt-1 text-xl font-semibold text-slate-950">
                     {billing.creditsRemaining}
-                    <span className="ml-1 text-sm font-medium text-slate-500">
-                      / {billing.creditsTotal}
-                    </span>
                   </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Available right now
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Monthly Bucket
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950">
-                    {billing.monthlyCreditsRemaining}
-                    <span className="ml-1 text-sm font-medium text-slate-500">
-                      / {billing.monthlyCreditsTotal}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Included with your plan
-                  </p>
-                </div>
-                <div className="rounded-[24px] border border-slate-200 bg-[#fffdf9] p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Top-up Credits
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950">
-                    {billing.topUpCreditsRemaining}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Purchased separately
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                <div className="rounded-[26px] border border-slate-200 bg-[#fffdf9] p-5">
-                  <p className="text-sm font-semibold text-slate-950">
+                  <p className="mt-1 text-xs text-slate-500">
                     {billing.hasActiveSubscription
-                      ? `You're on the ${billing.plan} plan with ${billing.monthlyCreditsRemaining} monthly credits and ${billing.topUpCreditsRemaining} top-up credits available.`
-                      : "You do not have an active subscription yet. Open billing to choose a plan or purchase credits."}
+                      ? `${billing.plan} plan`
+                      : "No active subscription"}
                   </p>
-                  {billing.stripeCurrentPeriodEnd ? (
-                    <p className="mt-2 text-sm text-slate-500">
-                      Next renewal:{" "}
-                      {new Date(billing.stripeCurrentPeriodEnd).toLocaleDateString()}
-                    </p>
-                  ) : null}
-                  {billing.cancelAtPeriodEnd ? (
-                    <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      Your subscription is set to cancel at the end of the
-                      current billing period.
-                    </p>
-                  ) : null}
                 </div>
-                <div className="flex justify-start lg:justify-end">
+                <div className="flex justify-start sm:justify-end">
                   <Link
                     href="/billing"
-                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f8f5ef]"
+                    className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f8f5ef]"
                   >
-                    View plans, top-ups, and history
+                    View Details
                   </Link>
                 </div>
               </div>
@@ -731,7 +735,15 @@ export function TranscriptionClient() {
           )}
         </section>
 
-        <section className="space-y-8">
+        <section ref={resultAreaRef} className="space-y-8">
+          <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Current Voxly Audio
+            </p>
+            <p className="mt-2 text-lg font-semibold text-slate-950">
+              {focusedSummary?.fileName || "No processed audio selected yet"}
+            </p>
+          </div>
           {[
             {
               title: "Decisions",
@@ -859,7 +871,7 @@ export function TranscriptionClient() {
             <h2 className="text-xl font-bold text-slate-900">Transcriptions</h2>
             <button
               type="button"
-              onClick={loadItems}
+              onClick={() => void loadItems()}
               className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
             >
               Refresh
@@ -897,8 +909,11 @@ export function TranscriptionClient() {
           ) : (
             <div className="mt-6 space-y-4">
               {sortedItems.map((item) => {
+                const isProcessing =
+                  processingIds[item.id] || item.status === "processing";
                 const canProcess =
-                  item.status === "uploaded" || item.status === "done";
+                  !isProcessing &&
+                  (item.status === "uploaded" || item.status === "done");
 
                 return (
                   <div
@@ -946,9 +961,13 @@ export function TranscriptionClient() {
                           type="button"
                           onClick={() => handleProcess(item.id, item.template)}
                           disabled={!canProcess}
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                          className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-bold active:scale-95 ${
+                            isProcessing
+                              ? "border-sky-200 bg-sky-50 text-sky-700 shadow-[0_10px_24px_-20px_rgba(14,165,233,0.9)]"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700"
+                          } disabled:cursor-not-allowed disabled:opacity-50`}
                         >
-                          Process
+                          {isProcessing ? "Processing..." : "Process"}
                         </button>
 
                         {item.transcript && (
