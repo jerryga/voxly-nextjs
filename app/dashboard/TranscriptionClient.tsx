@@ -683,7 +683,7 @@ export function TranscriptionClient() {
                 <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Formats
                 </p>
-                <p className="mt-1 text-sm font-semibold text-slate-950">
+                <p className="mt-1 text-xs text-slate-950">
                   MP3, M4A, WAV
                 </p>
               </div>
@@ -691,7 +691,7 @@ export function TranscriptionClient() {
                 <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Upload Limit
                 </p>
-                <p className="mt-1 text-sm font-semibold text-slate-950">
+                <p className="mt-1 text-xs text-slate-950">
                   500MB max
                 </p>
               </div>
@@ -699,7 +699,7 @@ export function TranscriptionClient() {
                 <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Processing
                 </p>
-                <p className="mt-1 text-sm font-semibold text-slate-950">
+                <p className="mt-1 text-xs text-slate-950">
                   Background safe
                 </p>
               </div>
@@ -738,7 +738,10 @@ export function TranscriptionClient() {
                 <p className="mt-1 text-sm text-slate-600">
                   Select the recording you want to process.
                 </p>
-                <div className="mt-4 rounded-[18px] border border-dashed border-[#e6dccf] bg-[linear-gradient(180deg,#fbf8f2_0%,#fffdf9_100%)] p-4 transition-all duration-200 hover:border-[#d7cab7] hover:bg-[#f8f3eb]">
+                <label
+                  htmlFor={fileInputId}
+                  className="mt-4 block cursor-pointer rounded-[18px] border border-dashed border-[#e6dccf] bg-[linear-gradient(180deg,#fbf8f2_0%,#fffdf9_100%)] p-4 transition-all duration-200 hover:border-[#d7cab7] hover:bg-[#f8f3eb]"
+                >
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-start gap-3 text-left">
                       <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90">
@@ -765,12 +768,11 @@ export function TranscriptionClient() {
                         </p>
                       </div>
                     </div>
-                    <label
-                      htmlFor={fileInputId}
-                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95"
+                    <span
+                      className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-center text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95"
                     >
                       Choose File
-                    </label>
+                    </span>
                   </div>
                   {file ? (
                     <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4 text-left">
@@ -801,7 +803,7 @@ export function TranscriptionClient() {
                       No file selected yet.
                     </p>
                   )}
-                </div>
+                </label>
                 {isDev && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
