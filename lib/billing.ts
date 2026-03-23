@@ -670,69 +670,103 @@ export async function redeemPromotionCode({
     );
   }
 
-  const existingRedemption = await prisma.promotionRedemption.findUnique({
-    where: {
-      promotionId_userId: {
-        promotionId: promotion.id,
-        userId,
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Promotion" WHERE "id" = ${promotion.id} FOR UPDATE`;
+
+    const lockedPromotion = await tx.promotion.findUnique({
+      where: { id: promotion.id },
+      include: {
+        _count: {
+          select: { redemptions: true },
+        },
       },
-    },
-    select: { id: true },
-  });
+    });
 
-  if (existingRedemption) {
-    throw createBillingError("You have already used this promotion code.", 409);
-  }
+    if (!lockedPromotion || lockedPromotion.status !== "active") {
+      throw createBillingError("This promotion code is not valid.", 404);
+    }
 
-  const currentSubscription = await prisma.subscription.upsert({
-    where: { userId },
-    update: {},
-    create: { userId },
-  });
+    if (lockedPromotion.startsAt > now) {
+      throw createBillingError("This promotion code is not active yet.");
+    }
 
-  const nextTopUpRemaining =
-    currentSubscription.topUpCreditsRemaining + promotion.creditsAmount;
-  const aggregates = calculateAggregateCredits({
-    monthlyCreditsRemaining: currentSubscription.monthlyCreditsRemaining,
-    monthlyCreditsTotal: currentSubscription.monthlyCreditsTotal,
-    topUpCreditsRemaining: nextTopUpRemaining,
-  });
+    if (lockedPromotion.endsAt < now) {
+      throw createBillingError("This promotion code has expired.");
+    }
 
-  await prisma.$transaction([
-    prisma.subscription.update({
+    if (
+      typeof lockedPromotion.maxRedemptions === "number" &&
+      lockedPromotion._count.redemptions >= lockedPromotion.maxRedemptions
+    ) {
+      throw createBillingError(
+        "This promotion code has reached its redemption limit.",
+      );
+    }
+
+    const existingRedemption = await tx.promotionRedemption.findUnique({
+      where: {
+        promotionId_userId: {
+          promotionId: lockedPromotion.id,
+          userId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existingRedemption) {
+      throw createBillingError("You have already used this promotion code.", 409);
+    }
+
+    const currentSubscription = await tx.subscription.upsert({
+      where: { userId },
+      update: {},
+      create: { userId },
+    });
+
+    const nextTopUpRemaining =
+      currentSubscription.topUpCreditsRemaining + lockedPromotion.creditsAmount;
+    const aggregates = calculateAggregateCredits({
+      monthlyCreditsRemaining: currentSubscription.monthlyCreditsRemaining,
+      monthlyCreditsTotal: currentSubscription.monthlyCreditsTotal,
+      topUpCreditsRemaining: nextTopUpRemaining,
+    });
+
+    await tx.subscription.update({
       where: { userId },
       data: {
         topUpCreditsRemaining: nextTopUpRemaining,
         creditsRemaining: aggregates.creditsRemaining,
         creditsTotal: aggregates.creditsTotal,
       },
-    }),
-    prisma.creditTransaction.create({
+    });
+
+    await tx.creditTransaction.create({
       data: {
         userId,
         type: "promo_credit",
-        amount: promotion.creditsAmount,
+        amount: lockedPromotion.creditsAmount,
         balanceAfter: aggregates.creditsRemaining,
         monthlyAfter: currentSubscription.monthlyCreditsRemaining,
         topUpAfter: nextTopUpRemaining,
-        note: `Promotion code ${promotion.code} redeemed`,
+        note: `Promotion code ${lockedPromotion.code} redeemed`,
       },
-    }),
-    prisma.promotionRedemption.create({
+    });
+
+    await tx.promotionRedemption.create({
       data: {
-        promotionId: promotion.id,
+        promotionId: lockedPromotion.id,
         userId,
-        creditsGranted: promotion.creditsAmount,
+        creditsGranted: lockedPromotion.creditsAmount,
         ipHash: ipHash || null,
         userAgentHash: userAgentHash || null,
       },
-    }),
-  ]);
+    });
 
-  return {
-    code: promotion.code,
-    creditsGranted: promotion.creditsAmount,
-  };
+    return {
+      code: lockedPromotion.code,
+      creditsGranted: lockedPromotion.creditsAmount,
+    };
+  });
 }
 
 export async function ensureCreditsAvailableForExpectedProcessing(
