@@ -140,7 +140,6 @@ After the AWS target database is ready, update Voxly configuration so the app po
 At minimum:
 
 - `DATABASE_URL`
-- `DIRECT_URL`
 
 Also confirm:
 
@@ -154,6 +153,7 @@ Also confirm:
 Important:
 
 - point the deployed app to the AWS target DB only after validation is complete
+- if you later need a dedicated migration-only connection, handle that separately from the app runtime connection
 
 ## 8. Step 6: Prisma Migration and App Readiness
 

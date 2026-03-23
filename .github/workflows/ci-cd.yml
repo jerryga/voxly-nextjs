@@ -19,7 +19,6 @@ env:
   CI: true
   NODE_VERSION: "22"
   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/voxly
-  DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/voxly
   NEXTAUTH_URL: https://example.com
   NEXTAUTH_SECRET: ci-placeholder-secret
   AWS_REGION: ${{ vars.AWS_REGION || 'ca-central-1' }}

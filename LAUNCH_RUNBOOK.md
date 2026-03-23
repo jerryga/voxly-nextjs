@@ -28,7 +28,6 @@ Set the required application environment variables in Elastic Beanstalk:
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
 - `DATABASE_URL`
-- `DIRECT_URL`
 - `OPENAI_API_KEY`
 - `DEEPGRAM_API_KEY`
 - `STRIPE_SECRET_KEY`
@@ -42,6 +41,11 @@ Set the required application environment variables in Elastic Beanstalk:
 - `EMAIL_FROM`
 - `ADMIN_EMAILS`
 - S3 variables used by [lib/storage/s3.js](/Users/chason/Documents/GitHub/voxly-nextjs/lib/storage/s3.js)
+
+For the current Beanstalk + Supabase deployment:
+
+- set `DATABASE_URL` to the Supabase session pooler connection on port `5432`
+- a separate `DIRECT_URL` is not required
 
 Confirm:
 

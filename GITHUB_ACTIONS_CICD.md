@@ -141,7 +141,6 @@ AWS_ROLE_TO_ASSUME=arn:aws:iam::<AWS_ACCOUNT_ID>:role/<YOUR_GITHUB_ACTIONS_DEPLO
 The workflow intentionally uses placeholder values for:
 
 - `DATABASE_URL`
-- `DIRECT_URL`
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
 

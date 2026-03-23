@@ -127,7 +127,6 @@ Recommendation:
 All required runtime secrets and config must be defined in the target environment:
 
 - `DATABASE_URL`
-- `DIRECT_URL`
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
 - `OPENAI_API_KEY`
@@ -143,6 +142,11 @@ All required runtime secrets and config must be defined in the target environmen
 - `EMAIL_FROM`
 - `ADMIN_EMAILS`
 - S3-related variables used by [lib/storage/s3.js](/Users/chason/Documents/GitHub/voxly-nextjs/lib/storage/s3.js)
+
+For the current Beanstalk + Supabase rollout:
+
+- `DATABASE_URL` should use the Supabase session pooler connection on port `5432`
+- `DIRECT_URL` is no longer required by the deployed app
 
 ### Secrets handling
 
