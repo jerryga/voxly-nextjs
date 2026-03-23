@@ -20,6 +20,7 @@ model User {
   accounts       Account[]
   sessions       Session[]
   transcriptions Transcription[]
+  assistantMessages AssistantMessage[]
   subscription   Subscription?
   creditTransactions CreditTransaction[]
   promoRedemptions PromotionRedemption[]
@@ -71,10 +72,25 @@ model Transcription {
   actionItems Json?
   transcript String? @db.Text
   duration   Int?
+  assistantMessages AssistantMessage[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([userId, createdAt])
   @@index([status])
+}
+
+model AssistantMessage {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcriptionId String
+  transcription   Transcription @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  role            String
+  content         String        @db.Text
+  createdAt       DateTime      @default(now())
+
+  @@index([userId, transcriptionId, createdAt])
+  @@index([transcriptionId, createdAt])
 }
 
 model Subscription {

@@ -31,6 +31,18 @@ type ApiResponse = {
   error?: string;
 };
 
+type AssistantMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+const defaultAssistantMessages: AssistantMessage[] = [
+  {
+    role: "assistant",
+    content: "Hi! I can edit these notes or answer questions about them.",
+  },
+];
+
 export function TranscriptionClient() {
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -59,6 +71,8 @@ export function TranscriptionClient() {
   const [assistantPrompt, setAssistantPrompt] = useState("");
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantRefreshing, setAssistantRefreshing] = useState(false);
+  const [assistantHistoryLoading, setAssistantHistoryLoading] = useState(false);
   const [billing, setBilling] = useState<BillingInfo | null>(null);
   const [billingLoading, setBillingLoading] = useState(true);
   const [assistantSummary, setAssistantSummary] = useState<{
@@ -67,14 +81,8 @@ export function TranscriptionClient() {
     nextSteps?: string[];
     actionItems?: ActionItem[];
   } | null>(null);
-  const [assistantMessages, setAssistantMessages] = useState<
-    { role: "user" | "assistant"; content: string }[]
-  >([
-    {
-      role: "assistant",
-      content: "Hi! I can edit these notes or answer questions about them.",
-    },
-  ]);
+  const [assistantMessages, setAssistantMessages] =
+    useState<AssistantMessage[]>(defaultAssistantMessages);
 
   const templates = [
     { id: "default", label: "Default Template (Default)" },
@@ -103,6 +111,7 @@ export function TranscriptionClient() {
     return sortedItems.find((item) => item.id === focusedSummaryId) || latestSummary;
   }, [focusedSummaryId, latestSummary, sortedItems]);
   const displaySummary = assistantSummary || focusedSummary;
+  const activeTranscriptionId = focusedSummary?.id || null;
   const estimatedCredits =
     estimatedDurationSeconds && estimatedDurationSeconds > 0
       ? Math.max(1, Math.ceil(estimatedDurationSeconds / 60))
@@ -208,6 +217,49 @@ export function TranscriptionClient() {
       block: "start",
     });
   }, [focusedSummary, focusedSummaryId]);
+
+  async function loadAssistantMessages(transcriptionId: string) {
+    setAssistantHistoryLoading(true);
+    setAssistantError(null);
+
+    try {
+      const res = await fetch(
+        `/api/assistant/chat?transcriptionId=${encodeURIComponent(transcriptionId)}`,
+      );
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to load assistant history");
+      }
+
+      const nextMessages = Array.isArray(payload?.messages)
+        ? (payload.messages as AssistantMessage[])
+        : [];
+      setAssistantMessages(
+        nextMessages.length
+          ? [...defaultAssistantMessages, ...nextMessages]
+          : defaultAssistantMessages,
+      );
+    } catch (err) {
+      setAssistantMessages(defaultAssistantMessages);
+      setAssistantError(
+        err instanceof Error ? err.message : "Failed to load assistant history.",
+      );
+    } finally {
+      setAssistantHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setAssistantSummary(null);
+    setAssistantError(null);
+
+    if (!activeTranscriptionId) {
+      setAssistantMessages(defaultAssistantMessages);
+      return;
+    }
+
+    void loadAssistantMessages(activeTranscriptionId);
+  }, [activeTranscriptionId]);
 
   async function pollForProcessedResult(id: string) {
     for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -368,10 +420,42 @@ export function TranscriptionClient() {
     }));
   }
 
+  async function handleRefreshNotes() {
+    setAssistantRefreshing(true);
+    setAssistantError(null);
+
+    try {
+      const nextItems = await loadItems({ showLoading: false });
+      setAssistantSummary(null);
+
+      const nextFocusedSummary =
+        (focusedSummaryId
+          ? nextItems?.find((item) => item.id === focusedSummaryId) || null
+          : null) ||
+        nextItems?.find((item) => item.status === "done") ||
+        null;
+
+      if (!nextFocusedSummary) {
+        setAssistantError("No saved notes are available to refresh yet.");
+        return;
+      }
+
+      setFocusedSummaryId(nextFocusedSummary.id);
+      await loadAssistantMessages(nextFocusedSummary.id);
+    } catch (err) {
+      setAssistantError(
+        err instanceof Error ? err.message : "Failed to refresh notes.",
+      );
+    } finally {
+      setAssistantRefreshing(false);
+    }
+  }
+
   async function handleAssistantSubmit(promptText?: string) {
     const text = (promptText ?? assistantPrompt).trim();
+    const activeSummary = focusedSummary;
     if (!text) return;
-    if (!latestSummary) {
+    if (!activeSummary) {
       setAssistantError("No summary available yet.");
       return;
     }
@@ -385,10 +469,10 @@ export function TranscriptionClient() {
     setAssistantMessages(nextMessages);
     try {
       const summaryPayload = {
-        decisions: latestSummary.decisions || [],
-        keyPoints: latestSummary.keyPoints || [],
-        nextSteps: latestSummary.nextSteps || [],
-        actionItems: latestSummary.actionItems || [],
+        decisions: activeSummary.decisions || [],
+        keyPoints: activeSummary.keyPoints || [],
+        nextSteps: activeSummary.nextSteps || [],
+        actionItems: activeSummary.actionItems || [],
       };
 
       const [editResp, chatResp] = await Promise.all([
@@ -404,6 +488,7 @@ export function TranscriptionClient() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            transcriptionId: activeSummary.id,
             messages: nextMessages,
             summary: summaryPayload,
           }),
@@ -422,10 +507,10 @@ export function TranscriptionClient() {
 
       const updatedSummary = editResp.data?.summary || null;
       setAssistantSummary(updatedSummary);
-      if (updatedSummary && latestSummary?.id) {
+      if (updatedSummary && activeSummary?.id) {
         setItems((prev) =>
           prev.map((item) =>
-            item.id === latestSummary.id
+            item.id === activeSummary.id
               ? {
                   ...item,
                   decisions: updatedSummary.decisions || [],
@@ -577,155 +662,250 @@ export function TranscriptionClient() {
         </section>
         <section
           id="upload"
-          className="rounded-[30px] border border-white/80 bg-white/88 p-10 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]"
+          className="rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] sm:p-7"
         >
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-700">
-              Upload
-            </p>
-            <h2 className="text-3xl font-semibold tracking-tight text-slate-950">
-              What would you like to voxly?
-            </h2>
-            <p className="text-base leading-7 text-slate-600">
-              Upload your meeting recordings to get started.
-            </p>
-          </div>
-          <div className="mt-6 flex justify-center">
-            <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-[#fcfbf8] px-5 py-2.5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.25)]">
-              <span className="text-sm font-semibold text-slate-700">
-                Template:
-              </span>
-              <select
-                value={uploadTemplate}
-                onChange={(e) => setUploadTemplate(e.target.value)}
-                className="cursor-pointer bg-transparent text-sm font-medium text-slate-900 outline-none"
-              >
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Upload
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-[2rem]">
+                Drop in a recording and let Voxly shape it.
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Choose a notes template, upload your file, and Voxly will turn
+                the recording into a transcript, summary, and action-ready
+                output.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="min-w-0 rounded-[18px] border border-slate-200 bg-[#fffaf3] px-3 py-3">
+                <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Formats
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">
+                  MP3, M4A, WAV
+                </p>
+              </div>
+              <div className="min-w-0 rounded-[18px] border border-slate-200 bg-[#fffaf3] px-3 py-3">
+                <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Upload Limit
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">
+                  500MB max
+                </p>
+              </div>
+              <div className="min-w-0 rounded-[18px] border border-slate-200 bg-[#fffaf3] px-3 py-3">
+                <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Processing
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">
+                  Background safe
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="mt-8 rounded-[28px] border border-dashed border-[#dfd7cb] bg-[#f8f5ef] px-8 py-12 text-center transition-all duration-200 hover:border-[#cfc2af] hover:bg-[#f5f1ea]">
-            <div className="mx-auto max-w-sm">
-              <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#f97316] shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)]">
-                <svg
-                  className="h-8 w-8 text-white"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                  />
-                </svg>
+          <input
+            id={fileInputId}
+            ref={fileInputRef}
+            type="file"
+            accept="audio/*"
+            onChange={(e) => {
+              const nextFile = e.target.files?.[0] || null;
+              setFile(nextFile);
+              setEstimatedDurationSeconds(null);
+              if (nextFile) {
+                void readMediaDuration(nextFile);
+              }
+            }}
+            className="hidden"
+          />
+
+          <div className="relative mt-5 space-y-4">
+            <div className="pointer-events-none absolute bottom-8 left-8 top-8 w-px bg-[linear-gradient(180deg,rgba(148,163,184,0.28)_0%,rgba(148,163,184,0.55)_20%,rgba(148,163,184,0.55)_80%,rgba(148,163,184,0.18)_100%)]" />
+            <div className="relative rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-4 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.18)]">
+              <div className="absolute left-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border-4 border-[#f5efe6] bg-slate-950 text-xs font-bold text-white shadow-[0_8px_18px_-12px_rgba(15,23,42,0.45)]">
+                1
               </div>
-              <h3 className="text-xl font-bold text-slate-900">
-                Upload audio or video
-              </h3>
-              <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                Drag and drop your files here, or click to browse.
-              </p>
-              <p className="mt-2 text-xs text-slate-500 font-medium">
-                Supports MP3, M4A, WAV (up to 500MB)
-              </p>
-            </div>
-            <input
-              id={fileInputId}
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*"
-              onChange={(e) => {
-                const nextFile = e.target.files?.[0] || null;
-                setFile(nextFile);
-                setEstimatedDurationSeconds(null);
-                if (nextFile) {
-                  void readMediaDuration(nextFile);
-                }
-              }}
-              className="hidden"
-            />
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <label
-                htmlFor={fileInputId}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 hover:shadow-md active:scale-95"
-              >
-                Select Files
-              </label>
-              {isDev && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-                    onClick={handleLoadTestData}
-                    disabled={testDataLoading}
-                  >
-                    {testDataLoading ? "Loading..." : "Train"}
-                  </button>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                    Dev only
-                  </span>
+              <div className="pl-12">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Step 1
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                  Choose File
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Select the recording you want to process.
+                </p>
+                <div className="mt-4 rounded-[18px] border border-dashed border-[#e6dccf] bg-[linear-gradient(180deg,#fbf8f2_0%,#fffdf9_100%)] p-4 transition-all duration-200 hover:border-[#d7cab7] hover:bg-[#f8f3eb]">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-3 text-left">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90">
+                        <svg
+                          className="h-5 w-5 text-orange-600"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v8"
+                          />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">
+                          Select an audio file
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          MP3, M4A, WAV up to 500MB
+                        </p>
+                      </div>
+                    </div>
+                    <label
+                      htmlFor={fileInputId}
+                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95"
+                    >
+                      Choose File
+                    </label>
+                  </div>
+                  {file ? (
+                    <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4 text-left">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Selected file
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-950">
+                        {file.name}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1.5 font-medium text-slate-600">
+                          {(file.size / (1024 * 1024)).toFixed(1)} MB
+                        </span>
+                        {estimatedDurationSeconds ? (
+                          <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 font-medium text-orange-700">
+                            ~{Math.ceil(estimatedDurationSeconds / 60)} credits
+                          </span>
+                        ) : null}
+                      </div>
+                      {estimatedDurationSeconds ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Estimated duration: {Math.round(estimatedDurationSeconds)} seconds
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-500">
+                      No file selected yet.
+                    </p>
+                  )}
                 </div>
-              )}
-            </div>
-            {testDataStatus && (
-              <p className="mt-4 text-sm font-medium text-emerald-600">
-                {testDataStatus}
-              </p>
-            )}
-            <form
-              onSubmit={handleUpload}
-              className="mt-6 flex flex-col items-center gap-3"
-            >
-              <button
-                type="submit"
-                disabled={
-                  !file || uploading || durationLoading || !hasEnoughEstimatedCredits
-                }
-                className="cursor-pointer rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 disabled:active:scale-100"
-              >
-                {uploading
-                  ? "Starting Voxly..."
-                  : durationLoading
-                    ? "Reading duration..."
-                    : "Start Voxly"}
-              </button>
-              {file && (
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <span className="rounded-full bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
-                    {file.name}
-                  </span>
-                  {estimatedDurationSeconds ? (
-                    <span className="rounded-full border border-orange-200 bg-orange-50 px-4 py-1.5 text-sm font-medium text-orange-700 shadow-sm">
-                      ~{Math.ceil(estimatedDurationSeconds / 60)} credits
+                {isDev && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+                      onClick={handleLoadTestData}
+                      disabled={testDataLoading}
+                    >
+                      {testDataLoading ? "Loading..." : "Train"}
+                    </button>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                      Dev only
                     </span>
+                  </div>
+                )}
+                {testDataStatus && (
+                  <p className="mt-3 text-sm font-medium text-emerald-600">
+                    {testDataStatus}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="relative rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-4 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.18)]">
+              <div className="absolute left-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border-4 border-[#f5efe6] bg-slate-950 text-xs font-bold text-white shadow-[0_8px_18px_-12px_rgba(15,23,42,0.45)]">
+                2
+              </div>
+              <div className="pl-12">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Step 2
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                  Choose Template
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Pick the note style Voxly should use for this recording.
+                </p>
+                <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Notes style
+                </label>
+                <select
+                  value={uploadTemplate}
+                  onChange={(e) => setUploadTemplate(e.target.value)}
+                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                >
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="relative rounded-[24px] border border-orange-200 bg-[linear-gradient(180deg,#fff7ef_0%,#fffdf9_100%)] p-4 shadow-[0_14px_34px_-24px_rgba(249,115,22,0.18)]">
+              <div className="absolute left-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border-4 border-[#fff3e8] bg-[#f97316] text-xs font-bold text-white shadow-[0_8px_18px_-12px_rgba(249,115,22,0.55)]">
+                3
+              </div>
+              <div className="pl-12">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700">
+                  Step 3
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                  Start Voxly
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Kick off the upload and let Voxly process the recording.
+                </p>
+                <form
+                  onSubmit={handleUpload}
+                  className="mt-4 flex flex-col items-start gap-3"
+                >
+                  <button
+                    type="submit"
+                    disabled={
+                      !file || uploading || durationLoading || !hasEnoughEstimatedCredits
+                    }
+                    className="cursor-pointer rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_18px_34px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:bg-[#fdc9a8] disabled:text-white/90 disabled:opacity-100 active:scale-95 disabled:active:scale-100"
+                  >
+                    {uploading
+                      ? "Starting Voxly..."
+                      : durationLoading
+                        ? "Reading duration..."
+                        : "Start Voxly"}
+                  </button>
+                  {!file ? (
+                    <p className="text-xs text-slate-500">
+                      Choose a file in Step 2 to enable Start Voxly.
+                    </p>
                   ) : null}
-                </div>
-              )}
-              {estimatedDurationSeconds ? (
-                <p className="text-xs text-slate-500">
-                  Estimated duration:{" "}
-                  {Math.round(estimatedDurationSeconds)} seconds
-                </p>
-              ) : null}
-              <p className="text-xs text-slate-500">
-                Once the upload finishes, Voxly can keep processing in the
-                background even if you leave this page.
-              </p>
-              {!hasEnoughEstimatedCredits && estimatedCredits ? (
-                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  This file is estimated to require {estimatedCredits} credits,
-                  but your account currently has only{" "}
-                  {billing?.creditsRemaining ?? 0} remaining.
-                </p>
-              ) : null}
-            </form>
+                  <p className="text-xs text-slate-500">
+                    Once the upload finishes, Voxly can keep processing in the
+                    background even if you leave this page.
+                  </p>
+                  {!hasEnoughEstimatedCredits && estimatedCredits ? (
+                    <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      This file is estimated to require {estimatedCredits} credits,
+                      but your account currently has only{" "}
+                      {billing?.creditsRemaining ?? 0} remaining.
+                    </p>
+                  ) : null}
+                </form>
+              </div>
+            </div>
           </div>
 
           {error && (
@@ -1018,7 +1198,7 @@ export function TranscriptionClient() {
 
       <aside
         id="assistant"
-        className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] self-start"
+        className="self-start lg:sticky lg:top-24 lg:h-[calc(100vh-7rem)]"
       >
         <section className="flex h-full flex-col rounded-[30px] border border-white/80 bg-white/88 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]">
           <div className="flex items-start justify-between border-b border-slate-200 pb-5">
@@ -1032,9 +1212,13 @@ export function TranscriptionClient() {
             </div>
             <button
               type="button"
-              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95"
+              onClick={() => void handleRefreshNotes()}
+              disabled={assistantRefreshing || assistantHistoryLoading}
+              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Refresh notes
+              {assistantRefreshing || assistantHistoryLoading
+                ? "Refreshing..."
+                : "Refresh notes"}
             </button>
           </div>
 
@@ -1141,6 +1325,7 @@ export function TranscriptionClient() {
                 placeholder="Ask me to edit your notes..."
                 ref={assistantInputRef}
                 value={assistantPrompt}
+                disabled={assistantBusy}
                 onChange={(event) => setAssistantPrompt(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -1148,7 +1333,7 @@ export function TranscriptionClient() {
                     handleAssistantSubmit();
                   }
                 }}
-                className="flex-1 rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                className="flex-1 rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <button
                 type="button"
@@ -1162,6 +1347,9 @@ export function TranscriptionClient() {
             {assistantError && (
               <p className="text-xs text-red-600">{assistantError}</p>
             )}
+            {assistantHistoryLoading ? (
+              <p className="text-xs text-slate-500">Loading notes history...</p>
+            ) : null}
             <p className="text-xs leading-relaxed text-slate-500">
               Ready to help. Choose a suggestion or type your own request.
             </p>
