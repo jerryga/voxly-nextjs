@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import logo from "@/logo.png";
 
 export function BrandLink({
   href,
@@ -12,9 +11,11 @@ export function BrandLink({
   return (
     <Link href={href} className="inline-flex items-center gap-3">
       <Image
-        src={logo}
+        src="/logo.png"
         alt="Voxly logo"
         className="h-10 w-10 object-contain"
+        width={40}
+        height={40}
         priority
       />
       <span>
