@@ -5,6 +5,7 @@ This guide describes a practical deployment strategy for running Voxly on `AWS E
 For deployment day, use the companion runbook:
 
 - [Launch runbook](/Users/chason/Documents/GitHub/voxly-nextjs/LAUNCH_RUNBOOK.md)
+- [GitHub Actions CI/CD guide](/Users/chason/Documents/GitHub/voxly-nextjs/GITHUB_ACTIONS_CICD.md)
 
 It is written for the current Voxly codebase:
 
@@ -22,9 +23,7 @@ Recommended first production path:
 1. provision infrastructure with Terraform
 2. create an Elastic Beanstalk Node.js environment
 3. provide Voxly environment variables through Elastic Beanstalk configuration
-4. build and run the app with:
-   - `npm run build`
-   - `npm run start`
+4. package the app as a standalone Next.js artifact for Beanstalk
 5. run Prisma migrations as a controlled deployment step
 6. verify DNS, HTTPS, Stripe webhooks, and email verification links
 
@@ -39,14 +38,22 @@ Current scripts in [package.json](/Users/chason/Documents/GitHub/voxly-nextjs/pa
 
 - `npm run build` -> `next build`
 - `npm run start` -> `next start`
+- `npm run package:beanstalk` -> builds a standalone artifact and writes `.dist/voxly-beanstalk.zip`
 
-That is already the correct application runtime shape for Elastic Beanstalk.
+For Beanstalk, the recommended deploy artifact is the standalone bundle rather than the full repository zip.
 
 Recommended runtime behavior:
 
-- install dependencies
-- run `npm run build`
-- run `npm run start`
+- build once locally or in CI
+- upload `.dist/voxly-beanstalk.zip`
+- let Beanstalk run the included `Procfile`
+
+This is safer for Voxly because it:
+
+- ships `/_next/static` alongside the server bundle
+- avoids large on-instance installs
+- reduces memory pressure during deployment
+- behaves more predictably than uploading the whole repo
 
 ## 3. Required Environment Variables
 
@@ -183,6 +190,32 @@ Recommended rollout:
 4. verify Stripe webhook delivery to the Cloudflare subdomain
 5. verify email verification links use the same domain
 6. only then decide whether to turn Cloudflare proxying on
+
+## 7. ACM With Cloudflare
+
+For a Cloudflare-managed domain, use ACM in two passes:
+
+1. set `create_acm_certificate = true`
+2. keep `beanstalk_https_certificate_arn = ""`
+3. apply Terraform to request the certificate
+4. read the `acm_domain_validation_records` output
+5. add those CNAME records in Cloudflare
+6. wait until ACM shows the certificate as `Issued`
+7. set `beanstalk_https_certificate_arn` to the issued certificate ARN
+8. apply Terraform again to enable the HTTPS listener on Beanstalk
+
+This avoids Terraform hanging while waiting for Route 53 validation that does not exist in a Cloudflare DNS setup.
+
+For Elastic Beanstalk with an Application Load Balancer, the HTTPS listener must explicitly use:
+
+- `aws:elbv2:listener:443`
+- `ListenerEnabled = true`
+- `Protocol = HTTPS`
+- `SSLCertificateArns = <issued ACM ARN>`
+
+AWS reference:
+
+- [Configuring HTTPS termination at the load balancer](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/configuring-https-elb.html)
 
 One practical note:
 

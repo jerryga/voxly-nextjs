@@ -56,6 +56,7 @@ For this project specifically, see:
 
 - [AWS readiness checklist](/Users/chason/Documents/GitHub/voxly-nextjs/AWS_READINESS_CHECKLIST.md)
 - [Elastic Beanstalk deployment guide](/Users/chason/Documents/GitHub/voxly-nextjs/ELASTIC_BEANSTALK_DEPLOYMENT.md)
+- [GitHub Actions CI/CD guide](/Users/chason/Documents/GitHub/voxly-nextjs/GITHUB_ACTIONS_CICD.md)
 - [Migration runbook](/Users/chason/Documents/GitHub/voxly-nextjs/MIGRATION_RUNBOOK.md)
 - [Launch runbook](/Users/chason/Documents/GitHub/voxly-nextjs/LAUNCH_RUNBOOK.md)
 - [Terraform starter](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/README.md)

@@ -58,6 +58,8 @@ If `create_beanstalk_iam_roles = true`, Terraform will create:
 - the EC2 instance profile
 - a bucket access policy for the uploads bucket
 
+By default, this starter does not attach the optional managed-updates policy. That keeps the first rollout simpler and avoids a common IAM policy lookup failure in some accounts. If you later want managed updates, set `attach_beanstalk_managed_updates_policy = true`.
+
 If `create_beanstalk_iam_roles = false`, this starter expects the following to already exist:
 
 - `elastic_beanstalk_service_role_arn`
@@ -106,5 +108,6 @@ terraform apply
 - The generated network uses a single NAT gateway to keep the starter simpler and cheaper. A stronger production setup may use one NAT gateway per availability zone.
 - RDS and Redis now allow traffic from the Voxly application instance security group. `allowed_app_cidr_blocks` remains available only as an optional fallback or temporary bridge.
 - The Route 53 pieces are optional. If your domain is hosted on Cloudflare, keep Cloudflare as public DNS and point your app subdomain at the Beanstalk environment CNAME.
-- ACM is still useful for the AWS-side certificate when enabling HTTPS on Beanstalk.
+- For a Cloudflare-based first deploy, keep `create_acm_certificate = false` until the Beanstalk environment and Cloudflare `CNAME` are working. Then add ACM as a second pass if you want AWS-side HTTPS on the load balancer.
+- `t3.micro` is usually too tight for a Next.js + Prisma Beanstalk deployment because the platform still runs `npm install` on the instance. Start with at least `t3.small` for the first working deploy.
 - If you later move from Elastic Beanstalk to ECS or App Runner, this folder is still a useful base for variables, tags, and shared AWS resources.

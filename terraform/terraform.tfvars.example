@@ -7,6 +7,7 @@ elastic_beanstalk_application_name = "voxly"
 elastic_beanstalk_environment_name = "voxly-staging"
 
 create_beanstalk_iam_roles         = true
+attach_beanstalk_managed_updates_policy = false
 elastic_beanstalk_service_role_arn     = "arn:aws:iam::123456789012:role/aws-elasticbeanstalk-service-role"
 elastic_beanstalk_ec2_instance_profile = "aws-elasticbeanstalk-ec2-role"
 instance_type                          = "t3.small"
@@ -57,7 +58,8 @@ elasticache_serverless_name = "voxly-staging-redis"
 create_dns             = false
 route53_zone_name      = ""
 app_domain_name        = "staging.example.com"
-create_acm_certificate = true
+create_acm_certificate = false
+beanstalk_https_certificate_arn = ""
 
 app_environment = {
   NEXTAUTH_URL                 = "https://staging.example.com"

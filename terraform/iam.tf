@@ -37,10 +37,10 @@ resource "aws_iam_role_policy_attachment" "beanstalk_service_enhanced_health" {
 }
 
 resource "aws_iam_role_policy_attachment" "beanstalk_service_managed_updates" {
-  count = var.create_beanstalk_iam_roles ? 1 : 0
+  count = var.create_beanstalk_iam_roles && var.attach_beanstalk_managed_updates_policy ? 1 : 0
 
   role       = aws_iam_role.beanstalk_service[0].name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy"
+  policy_arn = "arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy"
 }
 
 resource "aws_iam_role" "beanstalk_ec2" {

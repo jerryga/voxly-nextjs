@@ -65,5 +65,17 @@ output "redis_endpoint" {
 
 output "acm_certificate_arn" {
   description = "ACM certificate ARN when enabled."
-  value       = var.create_acm_certificate && length(aws_acm_certificate_validation.app) > 0 ? aws_acm_certificate_validation.app[0].certificate_arn : null
+  value       = var.create_acm_certificate ? aws_acm_certificate.app[0].arn : null
+}
+
+output "acm_domain_validation_records" {
+  description = "DNS validation records to add in Cloudflare or another DNS provider when ACM is enabled."
+  value = var.create_acm_certificate ? [
+    for dvo in aws_acm_certificate.app[0].domain_validation_options : {
+      domain_name = dvo.domain_name
+      name        = dvo.resource_record_name
+      type        = dvo.resource_record_type
+      value       = dvo.resource_record_value
+    }
+  ] : []
 }

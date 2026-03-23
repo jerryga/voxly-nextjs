@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
+    "package:beanstalk": "bash ./scripts/package-beanstalk.sh",
     "lint": "eslint"
   },
   "dependencies": {

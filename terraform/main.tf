@@ -13,6 +13,7 @@ locals {
   resolved_private_subnet_ids = var.create_network ? aws_subnet.private[*].id : var.private_subnet_ids
   resolved_beanstalk_service_role_arn = var.create_beanstalk_iam_roles ? aws_iam_role.beanstalk_service[0].arn : var.elastic_beanstalk_service_role_arn
   resolved_beanstalk_instance_profile = var.create_beanstalk_iam_roles ? aws_iam_instance_profile.beanstalk_ec2[0].name : var.elastic_beanstalk_ec2_instance_profile
+  has_beanstalk_https_certificate = trimspace(var.beanstalk_https_certificate_arn) != ""
   use_private_subnets         = length(local.resolved_private_subnet_ids) > 0
   use_public_subnets          = length(local.resolved_public_subnet_ids) > 0
   create_zone_lookup          = var.create_dns || var.create_acm_certificate
@@ -97,7 +98,7 @@ resource "aws_s3_bucket_versioning" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
   versioning_configuration {
-    status = "Enabled"
+    status = "Disabled"
   }
 }
 
@@ -374,7 +375,7 @@ resource "aws_elastic_beanstalk_environment" "voxly" {
   }
 
   dynamic "setting" {
-    for_each = var.create_acm_certificate && length(aws_acm_certificate_validation.app) > 0 ? [1] : []
+    for_each = local.has_beanstalk_https_certificate ? [1] : []
 
     content {
       namespace = "aws:elbv2:listener:443"
@@ -384,12 +385,22 @@ resource "aws_elastic_beanstalk_environment" "voxly" {
   }
 
   dynamic "setting" {
-    for_each = var.create_acm_certificate && length(aws_acm_certificate_validation.app) > 0 ? [1] : []
+    for_each = local.has_beanstalk_https_certificate ? [1] : []
+
+    content {
+      namespace = "aws:elbv2:listener:443"
+      name      = "Protocol"
+      value     = "HTTPS"
+    }
+  }
+
+  dynamic "setting" {
+    for_each = local.has_beanstalk_https_certificate ? [1] : []
 
     content {
       namespace = "aws:elbv2:listener:443"
       name      = "SSLCertificateArns"
-      value     = aws_acm_certificate_validation.app[0].certificate_arn
+      value     = var.beanstalk_https_certificate_arn
     }
   }
 
@@ -441,7 +452,7 @@ resource "aws_elastic_beanstalk_environment" "voxly" {
 
   tags = local.base_tags
 
-  depends_on = [aws_acm_certificate_validation.app]
+  depends_on = [aws_acm_certificate.app]
 }
 
 resource "aws_route53_record" "app_cname" {

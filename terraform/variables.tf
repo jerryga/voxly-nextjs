@@ -31,7 +31,7 @@ variable "elastic_beanstalk_environment_name" {
 variable "solution_stack_name" {
   description = "Elastic Beanstalk solution stack for the Node.js app."
   type        = string
-  default     = "64bit Amazon Linux 2023 v6.6.2 running Node.js 22"
+  default     = "64bit Amazon Linux 2023 v6.9.0 running Node.js 22"
 }
 
 variable "elastic_beanstalk_service_role_arn" {
@@ -50,6 +50,12 @@ variable "create_beanstalk_iam_roles" {
   description = "Whether Terraform should create the Elastic Beanstalk service role and EC2 instance profile."
   type        = bool
   default     = true
+}
+
+variable "attach_beanstalk_managed_updates_policy" {
+  description = "Whether to attach the optional Elastic Beanstalk managed updates policy to the service role."
+  type        = bool
+  default     = false
 }
 
 variable "instance_type" {
@@ -244,4 +250,10 @@ variable "create_acm_certificate" {
   description = "Whether to request an ACM certificate for the application domain."
   type        = bool
   default     = false
+}
+
+variable "beanstalk_https_certificate_arn" {
+  description = "Issued ACM certificate ARN to attach to the Beanstalk load balancer HTTPS listener."
+  type        = string
+  default     = ""
 }

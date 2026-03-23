@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function ResendVerificationPage() {
+function ResendVerificationContent() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState(searchParams.get("email") || "");
   const [error, setError] = useState<string | null>(null);
@@ -90,5 +90,13 @@ export default function ResendVerificationPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResendVerificationPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResendVerificationContent />
+    </Suspense>
   );
 }
