@@ -82,6 +82,8 @@ Grant that role the minimum permissions needed for:
 - `s3:PutObject`
 - `s3:GetObject`
 - `s3:ListBucket`
+- `s3:CreateBucket`
+- `s3:GetBucketLocation`
 - `elasticbeanstalk:CreateApplicationVersion`
 - `elasticbeanstalk:UpdateEnvironment`
 - `elasticbeanstalk:DescribeEnvironments`
@@ -89,6 +91,12 @@ Grant that role the minimum permissions needed for:
 - `elasticbeanstalk:DescribeApplicationVersions`
 
 If the deploy bucket is encrypted with KMS, also allow the corresponding KMS actions.
+
+Elastic Beanstalk may also touch its own regional service bucket during `CreateApplicationVersion`, even when the workflow uploads the zip to your dedicated deploy bucket first. The Terraform-managed GitHub deploy role in this repo now grants the extra S3 permissions needed for:
+
+```txt
+elasticbeanstalk-<region>-<account-id>
+```
 
 ## Create the AWS Side
 

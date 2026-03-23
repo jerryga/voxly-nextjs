@@ -87,7 +87,7 @@ jobs:
           EB_APPLICATION_NAME: ${{ vars.AWS_BEANSTALK_APPLICATION_NAME }}
           EB_ENVIRONMENT_NAME: ${{ vars.AWS_BEANSTALK_ENVIRONMENT_NAME }}
           EB_DEPLOY_BUCKET: ${{ vars.AWS_BEANSTALK_DEPLOY_BUCKET }}
-          VERSION_LABEL: ${{ github.sha }}-${{ github.run_number }}
+          VERSION_LABEL: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           test -n "$EB_APPLICATION_NAME"
           test -n "$EB_ENVIRONMENT_NAME"

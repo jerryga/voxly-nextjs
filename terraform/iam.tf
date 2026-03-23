@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "beanstalk_service_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -158,6 +160,28 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "s3:DeleteObject",
     ]
     resources = ["${aws_s3_bucket.deploy_artifacts.arn}/*"]
+  }
+
+  statement {
+    actions = [
+      "s3:CreateBucket",
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = [
+      "arn:aws:s3:::elasticbeanstalk-${var.aws_region}-${data.aws_caller_identity.current.account_id}",
+    ]
+  }
+
+  statement {
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "arn:aws:s3:::elasticbeanstalk-${var.aws_region}-${data.aws_caller_identity.current.account_id}/*",
+    ]
   }
 
   statement {
