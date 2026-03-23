@@ -202,7 +202,11 @@ data "aws_iam_policy_document" "github_actions_deploy" {
   statement {
     actions = [
       "s3:PutObject",
+      "s3:PutObjectAcl",
       "s3:GetObject",
+      "s3:GetObjectAcl",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAcl",
       "s3:DeleteObject",
     ]
     resources = ["${aws_s3_bucket.deploy_artifacts.arn}/*"]
@@ -222,7 +226,11 @@ data "aws_iam_policy_document" "github_actions_deploy" {
   statement {
     actions = [
       "s3:PutObject",
+      "s3:PutObjectAcl",
       "s3:GetObject",
+      "s3:GetObjectAcl",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAcl",
       "s3:DeleteObject",
     ]
     resources = [

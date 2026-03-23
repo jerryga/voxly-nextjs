@@ -80,7 +80,11 @@ Recommended permission policy template:
 Grant that role the minimum permissions needed for:
 
 - `s3:PutObject`
+- `s3:PutObjectAcl`
 - `s3:GetObject`
+- `s3:GetObjectAcl`
+- `s3:GetObjectVersion`
+- `s3:GetObjectVersionAcl`
 - `s3:ListBucket`
 - `s3:CreateBucket`
 - `s3:GetBucketLocation`
