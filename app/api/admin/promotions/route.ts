@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import type { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
@@ -11,6 +12,14 @@ import {
 import { isAdminEmail } from "@/lib/admin";
 
 export const runtime = "nodejs";
+
+type PromotionWithRedemptionCount = Prisma.PromotionGetPayload<{
+  include: {
+    _count: {
+      select: { redemptions: true };
+    };
+  };
+}>;
 
 async function requireAdminSession() {
   const session = await getServerSession(authOptions);
@@ -41,7 +50,7 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
-      promotions: promotions.map((promotion) => ({
+      promotions: promotions.map((promotion: PromotionWithRedemptionCount) => ({
         id: promotion.id,
         code: promotion.code,
         status: promotion.status,
