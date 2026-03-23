@@ -160,6 +160,57 @@ resource "aws_s3_bucket_public_access_block" "deploy_artifacts" {
   restrict_public_buckets = true
 }
 
+data "aws_iam_policy_document" "deploy_artifacts_bucket_policy" {
+  statement {
+    sid = "AllowBeanstalkAndGithubActionsAccess"
+
+    principals {
+      type = "AWS"
+      identifiers = compact([
+        local.resolved_beanstalk_service_role_arn,
+        var.create_beanstalk_iam_roles ? aws_iam_role.beanstalk_ec2[0].arn : "",
+        var.create_github_actions_oidc_role ? aws_iam_role.github_actions_deploy[0].arn : "",
+      ])
+    }
+
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+
+    resources = [aws_s3_bucket.deploy_artifacts.arn]
+  }
+
+  statement {
+    sid = "AllowBeanstalkAndGithubActionsObjectAccess"
+
+    principals {
+      type = "AWS"
+      identifiers = compact([
+        local.resolved_beanstalk_service_role_arn,
+        var.create_beanstalk_iam_roles ? aws_iam_role.beanstalk_ec2[0].arn : "",
+        var.create_github_actions_oidc_role ? aws_iam_role.github_actions_deploy[0].arn : "",
+      ])
+    }
+
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectAcl",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAcl",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+
+    resources = ["${aws_s3_bucket.deploy_artifacts.arn}/*"]
+  }
+}
+
+resource "aws_s3_bucket_policy" "deploy_artifacts" {
+  bucket = aws_s3_bucket.deploy_artifacts.id
+  policy = data.aws_iam_policy_document.deploy_artifacts_bucket_policy.json
+}
+
 resource "aws_secretsmanager_secret" "app" {
   count = var.create_secrets_manager_secret ? 1 : 0
 

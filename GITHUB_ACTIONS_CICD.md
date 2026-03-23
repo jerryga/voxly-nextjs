@@ -89,6 +89,12 @@ Grant that role the minimum permissions needed for:
 - `elasticbeanstalk:DescribeEnvironments`
 - `elasticbeanstalk:DescribeEvents`
 - `elasticbeanstalk:DescribeApplicationVersions`
+- `cloudformation:DescribeStacks`
+- `cloudformation:DescribeStackEvents`
+- `cloudformation:DescribeStackResource`
+- `cloudformation:DescribeStackResources`
+- `cloudformation:GetTemplate`
+- `autoscaling:DescribeAutoScalingGroups`
 
 If the deploy bucket is encrypted with KMS, also allow the corresponding KMS actions.
 

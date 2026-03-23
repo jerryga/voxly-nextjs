@@ -45,6 +45,34 @@ resource "aws_iam_role_policy_attachment" "beanstalk_service_managed_updates" {
   policy_arn = "arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy"
 }
 
+data "aws_iam_policy_document" "beanstalk_service_deploy_bucket_access" {
+  statement {
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = [aws_s3_bucket.deploy_artifacts.arn]
+  }
+
+  statement {
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectAcl",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAcl",
+    ]
+    resources = ["${aws_s3_bucket.deploy_artifacts.arn}/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "beanstalk_service_deploy_bucket_access" {
+  count = var.create_beanstalk_iam_roles ? 1 : 0
+
+  name   = "${var.project_name}-${var.environment_name}-beanstalk-service-deploy-bucket-access"
+  role   = aws_iam_role.beanstalk_service[0].id
+  policy = data.aws_iam_policy_document.beanstalk_service_deploy_bucket_access.json
+}
+
 resource "aws_iam_role" "beanstalk_ec2" {
   count = var.create_beanstalk_iam_roles ? 1 : 0
 
@@ -77,6 +105,24 @@ data "aws_iam_policy_document" "beanstalk_s3_access" {
       "s3:DeleteObject",
     ]
     resources = ["${aws_s3_bucket.uploads.arn}/*"]
+  }
+
+  statement {
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = [aws_s3_bucket.deploy_artifacts.arn]
+  }
+
+  statement {
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectAcl",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAcl",
+    ]
+    resources = ["${aws_s3_bucket.deploy_artifacts.arn}/*"]
   }
 }
 
@@ -192,6 +238,24 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "elasticbeanstalk:DescribeApplicationVersions",
       "elasticbeanstalk:DescribeEnvironments",
       "elasticbeanstalk:DescribeEvents",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "cloudformation:DescribeStackResource",
+      "cloudformation:DescribeStacks",
+      "cloudformation:DescribeStackEvents",
+      "cloudformation:DescribeStackResources",
+      "cloudformation:GetTemplate",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
     ]
     resources = ["*"]
   }
