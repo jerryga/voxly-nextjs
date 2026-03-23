@@ -88,6 +88,7 @@ Grant that role the minimum permissions needed for:
 - `s3:ListBucket`
 - `s3:CreateBucket`
 - `s3:GetBucketLocation`
+- `s3:GetBucketPolicy`
 - `elasticbeanstalk:CreateApplicationVersion`
 - `elasticbeanstalk:UpdateEnvironment`
 - `elasticbeanstalk:DescribeEnvironments`
@@ -98,7 +99,11 @@ Grant that role the minimum permissions needed for:
 - `cloudformation:DescribeStackResource`
 - `cloudformation:DescribeStackResources`
 - `cloudformation:GetTemplate`
+- `autoscaling:SuspendProcesses`
+- `autoscaling:ResumeProcesses`
 - `autoscaling:DescribeAutoScalingGroups`
+- `ec2:DescribeLaunchTemplates`
+- `ec2:DescribeLaunchTemplateVersions`
 
 If the deploy bucket is encrypted with KMS, also allow the corresponding KMS actions.
 

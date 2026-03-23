@@ -217,6 +217,7 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "s3:CreateBucket",
       "s3:ListBucket",
       "s3:GetBucketLocation",
+      "s3:GetBucketPolicy",
     ]
     resources = [
       "arn:aws:s3:::elasticbeanstalk-${var.aws_region}-${data.aws_caller_identity.current.account_id}",
@@ -263,7 +264,17 @@ data "aws_iam_policy_document" "github_actions_deploy" {
 
   statement {
     actions = [
+      "autoscaling:SuspendProcesses",
+      "autoscaling:ResumeProcesses",
       "autoscaling:DescribeAutoScalingGroups",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "ec2:DescribeLaunchTemplates",
+      "ec2:DescribeLaunchTemplateVersions",
     ]
     resources = ["*"]
   }
