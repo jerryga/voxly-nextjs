@@ -48,7 +48,7 @@ export function TranscriptionClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const assistantInputRef = useRef<HTMLInputElement | null>(null);
   const resultAreaRef = useRef<HTMLElement | null>(null);
-  const tipsTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(
+  const tipsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const [items, setItems] = useState<Transcription[]>([]);
@@ -226,7 +226,7 @@ export function TranscriptionClient() {
   useEffect(() => {
     return () => {
       if (tipsTimeoutRef.current) {
-        window.clearTimeout(tipsTimeoutRef.current);
+        clearTimeout(tipsTimeoutRef.current);
       }
     };
   }, []);
@@ -235,10 +235,10 @@ export function TranscriptionClient() {
     setCompletionTip(message);
 
     if (tipsTimeoutRef.current) {
-      window.clearTimeout(tipsTimeoutRef.current);
+      clearTimeout(tipsTimeoutRef.current);
     }
 
-    tipsTimeoutRef.current = window.setTimeout(() => {
+    tipsTimeoutRef.current = setTimeout(() => {
       setCompletionTip(null);
       tipsTimeoutRef.current = null;
     }, 4500);

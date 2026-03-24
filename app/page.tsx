@@ -99,7 +99,7 @@ export default async function Home() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(249,115,22,0.18),transparent_34%),linear-gradient(180deg,#f6f1e8_0%,#f9f7f2_48%,#ffffff_100%)]" />
 
       <header className="fixed inset-x-0 top-0 z-50 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-full border border-white/70 bg-white/80 px-5 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
+        <div className="mx-auto flex w-full max-w-400 items-center gap-3 rounded-full border border-white/70 bg-white/80 px-5 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)] backdrop-blur">
           <BrandLink href="/" />
 
           <nav className="hidden items-center gap-1 rounded-full border border-slate-200 bg-[#f8f5ef] p-1 md:flex">
@@ -114,7 +114,7 @@ export default async function Home() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="ml-auto hidden items-center gap-3 md:flex">
             {isAuthenticated ? (
               <Link
                 href="/dashboard"
