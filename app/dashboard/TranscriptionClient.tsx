@@ -314,6 +314,8 @@ export function TranscriptionClient() {
     if (!file) return;
     setUploading(true);
     setError(null);
+    setAssistantError(null);
+    setAssistantSummary(null);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -337,8 +339,28 @@ export function TranscriptionClient() {
       }
       setFile(null);
       setEstimatedDurationSeconds(null);
-      await loadItems();
+      let currentItem =
+        payload?.transcriptionId
+          ? (await loadItems())?.find(
+              (item) => item.id === payload.transcriptionId,
+            ) || null
+          : null;
       await loadBilling();
+
+      if (
+        payload?.queued ||
+        currentItem?.status === "processing" ||
+        currentItem?.status === "uploaded"
+      ) {
+        currentItem = await pollForProcessedResult(payload.transcriptionId);
+      }
+
+      if (currentItem?.status === "done") {
+        setFocusedSummaryId(currentItem.id);
+        showCompletionTip(
+          "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
