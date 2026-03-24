@@ -82,7 +82,7 @@ export default async function Home() {
   const pricingCtaLabel = isAuthenticated ? "Choose Plan" : "Sign In to Buy";
   const navItems = isAuthenticated
     ? [
-        { label: "Dashboard", href: "/dashboard" },
+        { label: "Workspace", href: "/dashboard" },
         { label: "Billing", href: "/billing" },
         { label: "Pricing", href: "#pricing" },
         { label: "Contact", href: "#contact" },
