@@ -66,6 +66,14 @@ app_domain_name        = "staging.example.com"
 create_acm_certificate = false
 beanstalk_https_certificate_arn = ""
 
+enable_cloudwatch_logs        = true
+cloudwatch_log_retention_days = 14
+enable_cloudwatch_alarms      = true
+beanstalk_high_cpu_threshold  = 80
+create_alarm_sns_topic        = true
+alarm_email_endpoint          = "alerts@example.com"
+cloudwatch_alarm_actions      = []
+
 app_environment = {
   NEXTAUTH_URL                 = "https://staging.example.com"
   NEXTAUTH_SECRET              = "replace-me"

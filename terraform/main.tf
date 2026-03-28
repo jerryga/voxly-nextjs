@@ -17,6 +17,11 @@ locals {
   use_private_subnets         = length(local.resolved_private_subnet_ids) > 0
   use_public_subnets          = length(local.resolved_public_subnet_ids) > 0
   create_zone_lookup          = var.create_dns || var.create_acm_certificate
+  beanstalk_autoscaling_group_name = try(aws_elastic_beanstalk_environment.voxly.autoscaling_groups[0], null)
+  effective_cloudwatch_alarm_actions = distinct(compact(concat(
+    var.cloudwatch_alarm_actions,
+    var.create_alarm_sns_topic ? [aws_sns_topic.cloudwatch_alarms[0].arn] : []
+  )))
 }
 
 resource "aws_security_group" "app_load_balancer" {
@@ -435,6 +440,42 @@ resource "aws_elastic_beanstalk_environment" "voxly" {
   }
 
   dynamic "setting" {
+    for_each = var.enable_cloudwatch_logs ? [1] : []
+
+    content {
+      namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+      name      = "StreamLogs"
+      value     = "true"
+    }
+  }
+
+  dynamic "setting" {
+    for_each = var.enable_cloudwatch_logs ? [1] : []
+
+    content {
+      namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+      name      = "DeleteOnTerminate"
+      value     = "false"
+    }
+  }
+
+  dynamic "setting" {
+    for_each = var.enable_cloudwatch_logs ? [1] : []
+
+    content {
+      namespace = "aws:elasticbeanstalk:cloudwatch:logs"
+      name      = "RetentionInDays"
+      value     = tostring(var.cloudwatch_log_retention_days)
+    }
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:healthreporting:system"
+    name      = "SystemType"
+    value     = "enhanced"
+  }
+
+  dynamic "setting" {
     for_each = local.use_private_subnets ? [1] : []
 
     content {
@@ -543,6 +584,63 @@ resource "aws_elastic_beanstalk_environment" "voxly" {
   tags = local.base_tags
 
   depends_on = [aws_acm_certificate.app]
+}
+
+resource "aws_sns_topic" "cloudwatch_alarms" {
+  count = var.create_alarm_sns_topic ? 1 : 0
+
+  name = "${var.project_name}-${var.environment_name}-cloudwatch-alarms"
+  tags = local.base_tags
+}
+
+resource "aws_sns_topic_subscription" "cloudwatch_alarm_email" {
+  count = var.create_alarm_sns_topic && trimspace(var.alarm_email_endpoint) != "" ? 1 : 0
+
+  topic_arn = aws_sns_topic.cloudwatch_alarms[0].arn
+  protocol  = "email"
+  endpoint  = var.alarm_email_endpoint
+}
+
+resource "aws_cloudwatch_metric_alarm" "beanstalk_high_cpu" {
+  count = var.enable_cloudwatch_alarms ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment_name}-beanstalk-high-cpu"
+  alarm_description   = "Average CPU utilization is high on Voxly Elastic Beanstalk instances."
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 300
+  statistic           = "Average"
+  threshold           = var.beanstalk_high_cpu_threshold
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.effective_cloudwatch_alarm_actions
+  ok_actions          = local.effective_cloudwatch_alarm_actions
+
+  dimensions = {
+    AutoScalingGroupName = local.beanstalk_autoscaling_group_name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "beanstalk_low_in_service_instances" {
+  count = var.enable_cloudwatch_alarms ? 1 : 0
+
+  alarm_name          = "${var.project_name}-${var.environment_name}-beanstalk-low-in-service"
+  alarm_description   = "Elastic Beanstalk Auto Scaling group has no in-service instances."
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "GroupInServiceInstances"
+  namespace           = "AWS/AutoScaling"
+  period              = 60
+  statistic           = "Minimum"
+  threshold           = 1
+  treat_missing_data  = "breaching"
+  alarm_actions       = local.effective_cloudwatch_alarm_actions
+  ok_actions          = local.effective_cloudwatch_alarm_actions
+
+  dimensions = {
+    AutoScalingGroupName = local.beanstalk_autoscaling_group_name
+  }
 }
 
 resource "aws_route53_record" "app_cname" {

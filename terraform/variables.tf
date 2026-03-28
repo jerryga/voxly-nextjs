@@ -286,3 +286,45 @@ variable "beanstalk_https_certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "enable_cloudwatch_logs" {
+  description = "Whether to stream Elastic Beanstalk logs to CloudWatch Logs."
+  type        = bool
+  default     = true
+}
+
+variable "cloudwatch_log_retention_days" {
+  description = "Retention period in days for Elastic Beanstalk logs streamed to CloudWatch."
+  type        = number
+  default     = 14
+}
+
+variable "enable_cloudwatch_alarms" {
+  description = "Whether to create a starter set of CloudWatch alarms for the Elastic Beanstalk environment."
+  type        = bool
+  default     = true
+}
+
+variable "cloudwatch_alarm_actions" {
+  description = "Optional list of SNS topic ARNs or other alarm actions for CloudWatch alarms."
+  type        = list(string)
+  default     = []
+}
+
+variable "beanstalk_high_cpu_threshold" {
+  description = "Average CPU utilization percentage that triggers the Beanstalk high CPU alarm."
+  type        = number
+  default     = 80
+}
+
+variable "create_alarm_sns_topic" {
+  description = "Whether to create an SNS topic for CloudWatch alarm notifications."
+  type        = bool
+  default     = true
+}
+
+variable "alarm_email_endpoint" {
+  description = "Email address subscribed to the CloudWatch alarm SNS topic."
+  type        = string
+  default     = ""
+}
