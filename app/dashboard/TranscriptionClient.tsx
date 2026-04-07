@@ -18,6 +18,20 @@ type ActionItem = {
   assignee?: string;
 };
 
+type ActionTask = {
+  id: string;
+  transcriptionId: string;
+  title: string;
+  status: "open" | "in_progress" | "done";
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  assignee?: string | null;
+  dueDate?: string | null;
+  sourceActionIndex?: number | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+};
+
 type Transcription = {
   id: string;
   fileName: string;
@@ -71,6 +85,13 @@ type ProjectsResponse = {
   ok?: boolean;
   projects?: Project[];
   project?: Project;
+  error?: string;
+};
+
+type TasksResponse = {
+  ok?: boolean;
+  tasks?: ActionTask[];
+  task?: ActionTask;
   error?: string;
 };
 
@@ -172,6 +193,13 @@ export function TranscriptionClient() {
   const [uploadStatusNotice, setUploadStatusNotice] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
+  const [actionTasksByTranscription, setActionTasksByTranscription] = useState<
+    Record<string, ActionTask[]>
+  >({});
+  const [actionTaskBusyKey, setActionTaskBusyKey] = useState<string | null>(null);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskAssignee, setNewTaskAssignee] = useState("");
+  const [newTaskDueDate, setNewTaskDueDate] = useState("");
 
   const templateOptions = [
     ...builtInTemplates,
@@ -222,6 +250,9 @@ export function TranscriptionClient() {
   const displaySummary = assistantSummary || focusedSummary;
   const activeTranscriptionId = focusedSummary?.id || null;
   const hasProcessedSummary = focusedSummary?.status === "done";
+  const currentActionTasks = activeTranscriptionId
+    ? actionTasksByTranscription[activeTranscriptionId] || []
+    : [];
   const focusedSummaryHiddenByFilters =
     !!focusedSummaryId && !sortedItems.some((item) => item.id === focusedSummaryId);
   const estimatedCredits =
@@ -662,6 +693,33 @@ export function TranscriptionClient() {
     void loadAssistantMessages(activeTranscriptionId);
   }, [activeTranscriptionId]);
 
+  async function loadActionTasks(transcriptionId: string) {
+    try {
+      const res = await fetch(
+        `/api/tasks?transcriptionId=${encodeURIComponent(transcriptionId)}`,
+      );
+      const payload = (await res.json().catch(() => ({}))) as TasksResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to load tasks");
+      }
+
+      setActionTasksByTranscription((prev) => ({
+        ...prev,
+        [transcriptionId]: payload.tasks || [],
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tasks");
+    }
+  }
+
+  useEffect(() => {
+    if (!activeTranscriptionId) {
+      return;
+    }
+
+    void loadActionTasks(activeTranscriptionId);
+  }, [activeTranscriptionId]);
+
   async function pollForProcessedResult(id: string) {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
@@ -893,6 +951,11 @@ export function TranscriptionClient() {
         setFocusedSummaryId(null);
         setAssistantSummary(null);
       }
+      setActionTasksByTranscription((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       await loadItems();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -1220,6 +1283,116 @@ export function TranscriptionClient() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update project");
+    }
+  }
+
+  async function handleCreateActionTask(input: {
+    title: string;
+    priority?: string;
+    assignee?: string;
+    dueDate?: string;
+    sourceActionIndex?: number;
+  }) {
+    if (!activeTranscriptionId) {
+      setError("Choose a transcription before creating a task.");
+      return;
+    }
+
+    setActionTaskBusyKey(`create:${activeTranscriptionId}`);
+    setError(null);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcriptionId: activeTranscriptionId,
+          title: input.title,
+          priority: input.priority,
+          assignee: input.assignee || undefined,
+          dueDate: input.dueDate || undefined,
+          sourceActionIndex: input.sourceActionIndex,
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as TasksResponse;
+      if (!res.ok || !payload.task) {
+        throw new Error(payload?.error || "Failed to create task");
+      }
+
+      setActionTasksByTranscription((prev) => ({
+        ...prev,
+        [activeTranscriptionId]: [...(prev[activeTranscriptionId] || []), payload.task!],
+      }));
+      setNewTaskTitle("");
+      setNewTaskAssignee("");
+      setNewTaskDueDate("");
+      showCopyStatus("Task saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create task");
+    } finally {
+      setActionTaskBusyKey(null);
+    }
+  }
+
+  async function handleUpdateActionTask(
+    taskId: string,
+    updates: Partial<Pick<ActionTask, "status" | "assignee" | "dueDate">>,
+  ) {
+    if (!activeTranscriptionId) {
+      return;
+    }
+
+    setActionTaskBusyKey(`update:${taskId}`);
+    setError(null);
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const payload = (await res.json().catch(() => ({}))) as TasksResponse;
+      if (!res.ok || !payload.task) {
+        throw new Error(payload?.error || "Failed to update task");
+      }
+
+      setActionTasksByTranscription((prev) => ({
+        ...prev,
+        [activeTranscriptionId]: (prev[activeTranscriptionId] || []).map((task) =>
+          task.id === taskId ? payload.task! : task,
+        ),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update task");
+    } finally {
+      setActionTaskBusyKey(null);
+    }
+  }
+
+  async function handleDeleteActionTask(taskId: string) {
+    if (!activeTranscriptionId) {
+      return;
+    }
+
+    setActionTaskBusyKey(`delete:${taskId}`);
+    setError(null);
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: "DELETE",
+      });
+      const payload = (await res.json().catch(() => ({}))) as TasksResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to delete task");
+      }
+
+      setActionTasksByTranscription((prev) => ({
+        ...prev,
+        [activeTranscriptionId]: (prev[activeTranscriptionId] || []).filter(
+          (task) => task.id !== taskId,
+        ),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete task");
+    } finally {
+      setActionTaskBusyKey(null);
     }
   }
 
@@ -1990,41 +2163,243 @@ export function TranscriptionClient() {
             <div className="space-y-3">
               {displaySummary?.actionItems &&
               displaySummary.actionItems.length ? (
-                displaySummary.actionItems.map((item, idx) => (
+                displaySummary.actionItems.map((item, idx) => {
+                  const linkedTask = currentActionTasks.find(
+                    (task) => task.sourceActionIndex === idx,
+                  );
+
+                  return (
+                    <div
+                      key={`Action Items-${idx}`}
+                      className="rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="mt-1 h-5 w-5 rounded-full border border-orange-300 bg-orange-50" />
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold leading-relaxed text-slate-900">
+                            {item.text}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                            <span
+                              className={`rounded-full px-2.5 py-1 font-bold ${
+                                item.priority === "HIGH"
+                                  ? "bg-red-100 text-red-700"
+                                  : item.priority === "MEDIUM"
+                                    ? "bg-orange-100 text-orange-700"
+                                    : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              {item.priority || "MEDIUM"}
+                            </span>
+                            <span className="text-slate-500">
+                              @
+                              {item.assignee && item.assignee.trim()
+                                ? item.assignee
+                                : "Unassigned"}
+                            </span>
+                            {linkedTask ? (
+                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-700">
+                                Tracking: {linkedTask.status.replace("_", " ")}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        {linkedTask ? (
+                          <button
+                            type="button"
+                            onClick={() => setFocusedSummaryId(linkedTask.transcriptionId)}
+                            className="cursor-pointer rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700"
+                          >
+                            Tracked
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleCreateActionTask({
+                                title: item.text,
+                                priority: item.priority || "MEDIUM",
+                                assignee: item.assignee || "",
+                                sourceActionIndex: idx,
+                              })
+                            }
+                            disabled={actionTaskBusyKey === `create:${activeTranscriptionId}`}
+                            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Track Task
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
+                  No data yet.
+                </div>
+              )}
+            </div>
+            <div className="rounded-[24px] border border-dashed border-slate-200 bg-[#fffdf9] p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+                <label className="flex-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Add Task
+                  </span>
+                  <input
+                    type="text"
+                    value={newTaskTitle}
+                    onChange={(event) => setNewTaskTitle(event.target.value)}
+                    placeholder="Create a follow-up that isn’t in the AI summary yet"
+                    className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+                  />
+                </label>
+                <label className="lg:w-48">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Assignee
+                  </span>
+                  <input
+                    type="text"
+                    value={newTaskAssignee}
+                    onChange={(event) => setNewTaskAssignee(event.target.value)}
+                    placeholder="Owner"
+                    className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+                  />
+                </label>
+                <label className="lg:w-44">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Due Date
+                  </span>
+                  <input
+                    type="date"
+                    value={newTaskDueDate}
+                    onChange={(event) => setNewTaskDueDate(event.target.value)}
+                    className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleCreateActionTask({
+                      title: newTaskTitle,
+                      assignee: newTaskAssignee,
+                      dueDate: newTaskDueDate,
+                    })
+                  }
+                  disabled={!newTaskTitle.trim() || !activeTranscriptionId || actionTaskBusyKey === `create:${activeTranscriptionId}`}
+                  className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionTaskBusyKey === `create:${activeTranscriptionId}`
+                    ? "Saving..."
+                    : "Save Task"}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Managed Tasks
+                </h4>
+                <span className="text-xs font-semibold text-slate-400">
+                  {currentActionTasks.length} total
+                </span>
+              </div>
+              {currentActionTasks.length ? (
+                currentActionTasks.map((task) => (
                   <div
-                    key={`Action Items-${idx}`}
-                    className="flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]"
+                    key={task.id}
+                    className="rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.16)]"
                   >
-                    <div className="mt-1 h-5 w-5 rounded-full border border-orange-300 bg-orange-50" />
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900 leading-relaxed">
-                        {item.text}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                        <span
-                          className={`rounded-full px-2.5 py-1 font-bold ${
-                            item.priority === "HIGH"
-                              ? "bg-red-100 text-red-700"
-                              : item.priority === "MEDIUM"
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-slate-100 text-slate-700"
-                          }`}
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold leading-relaxed text-slate-900">
+                          {task.title}
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span
+                            className={`rounded-full px-2.5 py-1 font-bold ${
+                              task.priority === "HIGH"
+                                ? "bg-red-100 text-red-700"
+                                : task.priority === "MEDIUM"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {task.priority}
+                          </span>
+                          <span
+                            className={`rounded-full px-2.5 py-1 font-bold ${
+                              task.status === "done"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : task.status === "in_progress"
+                                  ? "bg-sky-100 text-sky-700"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {task.status.replace("_", " ")}
+                          </span>
+                          <span className="text-slate-500">
+                            @{task.assignee?.trim() || "Unassigned"}
+                          </span>
+                          {task.dueDate ? (
+                            <span className="text-slate-500">
+                              Due {new Date(task.dueDate).toLocaleDateString()}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <select
+                          value={task.status}
+                          onChange={(event) =>
+                            void handleUpdateActionTask(task.id, {
+                              status: event.target.value as ActionTask["status"],
+                            })
+                          }
+                          disabled={actionTaskBusyKey === `update:${task.id}`}
+                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {item.priority || "MEDIUM"}
-                        </span>
-                        <span className="text-slate-500">
-                          @
-                          {item.assignee && item.assignee.trim()
-                            ? item.assignee
-                            : "Unassigned"}
-                        </span>
+                          <option value="open">Open</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="done">Done</option>
+                        </select>
+                        <input
+                          type="text"
+                          defaultValue={task.assignee || ""}
+                          placeholder="Assignee"
+                          onBlur={(event) =>
+                            void handleUpdateActionTask(task.id, {
+                              assignee: event.target.value,
+                            })
+                          }
+                          disabled={actionTaskBusyKey === `update:${task.id}`}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <input
+                          type="date"
+                          defaultValue={task.dueDate ? task.dueDate.slice(0, 10) : ""}
+                          onBlur={(event) =>
+                            void handleUpdateActionTask(task.id, {
+                              dueDate: event.target.value,
+                            })
+                          }
+                          disabled={actionTaskBusyKey === `update:${task.id}`}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteActionTask(task.id)}
+                          disabled={actionTaskBusyKey === `delete:${task.id}`}
+                          className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   </div>
                 ))
               ) : (
                 <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
-                  No data yet.
+                  No managed tasks yet. Track an AI action item or add one manually.
                 </div>
               )}
             </div>

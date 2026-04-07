@@ -23,6 +23,7 @@ model User {
   projects       Project[]
   summaryTemplates SummaryTemplate[]
   assistantMessages AssistantMessage[]
+  actionTasks    ActionTask[]
   subscription   Subscription?
   creditTransactions CreditTransaction[]
   promoRedemptions PromotionRedemption[]
@@ -110,6 +111,7 @@ model Transcription {
   transcript String? @db.Text
   duration   Int?
   assistantMessages AssistantMessage[]
+  actionTasks ActionTask[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([userId, createdAt])
@@ -117,6 +119,27 @@ model Transcription {
   @@index([userId, status, createdAt])
   @@index([userId, template, createdAt])
   @@index([status])
+}
+
+model ActionTask {
+  id                String        @id @default(cuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcriptionId   String
+  transcription     Transcription @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  title             String
+  status            String        @default("open")
+  priority          String        @default("MEDIUM")
+  assignee          String?
+  dueDate           DateTime?
+  sourceActionIndex Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  completedAt       DateTime?
+
+  @@index([userId, createdAt])
+  @@index([transcriptionId, createdAt])
+  @@index([transcriptionId, status, createdAt])
 }
 
 model AssistantMessage {
