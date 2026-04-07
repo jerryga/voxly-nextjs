@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useId, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useId,
+  useRef,
+} from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import type { BillingInfo, BillingResponse } from "@/lib/billing-types";
@@ -16,6 +23,7 @@ type Transcription = {
   fileName: string;
   status: string;
   template?: string | null;
+  projectId?: string | null;
   createdAt: string;
   duration?: number | null;
   transcript?: string | null;
@@ -28,6 +36,41 @@ type Transcription = {
 type ApiResponse = {
   ok?: boolean;
   items?: Transcription[];
+  total?: number;
+  nextCursor?: string | null;
+  error?: string;
+};
+
+type SummaryTemplate = {
+  id: string;
+  name: string;
+  slug: string;
+  baseTemplate: string;
+  promptInstructions: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type TemplatesResponse = {
+  ok?: boolean;
+  templates?: SummaryTemplate[];
+  template?: SummaryTemplate;
+  error?: string;
+};
+
+type Project = {
+  id: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ProjectsResponse = {
+  ok?: boolean;
+  projects?: Project[];
+  project?: Project;
   error?: string;
 };
 
@@ -43,19 +86,55 @@ const defaultAssistantMessages: AssistantMessage[] = [
   },
 ];
 
+const builtInTemplates = [
+  { id: "default", label: "Default Template (Default)" },
+  { id: "brainstorm", label: "Brainstorm Session" },
+  { id: "interview", label: "Interview Notes" },
+  { id: "lecture", label: "Lecture Notes" },
+  { id: "voice-memo", label: "Voice Memo Notes" },
+];
+
 export function TranscriptionClient() {
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const assistantInputRef = useRef<HTMLInputElement | null>(null);
   const resultAreaRef = useRef<HTMLElement | null>(null);
+  const shouldScrollToSummaryRef = useRef(false);
+  const listRequestAbortRef = useRef<AbortController | null>(null);
   const tipsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const uploadNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const uploadStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [items, setItems] = useState<Transcription[]>([]);
+  const [allItems, setAllItems] = useState<Transcription[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [templateFilter, setTemplateFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [customTemplates, setCustomTemplates] = useState<SummaryTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateBase, setNewTemplateBase] = useState("default");
+  const [newTemplateInstructions, setNewTemplateInstructions] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectManagerOpen, setProjectManagerOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectDescription, setNewProjectDescription] = useState("");
+  const [uploadProjectId, setUploadProjectId] = useState("none");
   const [file, setFile] = useState<File | null>(null);
   const [estimatedDurationSeconds, setEstimatedDurationSeconds] = useState<
     number | null
@@ -87,15 +166,34 @@ export function TranscriptionClient() {
   const [assistantMessages, setAssistantMessages] =
     useState<AssistantMessage[]>(defaultAssistantMessages);
   const [completionTip, setCompletionTip] = useState<string | null>(null);
+  const [uploadVisibilityNotice, setUploadVisibilityNotice] = useState<
+    string | null
+  >(null);
+  const [uploadStatusNotice, setUploadStatusNotice] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState<string | null>(null);
 
-  const templates = [
-    { id: "default", label: "Default Template (Default)" },
-    { id: "brainstorm", label: "Brainstorm Session" },
-    { id: "interview_notes", label: "Interview Notes" },
-    { id: "lecture_notes", label: "Lecture Notes" },
-    { id: "voice_memo", label: "Voice Memo Notes" },
+  const templateOptions = [
+    ...builtInTemplates,
+    ...customTemplates.map((template) => ({
+      id: `custom:${template.id}`,
+      label: `${template.name} (Custom)`,
+    })),
+  ];
+  const statusOptions = [
+    { id: "all", label: "All statuses" },
+    { id: "uploading", label: "Uploading" },
+    { id: "uploaded", label: "Uploaded" },
+    { id: "processing", label: "Processing" },
+    { id: "done", label: "Done" },
+    { id: "error", label: "Error" },
   ];
   const isDev = process.env.NODE_ENV !== "production";
+  const hasActiveFilters =
+    debouncedSearchQuery.trim().length > 0 ||
+    statusFilter !== "all" ||
+    templateFilter !== "all" ||
+    projectFilter !== "all";
 
   const sortedItems = useMemo(() => {
     return [...items].sort(
@@ -104,19 +202,28 @@ export function TranscriptionClient() {
     );
   }, [items]);
 
+  const allSortedItems = useMemo(() => {
+    return [...allItems].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [allItems]);
+
   const latestSummary = useMemo(() => {
-    return sortedItems.find((item) => item.status === "done") || null;
-  }, [sortedItems]);
+    return allSortedItems.find((item) => item.status === "done") || null;
+  }, [allSortedItems]);
   const focusedSummary = useMemo(() => {
     if (!focusedSummaryId) {
       return latestSummary;
     }
 
-    return sortedItems.find((item) => item.id === focusedSummaryId) || latestSummary;
-  }, [focusedSummaryId, latestSummary, sortedItems]);
+    return allSortedItems.find((item) => item.id === focusedSummaryId) || latestSummary;
+  }, [allSortedItems, focusedSummaryId, latestSummary]);
   const displaySummary = assistantSummary || focusedSummary;
   const activeTranscriptionId = focusedSummary?.id || null;
   const hasProcessedSummary = focusedSummary?.status === "done";
+  const focusedSummaryHiddenByFilters =
+    !!focusedSummaryId && !sortedItems.some((item) => item.id === focusedSummaryId);
   const estimatedCredits =
     estimatedDurationSeconds && estimatedDurationSeconds > 0
       ? Math.max(1, Math.ceil(estimatedDurationSeconds / 60))
@@ -125,6 +232,47 @@ export function TranscriptionClient() {
     !estimatedCredits || !billing
       ? true
       : billing.creditsRemaining >= estimatedCredits;
+
+  function upsertItemCollection(
+    collection: Transcription[],
+    nextItem: Transcription,
+  ) {
+    const existingIndex = collection.findIndex((item) => item.id === nextItem.id);
+    if (existingIndex === -1) {
+      return [nextItem, ...collection];
+    }
+
+    return collection.map((item) => (item.id === nextItem.id ? nextItem : item));
+  }
+
+  function matchesCurrentFilters(item: Transcription) {
+    const trimmedQuery = debouncedSearchQuery.trim().toLowerCase();
+    if (statusFilter !== "all" && item.status !== statusFilter) {
+      return false;
+    }
+      if (templateFilter !== "all" && item.template !== templateFilter) {
+        return false;
+      }
+      if (projectFilter !== "all" && item.projectId !== projectFilter) {
+        return false;
+      }
+      if (!trimmedQuery) {
+        return true;
+      }
+
+    const haystack = [
+      item.fileName,
+      item.transcript || "",
+      ...(item.decisions || []),
+      ...(item.keyPoints || []),
+      ...(item.nextSteps || []),
+      ...(item.actionItems || []).map((actionItem) => actionItem.text),
+    ]
+      .join("\n")
+      .toLowerCase();
+
+    return haystack.includes(trimmedQuery);
+  }
 
   async function readMediaDuration(fileToRead: File) {
     setDurationLoading(true);
@@ -165,30 +313,81 @@ export function TranscriptionClient() {
     }
   }
 
-  async function loadItems(options?: { showLoading?: boolean }) {
+  const loadItems = useCallback(async (options?: { showLoading?: boolean }) => {
     const showLoading = options?.showLoading ?? true;
+    if (listRequestAbortRef.current) {
+      listRequestAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    listRequestAbortRef.current = abortController;
+
     if (showLoading) {
       setLoading(true);
     }
     setError(null);
     try {
-      const res = await fetch("/api/transcriptions");
+      const params = new URLSearchParams();
+      const trimmedQuery = debouncedSearchQuery.trim();
+      if (trimmedQuery) {
+        params.set("q", trimmedQuery);
+      }
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
+      if (templateFilter !== "all") {
+        params.set("template", templateFilter);
+      }
+      if (projectFilter !== "all") {
+        params.set("projectId", projectFilter);
+      }
+
+      const queryString = params.toString();
+      const res = await fetch(
+        queryString ? `/api/transcriptions?${queryString}` : "/api/transcriptions",
+        { signal: abortController.signal },
+      );
       const payload = (await res.json()) as ApiResponse;
       if (!res.ok) {
         throw new Error(payload?.error || "Failed to load transcriptions");
       }
+      if (listRequestAbortRef.current !== abortController) {
+        return null;
+      }
       const nextItems = payload.items || [];
       setItems(nextItems);
+      setAllItems((prev) => {
+        const merged = new Map(prev.map((item) => [item.id, item]));
+        for (const item of nextItems) {
+          merged.set(item.id, item);
+        }
+        return Array.from(merged.values());
+      });
       return nextItems;
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return null;
+      }
       setError(err instanceof Error ? err.message : "Failed to load data");
       return null;
     } finally {
+      if (listRequestAbortRef.current === abortController) {
+        listRequestAbortRef.current = null;
+      }
       if (showLoading) {
         setLoading(false);
       }
     }
-  }
+  }, [debouncedSearchQuery, statusFilter, templateFilter, projectFilter]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchQuery]);
 
   async function loadBilling() {
     setBillingLoading(true);
@@ -207,16 +406,61 @@ export function TranscriptionClient() {
     }
   }
 
+  async function loadTemplates() {
+    setTemplatesLoading(true);
+    try {
+      const res = await fetch("/api/templates");
+      const payload = (await res.json()) as TemplatesResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to load templates");
+      }
+
+      setCustomTemplates(payload.templates || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load templates");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function loadProjects() {
+    setProjectsLoading(true);
+    try {
+      const res = await fetch("/api/projects");
+      const payload = (await res.json()) as ProjectsResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to load projects");
+      }
+
+      setProjects(payload.projects || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load projects");
+    } finally {
+      setProjectsLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadItems();
+  }, [loadItems]);
+
+  useEffect(() => {
     void loadBilling();
+    void loadTemplates();
+    void loadProjects();
   }, []);
 
   useEffect(() => {
-    if (!focusedSummaryId || !focusedSummary || focusedSummary.status !== "done") {
+    if (
+      !shouldScrollToSummaryRef.current ||
+      !focusedSummaryId ||
+      !focusedSummary ||
+      focusedSummary.status !== "done"
+    ) {
       return;
     }
 
+    shouldScrollToSummaryRef.current = false;
     resultAreaRef.current?.scrollIntoView({
       behavior: "smooth",
       block: "start",
@@ -225,6 +469,15 @@ export function TranscriptionClient() {
 
   useEffect(() => {
     return () => {
+      if (listRequestAbortRef.current) {
+        listRequestAbortRef.current.abort();
+      }
+      if (uploadNoticeTimeoutRef.current) {
+        clearTimeout(uploadNoticeTimeoutRef.current);
+      }
+      if (uploadStatusTimeoutRef.current) {
+        clearTimeout(uploadStatusTimeoutRef.current);
+      }
       if (tipsTimeoutRef.current) {
         clearTimeout(tipsTimeoutRef.current);
       }
@@ -242,6 +495,128 @@ export function TranscriptionClient() {
       setCompletionTip(null);
       tipsTimeoutRef.current = null;
     }, 4500);
+  }
+
+  function showUploadVisibilityNotice(message: string) {
+    setUploadVisibilityNotice(message);
+
+    if (uploadNoticeTimeoutRef.current) {
+      clearTimeout(uploadNoticeTimeoutRef.current);
+    }
+
+    uploadNoticeTimeoutRef.current = setTimeout(() => {
+      setUploadVisibilityNotice(null);
+      uploadNoticeTimeoutRef.current = null;
+    }, 5000);
+  }
+
+  function showUploadStatusNotice(message: string) {
+    setUploadStatusNotice(message);
+
+    if (uploadStatusTimeoutRef.current) {
+      clearTimeout(uploadStatusTimeoutRef.current);
+    }
+
+    uploadStatusTimeoutRef.current = setTimeout(() => {
+      setUploadStatusNotice(null);
+      uploadStatusTimeoutRef.current = null;
+    }, 4500);
+  }
+
+  function showCopyStatus(message: string) {
+    setCopyStatus(message);
+    window.setTimeout(() => {
+      setCopyStatus((current) => (current === message ? null : current));
+    }, 2500);
+  }
+
+  function buildSummaryText(
+    item:
+      | Pick<Transcription, "decisions" | "keyPoints" | "nextSteps" | "actionItems">
+      | null,
+  ) {
+    if (!item) {
+      return "";
+    }
+
+    const sections = [
+      {
+        title: "Decisions",
+        items: item.decisions || [],
+      },
+      {
+        title: "Key Points",
+        items: item.keyPoints || [],
+      },
+      {
+        title: "Next Steps",
+        items: item.nextSteps || [],
+      },
+    ];
+
+    const summarySections = sections
+      .map((section) => {
+        const body = section.items.length
+          ? section.items.map((entry) => `- ${entry}`).join("\n")
+          : "- None";
+        return `${section.title}\n${body}`;
+      })
+      .join("\n\n");
+
+    const actionItems = item.actionItems?.length
+      ? item.actionItems
+          .map(
+            (actionItem) =>
+              `- ${actionItem.text} [${actionItem.priority || "MEDIUM"}] @${
+                actionItem.assignee || "Unassigned"
+              }`,
+          )
+          .join("\n")
+      : "- None";
+
+    return [
+      summarySections,
+      "",
+      `Action Items\n${actionItems}`,
+    ].join("\n");
+  }
+
+  async function handleCopyText(label: string, value: string) {
+    if (!value.trim()) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(value);
+    showCopyStatus(`${label} copied.`);
+  }
+
+  async function handleExport(format: "md" | "txt", transcriptionId: string) {
+    setExportBusy(`${format}:${transcriptionId}`);
+    setError(null);
+
+    try {
+      const res = await fetch(
+        `/api/transcriptions/${encodeURIComponent(transcriptionId)}/export?format=${format}`,
+      );
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error || "Export failed");
+      }
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportBusy(null);
+    }
   }
 
   async function loadAssistantMessages(transcriptionId: string) {
@@ -322,6 +697,9 @@ export function TranscriptionClient() {
 
     try {
       formData.append("template", uploadTemplate);
+      if (uploadProjectId !== "none") {
+        formData.append("projectId", uploadProjectId);
+      }
       if (estimatedDurationSeconds) {
         formData.append(
           "estimatedDurationSeconds",
@@ -337,33 +715,79 @@ export function TranscriptionClient() {
       if (!res.ok) {
         throw new Error(payload?.error || "Upload failed");
       }
+      const optimisticItem: Transcription | null = payload?.transcriptionId
+        ? {
+            id: payload.transcriptionId,
+            fileName: file.name,
+            status: payload?.processedInline ? "done" : payload?.queued ? "processing" : "uploaded",
+            template: uploadTemplate,
+            projectId: uploadProjectId === "none" ? null : uploadProjectId,
+            createdAt: new Date().toISOString(),
+            duration: estimatedDurationSeconds
+              ? Math.round(estimatedDurationSeconds)
+              : null,
+            transcript: null,
+            decisions: [],
+            keyPoints: [],
+            nextSteps: [],
+            actionItems: [],
+          }
+        : null;
+
+      if (optimisticItem) {
+        setAllItems((prev) => upsertItemCollection(prev, optimisticItem));
+        if (matchesCurrentFilters(optimisticItem)) {
+          setItems((prev) => upsertItemCollection(prev, optimisticItem));
+        } else {
+          showUploadVisibilityNotice(
+            "Your upload was added, but it is hidden by the current search or filters.",
+          );
+        }
+      }
+
       setFile(null);
       setEstimatedDurationSeconds(null);
-      let currentItem =
+      const initialItem =
         payload?.transcriptionId
           ? (await loadItems())?.find(
               (item) => item.id === payload.transcriptionId,
             ) || null
           : null;
       await loadBilling();
+      setUploading(false);
+      showUploadStatusNotice(
+        payload?.queued
+          ? "Your file is uploaded. Voxly is processing it in the background."
+          : "Your file is uploaded.",
+      );
 
       if (
         payload?.queued ||
-        currentItem?.status === "processing" ||
-        currentItem?.status === "uploaded"
+        initialItem?.status === "processing" ||
+        initialItem?.status === "uploaded"
       ) {
-        currentItem = await pollForProcessedResult(payload.transcriptionId);
+        void (async () => {
+          const currentItem = await pollForProcessedResult(payload.transcriptionId);
+          if (currentItem?.status === "done") {
+            shouldScrollToSummaryRef.current = true;
+            setFocusedSummaryId(currentItem.id);
+            showCompletionTip(
+              "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
+            );
+          }
+        })();
+        return;
       }
 
-      if (currentItem?.status === "done") {
-        setFocusedSummaryId(currentItem.id);
+      if (initialItem?.status === "done") {
+        shouldScrollToSummaryRef.current = true;
+        setFocusedSummaryId(initialItem.id);
         showCompletionTip(
           "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
         );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
       setUploading(false);
     }
   }
@@ -394,6 +818,7 @@ export function TranscriptionClient() {
     setError(null);
     setAssistantError(null);
     setAssistantSummary(null);
+    shouldScrollToSummaryRef.current = true;
     setFocusedSummaryId(id);
     setProcessingIds((prev) => ({ ...prev, [id]: true }));
     try {
@@ -422,6 +847,7 @@ export function TranscriptionClient() {
       }
 
       if (currentItem?.status === "done") {
+        shouldScrollToSummaryRef.current = true;
         setFocusedSummaryId(currentItem.id);
         showCompletionTip(
           "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
@@ -462,6 +888,11 @@ export function TranscriptionClient() {
         delete next[id];
         return next;
       });
+      setAllItems((prev) => prev.filter((item) => item.id !== id));
+      if (focusedSummaryId === id) {
+        setFocusedSummaryId(null);
+        setAssistantSummary(null);
+      }
       await loadItems();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -497,6 +928,7 @@ export function TranscriptionClient() {
         return;
       }
 
+      shouldScrollToSummaryRef.current = true;
       setFocusedSummaryId(nextFocusedSummary.id);
       await loadAssistantMessages(nextFocusedSummary.id);
     } catch (err) {
@@ -578,6 +1010,19 @@ export function TranscriptionClient() {
               : item,
           ),
         );
+        setAllItems((prev) =>
+          prev.map((item) =>
+            item.id === activeSummary.id
+              ? {
+                  ...item,
+                  decisions: updatedSummary.decisions || [],
+                  keyPoints: updatedSummary.keyPoints || [],
+                  nextSteps: updatedSummary.nextSteps || [],
+                  actionItems: updatedSummary.actionItems || [],
+                }
+              : item,
+          ),
+        );
       }
       const assistantReply = chatResp.data?.message || "(No reply)";
       setAssistantMessages((prev) => {
@@ -613,6 +1058,171 @@ export function TranscriptionClient() {
     requestAnimationFrame(() => assistantInputRef.current?.focus());
   }
 
+  function clearFilters() {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setTemplateFilter("all");
+    setProjectFilter("all");
+  }
+
+  async function handleCreateTemplate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTemplateBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newTemplateName,
+          baseTemplate: newTemplateBase,
+          promptInstructions: newTemplateInstructions,
+        }),
+      });
+      const payload = (await res.json()) as TemplatesResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to create template");
+      }
+
+      setNewTemplateName("");
+      setNewTemplateBase("default");
+      setNewTemplateInstructions("");
+      setTemplateManagerOpen(false);
+      await loadTemplates();
+      if (payload.template?.id) {
+        setUploadTemplate(`custom:${payload.template.id}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create template");
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
+
+  async function handleDeleteTemplate(id: string) {
+    setTemplateBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/templates/${id}`, {
+        method: "DELETE",
+      });
+      const payload = (await res.json().catch(() => ({}))) as TemplatesResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to delete template");
+      }
+
+      const deletedValue = `custom:${id}`;
+      setCustomTemplates((prev) => prev.filter((template) => template.id !== id));
+      if (uploadTemplate === deletedValue) {
+        setUploadTemplate("default");
+      }
+      if (templateFilter === deletedValue) {
+        setTemplateFilter("all");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete template");
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
+
+  async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setProjectBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProjectName,
+          description: newProjectDescription,
+        }),
+      });
+      const payload = (await res.json()) as ProjectsResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to create project");
+      }
+
+      setNewProjectName("");
+      setNewProjectDescription("");
+      setProjectManagerOpen(false);
+      await loadProjects();
+      if (payload.project?.id) {
+        setUploadProjectId(payload.project.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project");
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function handleDeleteProject(id: string) {
+    setProjectBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/projects/${id}`, {
+        method: "DELETE",
+      });
+      const payload = (await res.json().catch(() => ({}))) as ProjectsResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to delete project");
+      }
+
+      setProjects((prev) => prev.filter((project) => project.id !== id));
+      if (uploadProjectId === id) {
+        setUploadProjectId("none");
+      }
+      if (projectFilter === id) {
+        setProjectFilter("all");
+      }
+      setItems((prev) =>
+        prev.map((item) => (item.projectId === id ? { ...item, projectId: null } : item)),
+      );
+      setAllItems((prev) =>
+        prev.map((item) => (item.projectId === id ? { ...item, projectId: null } : item)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete project");
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function handleAssignProject(transcriptionId: string, projectId: string) {
+    setError(null);
+    try {
+      const nextProjectId = projectId === "none" ? null : projectId;
+      const res = await fetch("/api/transcriptions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: transcriptionId, projectId: nextProjectId }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to update project");
+      }
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === transcriptionId ? { ...item, projectId: nextProjectId } : item,
+        ),
+      );
+      setAllItems((prev) =>
+        prev.map((item) =>
+          item.id === transcriptionId ? { ...item, projectId: nextProjectId } : item,
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update project");
+    }
+  }
+
   return (
     <div className="relative mt-6">
       {completionTip ? (
@@ -629,6 +1239,50 @@ export function TranscriptionClient() {
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {uploadVisibilityNotice ? (
+        <div className="pointer-events-none fixed left-1/2 top-44 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2">
+          <div className="rounded-[22px] border border-amber-200 bg-amber-50/95 px-4 py-3 text-sm text-amber-900 shadow-[0_18px_48px_-24px_rgba(245,158,11,0.75)] backdrop-blur">
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 font-bold text-amber-700">
+                i
+              </div>
+              <div>
+                <p className="font-bold">Upload added</p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                  {uploadVisibilityNotice}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {uploadStatusNotice ? (
+        <div className="pointer-events-none fixed left-1/2 top-56 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2">
+          <div className="rounded-[22px] border border-sky-200 bg-sky-50/95 px-4 py-3 text-sm text-sky-900 shadow-[0_18px_48px_-24px_rgba(14,165,233,0.55)] backdrop-blur">
+            <div className="flex items-start gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-sky-100 font-bold text-sky-700">
+                i
+              </div>
+              <div>
+                <p className="font-bold">Upload complete</p>
+                <p className="mt-1 text-xs leading-relaxed text-sky-800">
+                  {uploadStatusNotice}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {copyStatus ? (
+        <div className="pointer-events-none fixed left-1/2 top-72 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2">
+          <div className="rounded-[18px] border border-slate-200 bg-white/95 px-4 py-3 text-sm font-semibold text-slate-900 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.35)] backdrop-blur">
+            {copyStatus}
           </div>
         </div>
       ) : null}
@@ -925,12 +1579,221 @@ export function TranscriptionClient() {
                   onChange={(e) => setUploadTemplate(e.target.value)}
                   className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
                 >
-                  {templates.map((t) => (
+                  {templateOptions.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.label}
                     </option>
                   ))}
                 </select>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTemplateManagerOpen((prev) => !prev)}
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                  >
+                    {templateManagerOpen ? "Hide Templates" : "Manage Templates"}
+                  </button>
+                  {templatesLoading ? (
+                    <span className="text-xs text-slate-500">Loading templates...</span>
+                  ) : customTemplates.length ? (
+                    <span className="text-xs text-slate-500">
+                      {customTemplates.length} custom template
+                      {customTemplates.length === 1 ? "" : "s"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-500">
+                      No custom templates yet.
+                    </span>
+                  )}
+                </div>
+                {templateManagerOpen ? (
+                  <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
+                    <form onSubmit={handleCreateTemplate} className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Template name
+                        </label>
+                        <input
+                          value={newTemplateName}
+                          onChange={(event) => setNewTemplateName(event.target.value)}
+                          className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+                          placeholder="Candidate Evaluation"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Base template
+                        </label>
+                        <select
+                          value={newTemplateBase}
+                          onChange={(event) => setNewTemplateBase(event.target.value)}
+                          className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+                        >
+                          {builtInTemplates.map((template) => (
+                            <option key={template.id} value={template.id}>
+                              {template.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Custom instructions
+                        </label>
+                        <textarea
+                          value={newTemplateInstructions}
+                          onChange={(event) =>
+                            setNewTemplateInstructions(event.target.value)
+                          }
+                          rows={5}
+                          className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+                          placeholder="Focus on strengths, weaknesses, evidence, and recommendation."
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={
+                          templateBusy ||
+                          !newTemplateName.trim() ||
+                          !newTemplateInstructions.trim()
+                        }
+                        className="cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {templateBusy ? "Saving..." : "Save Template"}
+                      </button>
+                    </form>
+
+                    {customTemplates.length ? (
+                      <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
+                        {customTemplates.map((template) => (
+                          <div
+                            key={template.id}
+                            className="flex items-start justify-between gap-3 rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-3"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                {template.name}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Base: {template.baseTemplate}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteTemplate(template.id)}
+                              disabled={templateBusy}
+                              className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <label className="mt-4 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Project
+                </label>
+                <select
+                  value={uploadProjectId}
+                  onChange={(event) => setUploadProjectId(event.target.value)}
+                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                >
+                  <option value="none">No project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setProjectManagerOpen((prev) => !prev)}
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                  >
+                    {projectManagerOpen ? "Hide Projects" : "Manage Projects"}
+                  </button>
+                  {projectsLoading ? (
+                    <span className="text-xs text-slate-500">Loading projects...</span>
+                  ) : projects.length ? (
+                    <span className="text-xs text-slate-500">
+                      {projects.length} project{projects.length === 1 ? "" : "s"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-500">No projects yet.</span>
+                  )}
+                </div>
+                {projectManagerOpen ? (
+                  <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
+                    <form onSubmit={handleCreateProject} className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Project name
+                        </label>
+                        <input
+                          value={newProjectName}
+                          onChange={(event) => setNewProjectName(event.target.value)}
+                          className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+                          placeholder="Candidate Interviews"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Description
+                        </label>
+                        <textarea
+                          value={newProjectDescription}
+                          onChange={(event) =>
+                            setNewProjectDescription(event.target.value)
+                          }
+                          rows={3}
+                          className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+                          placeholder="Group related transcripts into one workspace."
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={projectBusy || !newProjectName.trim()}
+                        className="cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {projectBusy ? "Saving..." : "Save Project"}
+                      </button>
+                    </form>
+
+                    {projects.length ? (
+                      <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
+                        {projects.map((project) => (
+                          <div
+                            key={project.id}
+                            className="flex items-start justify-between gap-3 rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-3"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">
+                                {project.name}
+                              </p>
+                              {project.description ? (
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {project.description}
+                                </p>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteProject(project.id)}
+                              disabled={projectBusy}
+                              className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -960,7 +1823,7 @@ export function TranscriptionClient() {
                     className="cursor-pointer rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_18px_34px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:bg-[#fdc9a8] disabled:text-white/90 disabled:opacity-100 active:scale-95 disabled:active:scale-100"
                   >
                     {uploading
-                      ? "Starting Voxly..."
+                      ? "Uploading..."
                       : durationLoading
                         ? "Reading duration..."
                         : "Start Voxly"}
@@ -995,13 +1858,72 @@ export function TranscriptionClient() {
 
         <section ref={resultAreaRef} className="space-y-8">
           <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Current Voxly Audio
-            </p>
-            <p className="mt-2 text-lg font-semibold text-slate-950">
-              {focusedSummary?.fileName || "No processed audio selected yet"}
-            </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Current Voxly Audio
+                </p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">
+                  {focusedSummary?.fileName || "No processed audio selected yet"}
+                </p>
+                {focusedSummaryHiddenByFilters ? (
+                  <p className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                    This selected transcript is hidden by the current filters.
+                  </p>
+                ) : null}
+              </div>
+              {focusedSummary ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCopyText(
+                        "Summary",
+                        buildSummaryText(displaySummary || focusedSummary),
+                      )
+                    }
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                  >
+                    Copy Summary
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCopyText(
+                        "Transcript",
+                        focusedSummary.transcript || "",
+                      )
+                    }
+                    disabled={!focusedSummary.transcript}
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Copy Transcript
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleExport("md", focusedSummary.id)}
+                    disabled={exportBusy === `md:${focusedSummary.id}`}
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {exportBusy === `md:${focusedSummary.id}`
+                      ? "Exporting..."
+                      : "Export Markdown"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleExport("txt", focusedSummary.id)}
+                    disabled={exportBusy === `txt:${focusedSummary.id}`}
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {exportBusy === `txt:${focusedSummary.id}`
+                      ? "Exporting..."
+                      : "Export Text"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
+          <div className="min-h-[24rem] space-y-8">
           {[
             {
               title: "Decisions",
@@ -1107,6 +2029,7 @@ export function TranscriptionClient() {
               )}
             </div>
           </div>
+          </div>
         </section>
 
         <div className="flex items-center justify-center gap-8 py-2 text-sm font-medium text-slate-500">
@@ -1125,15 +2048,102 @@ export function TranscriptionClient() {
           id="transcriptions"
           className="rounded-[30px] border border-white/80 bg-white/88 p-8 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)]"
         >
-          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-            <h2 className="text-xl font-bold text-slate-900">Transcriptions</h2>
-            <button
-              type="button"
-              onClick={() => void loadItems()}
-              className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
-            >
-              Refresh
-            </button>
+          <div className="border-b border-slate-200 pb-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Transcriptions</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Search by filename or transcript content, then narrow by status or template.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {hasActiveFilters ? (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] active:scale-95"
+                  >
+                    Clear Filters
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void loadItems()}
+                  className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_220px_220px]">
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Search
+                </span>
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search recordings, transcripts, or notes"
+                  className="mt-2 w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Status
+                </span>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Template
+                </span>
+                <select
+                  value={templateFilter}
+                  onChange={(event) => setTemplateFilter(event.target.value)}
+                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                >
+                  <option value="all">All templates</option>
+                  {templateOptions.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 max-w-[220px]">
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Project
+                </span>
+                <select
+                  value={projectFilter}
+                  onChange={(event) => setProjectFilter(event.target.value)}
+                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                >
+                  <option value="all">All projects</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
           {loading ? (
@@ -1158,10 +2168,12 @@ export function TranscriptionClient() {
                 </svg>
               </div>
               <p className="text-sm font-medium text-slate-600">
-                No uploads yet.
+                {hasActiveFilters ? "No matching transcriptions." : "No uploads yet."}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                Upload your first recording to get started.
+                {hasActiveFilters
+                  ? "Try clearing a filter or searching with a broader phrase."
+                  : "Upload your first recording to get started."}
               </p>
             </div>
           ) : (
@@ -1212,9 +2224,32 @@ export function TranscriptionClient() {
                               </span>
                             </>
                           ) : null}
+                          {item.projectId ? (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-xs text-slate-500">
+                                {projects.find((project) => project.id === item.projectId)?.name ||
+                                  "Project"}
+                              </span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={item.projectId || "none"}
+                          onChange={(event) =>
+                            void handleAssignProject(item.id, event.target.value)
+                          }
+                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                        >
+                          <option value="none">No project</option>
+                          {projects.map((project) => (
+                            <option key={project.id} value={project.id}>
+                              {project.name}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           onClick={() => handleProcess(item.id, item.template)}

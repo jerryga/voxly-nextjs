@@ -35,6 +35,29 @@ After that, add:
 - tighter IAM policies
 - stronger least-privilege IAM policies
 
+## CloudWatch Support
+
+This starter now enables a basic CloudWatch setup for the Elastic Beanstalk environment by default:
+
+- Elastic Beanstalk log streaming to CloudWatch Logs
+- enhanced health reporting
+- a high CPU alarm for Beanstalk instances
+- a low in-service instance count alarm for the Beanstalk Auto Scaling group
+
+Relevant variables:
+
+- `enable_cloudwatch_logs`
+- `cloudwatch_log_retention_days`
+- `enable_cloudwatch_alarms`
+- `cloudwatch_alarm_actions`
+- `beanstalk_high_cpu_threshold`
+- `create_alarm_sns_topic`
+- `alarm_email_endpoint`
+
+By default, this starter can also create an SNS topic for alarm notifications and subscribe an email address.
+
+After `terraform apply`, AWS sends a subscription confirmation email to `alarm_email_endpoint`. The subscription must be confirmed before notifications will arrive.
+
 ## Files
 
 - [versions.tf](/Users/chason/Documents/GitHub/voxly-nextjs/terraform/versions.tf)

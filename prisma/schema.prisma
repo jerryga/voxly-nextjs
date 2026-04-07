@@ -20,10 +20,27 @@ model User {
   accounts       Account[]
   sessions       Session[]
   transcriptions Transcription[]
+  projects       Project[]
+  summaryTemplates SummaryTemplate[]
   assistantMessages AssistantMessage[]
   subscription   Subscription?
   creditTransactions CreditTransaction[]
   promoRedemptions PromotionRedemption[]
+}
+
+model SummaryTemplate {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String
+  slug               String
+  baseTemplate       String   @default("default")
+  promptInstructions String   @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@unique([userId, slug])
 }
 
 model Account {
@@ -58,24 +75,47 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+model Project {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?         @db.Text
+  color         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  transcriptions Transcription[]
+
+  @@index([userId, createdAt])
+  @@unique([userId, name])
+}
+
 model Transcription {
   id       String @id @default(cuid())
   userId   String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   fileName String
   fileUrl  String
   template String @default("default")
   status   String @default("processing")
+  searchText String? @db.Text
   decisions   Json?
   keyPoints   Json?
   nextSteps   Json?
   actionItems Json?
+  rawTranscript String? @db.Text
+  formattedTranscript String? @db.Text
   transcript String? @db.Text
   duration   Int?
   assistantMessages AssistantMessage[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([userId, createdAt])
+  @@index([userId, projectId, createdAt])
+  @@index([userId, status, createdAt])
+  @@index([userId, template, createdAt])
   @@index([status])
 }
 

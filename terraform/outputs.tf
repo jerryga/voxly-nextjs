@@ -89,3 +89,8 @@ output "acm_domain_validation_records" {
     }
   ] : []
 }
+
+output "cloudwatch_alarm_sns_topic_arn" {
+  description = "SNS topic ARN used for CloudWatch alarm notifications when enabled."
+  value       = var.create_alarm_sns_topic ? aws_sns_topic.cloudwatch_alarms[0].arn : null
+}
