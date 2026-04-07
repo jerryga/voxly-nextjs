@@ -88,6 +88,28 @@ export const transcriptionDeleteSchema = z.object({
   id: idSchema,
 });
 
+export const actionTaskCreateSchema = z.object({
+  transcriptionId: idSchema,
+  title: z.string().trim().min(1).max(300),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  assignee: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
+  dueDate: z.union([z.coerce.date(), z.literal(""), z.null()]).optional(),
+  sourceActionIndex: z.coerce.number().int().min(0).max(999).optional(),
+});
+
+export const actionTaskUpdateSchema = z.object({
+  id: idSchema,
+  title: z.string().trim().min(1).max(300).optional(),
+  status: z.enum(["open", "in_progress", "done"]).optional(),
+  priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  assignee: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
+  dueDate: z.union([z.coerce.date(), z.literal(""), z.null()]).optional(),
+});
+
+export const actionTaskDeleteSchema = z.object({
+  id: idSchema,
+});
+
 export const projectCreateSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().max(500).optional(),
