@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizeTemplate } from "@/lib/llm/promptBuilder";
+import { normalizeTemplateSelection } from "@/lib/templates";
 
 const emailSchema = z
   .email("Enter a valid email address.")
@@ -24,8 +25,8 @@ const templateSchema = z
   .string()
   .trim()
   .min(1)
-  .max(40)
-  .transform((value) => normalizeTemplate(value));
+  .max(128)
+  .transform((value) => normalizeTemplateSelection(value));
 
 const relativePathSchema = z
   .string()
@@ -79,11 +80,24 @@ export const assistantChatSchema = z.object({
 
 export const transcriptionUpdateSchema = z.object({
   id: idSchema,
-  template: templateSchema,
+  template: templateSchema.optional(),
+  projectId: z.union([idSchema, z.null()]).optional(),
 });
 
 export const transcriptionDeleteSchema = z.object({
   id: idSchema,
+});
+
+export const projectCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(500).optional(),
+  color: z.string().trim().max(32).optional(),
+});
+
+export const projectUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  description: z.union([z.string().trim().max(500), z.literal(""), z.null()]).optional(),
+  color: z.union([z.string().trim().max(32), z.literal(""), z.null()]).optional(),
 });
 
 export const transcriptionProcessSchema = z.object({
@@ -92,9 +106,32 @@ export const transcriptionProcessSchema = z.object({
     .string()
     .trim()
     .min(1)
+    .max(128)
+    .optional()
+    .transform((value) => (value ? normalizeTemplateSelection(value) : undefined)),
+});
+
+export const summaryTemplateCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  baseTemplate: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .transform((value) => normalizeTemplate(value)),
+  promptInstructions: z.string().trim().min(1).max(5000),
+});
+
+export const summaryTemplateUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  baseTemplate: z
+    .string()
+    .trim()
+    .min(1)
     .max(40)
     .optional()
     .transform((value) => (value ? normalizeTemplate(value) : undefined)),
+  promptInstructions: z.string().trim().min(1).max(5000).optional(),
 });
 
 export const billingCheckoutSchema = z.discriminatedUnion("purchaseType", [

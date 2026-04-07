@@ -7,24 +7,168 @@ import {
 } from "@/lib/billing";
 import { getSignedFileUrl } from "@/lib/storage/s3";
 import { transcribeFromUrl } from "@/lib/deepgram";
-import { summarizeTranscript } from "@/lib/llm/agent";
+import { formatTranscript, summarizeTranscript } from "@/lib/llm/agent";
+import { buildTranscriptionSearchText } from "@/lib/transcriptions/searchText";
+import { resolveTemplateSelectionForUser } from "@/lib/templates";
 
 type DeepgramResult = {
   metadata?: {
     duration?: number;
   };
   results?: {
+    utterances?: Array<{
+      speaker?: number | string;
+      transcript?: string;
+      start?: number;
+      end?: number;
+    }>;
     channels?: Array<{
       alternatives?: Array<{
         transcript?: string;
+        paragraphs?: {
+          transcript?: string;
+          paragraphs?: Array<{
+            sentences?: Array<{
+              text?: string;
+              start?: number;
+              end?: number;
+            }>;
+            start?: number;
+            end?: number;
+          }>;
+        };
       }>;
     }>;
   };
 };
 
-function extractTranscript(result: DeepgramResult) {
+function formatTimestamp(seconds?: number) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+
+  const wholeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const secs = wholeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+function shouldMergeUtterances(
+  currentText: string,
+  nextText: string,
+  currentSpeaker: string,
+  nextSpeaker: string,
+) {
+  if (currentSpeaker !== nextSpeaker) {
+    return false;
+  }
+
+  const currentWordCount = currentText.split(/\s+/).filter(Boolean).length;
+  const nextWordCount = nextText.split(/\s+/).filter(Boolean).length;
+
+  if (currentWordCount <= 6 || nextWordCount <= 6) {
+    return true;
+  }
+
+  if (!/[.!?]["']?$/.test(currentText)) {
+    return true;
+  }
+
+  return /^[a-z0-9,(]/i.test(nextText);
+}
+
+function extractRawTranscript(result: DeepgramResult) {
   return (
     result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
+  ).trim();
+}
+
+function extractFormattedUtterances(result: DeepgramResult) {
+  const utterances = result?.results?.utterances;
+  if (!Array.isArray(utterances) || utterances.length === 0) {
+    return "";
+  }
+
+  const mergedBlocks: Array<{
+    speaker: string;
+    start?: number;
+    text: string;
+  }> = [];
+
+  for (const utterance of utterances) {
+    const transcript = utterance?.transcript?.trim();
+    if (!transcript) {
+      continue;
+    }
+
+    const speaker =
+      utterance?.speaker === undefined || utterance?.speaker === null
+        ? "Speaker"
+        : `Speaker ${utterance.speaker}`;
+    const lastBlock = mergedBlocks[mergedBlocks.length - 1];
+
+    if (
+      lastBlock &&
+      shouldMergeUtterances(lastBlock.text, transcript, lastBlock.speaker, speaker)
+    ) {
+      lastBlock.text = `${lastBlock.text} ${transcript}`.replace(/\s+/g, " ").trim();
+      continue;
+    }
+
+    mergedBlocks.push({
+      speaker,
+      start: utterance?.start,
+      text: transcript,
+    });
+  }
+
+  return mergedBlocks
+    .map((block) => {
+      const timestamp = formatTimestamp(block.start);
+      return timestamp
+        ? `[${timestamp}] ${block.speaker}: ${block.text}`
+        : `${block.speaker}: ${block.text}`;
+    })
+    .join("\n\n");
+}
+
+function extractFormattedParagraphs(result: DeepgramResult) {
+  const paragraphs =
+    result?.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.paragraphs;
+  if (!Array.isArray(paragraphs) || paragraphs.length === 0) {
+    return "";
+  }
+
+  return paragraphs
+    .map((paragraph) =>
+      (paragraph?.sentences || [])
+        .map((sentence) => sentence?.text?.trim() || "")
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function extractReadableTranscript(result: DeepgramResult) {
+  const utteranceTranscript = extractFormattedUtterances(result);
+  if (utteranceTranscript) {
+    return utteranceTranscript;
+  }
+
+  const paragraphTranscript = extractFormattedParagraphs(result);
+  if (paragraphTranscript) {
+    return paragraphTranscript;
+  }
+
+  return (
+    extractRawTranscript(result)
   ).trim();
 }
 
@@ -98,10 +242,13 @@ export async function processUploadedAudio({
     where: { id: transcriptionId },
     select: {
       id: true,
+      fileName: true,
       template: true,
       userId: true,
       status: true,
       transcript: true,
+      rawTranscript: true,
+      formattedTranscript: true,
       decisions: true,
       keyPoints: true,
       nextSteps: true,
@@ -114,8 +261,12 @@ export async function processUploadedAudio({
   }
 
   const effectiveTemplate = template || transcription.template || "default";
+  const templateResolution = await resolveTemplateSelectionForUser(
+    transcription.userId,
+    effectiveTemplate,
+  );
   if (
-    effectiveTemplate === (transcription.template || "default") &&
+    templateResolution.storedTemplate === (transcription.template || "default") &&
     hasPersistedTranscriptionResult(transcription)
   ) {
     return { transcriptionId, reusedExisting: true };
@@ -145,15 +296,34 @@ export async function processUploadedAudio({
     });
 
     const deepgramResult = await transcribeFromUrl(signedUrl);
-    const transcriptText = extractTranscript(deepgramResult);
+    const rawTranscriptText = extractRawTranscript(deepgramResult);
+    const readableTranscriptText = extractReadableTranscript(deepgramResult);
     const durationSeconds = extractDurationSeconds(deepgramResult);
 
-    if (!transcriptText) {
+    if (!rawTranscriptText) {
       throw new Error("Transcription returned empty text");
     }
 
-    const summary = await summarizeTranscript(transcriptText, {
-      template: effectiveTemplate,
+    let formattedTranscriptText = readableTranscriptText;
+    try {
+      const aiFormattedTranscript = await formatTranscript(
+        rawTranscriptText,
+        readableTranscriptText,
+        { template: templateResolution.builtInTemplate },
+      );
+      if (aiFormattedTranscript?.trim()) {
+        formattedTranscriptText = aiFormattedTranscript.trim();
+      }
+    } catch (formattingError) {
+      console.warn("Transcript formatting failed, using readable fallback", formattingError);
+    }
+
+    const effectiveTranscriptText =
+      formattedTranscriptText?.trim() || readableTranscriptText || rawTranscriptText;
+
+    const summary = await summarizeTranscript(effectiveTranscriptText, {
+      template: templateResolution.builtInTemplate,
+      customInstructions: templateResolution.customInstructions,
     });
 
     await applyUsageCredits({
@@ -165,12 +335,24 @@ export async function processUploadedAudio({
     await prisma.transcription.update({
       where: { id: transcriptionId },
       data: {
-        transcript: transcriptText,
+        rawTranscript: rawTranscriptText,
+        formattedTranscript: formattedTranscriptText || null,
+        transcript: effectiveTranscriptText,
         duration: durationSeconds ? Math.round(durationSeconds) : null,
+        searchText: buildTranscriptionSearchText({
+          fileName: transcription.fileName,
+          template: templateResolution.storedTemplate,
+          transcript: effectiveTranscriptText,
+          decisions: summary.decisions,
+          keyPoints: summary.keyPoints,
+          nextSteps: summary.nextSteps,
+          actionItems: summary.actionItems,
+        }),
         decisions: summary.decisions,
         keyPoints: summary.keyPoints,
         nextSteps: summary.nextSteps,
         actionItems: summary.actionItems,
+        template: templateResolution.storedTemplate,
         status: "done",
       },
     });

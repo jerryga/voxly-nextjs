@@ -7,6 +7,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { summarizeTranscript } from "@/lib/llm/agent";
 import { normalizeTemplate } from "@/lib/llm/promptBuilder";
+import { buildTranscriptionSearchText } from "@/lib/transcriptions/searchText";
 
 export const runtime = "nodejs";
 
@@ -67,7 +68,18 @@ export async function GET(request: Request) {
       fileUrl,
       status: "done",
       template: templateParam || template,
+      rawTranscript: transcript,
+      formattedTranscript: transcript,
       transcript,
+      searchText: buildTranscriptionSearchText({
+        fileName: `Test Data (${displayTemplate})`,
+        template: templateParam || template,
+        transcript,
+        decisions: summary.decisions,
+        keyPoints: summary.keyPoints,
+        nextSteps: summary.nextSteps,
+        actionItems: summary.actionItems,
+      }),
       decisions: summary.decisions,
       keyPoints: summary.keyPoints,
       nextSteps: summary.nextSteps,

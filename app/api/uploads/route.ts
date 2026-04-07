@@ -7,12 +7,12 @@ import { inngest } from "@/inngest/client";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { ensureCreditsAvailableForExpectedProcessing } from "@/lib/billing";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
-import { processUploadedAudio } from "@/lib/transcriptions/process";
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
   MAX_UPLOAD_SIZE_BYTES,
 } from "@/lib/api/validation";
-import { normalizeTemplate } from "@/lib/llm/promptBuilder";
+import { buildTranscriptionSearchText } from "@/lib/transcriptions/searchText";
+import { resolveTemplateSelectionForUser } from "@/lib/templates";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,30 @@ function shouldProcessInline(err: unknown) {
     (message.includes("Branch environment name is required") ||
       message.includes("Branch environment does not exist"))
   );
+}
+
+function isLocalDevelopment() {
+  return process.env.NODE_ENV !== "production";
+}
+
+function getInngestDebugSnapshot() {
+  const eventKey = process.env.INNGEST_EVENT_KEY || "";
+
+  return {
+    nodeEnv: process.env.NODE_ENV || null,
+    inngestClientEnv: inngest.env,
+    eventKeyPresent: Boolean(eventKey),
+    eventKeyPrefix: eventKey ? eventKey.slice(0, 12) : null,
+    hostBranchVars: {
+      INNGEST_ENV: process.env.INNGEST_ENV || null,
+      BRANCH_NAME: process.env.BRANCH_NAME || null,
+      BRANCH: process.env.BRANCH || null,
+      VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF || null,
+      CF_PAGES_BRANCH: process.env.CF_PAGES_BRANCH || null,
+      RENDER_GIT_BRANCH: process.env.RENDER_GIT_BRANCH || null,
+      RAILWAY_GIT_BRANCH: process.env.RAILWAY_GIT_BRANCH || null,
+    },
+  };
 }
 
 export async function POST(request: Request) {
@@ -61,11 +85,17 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("file");
     const templateField = formData.get("template");
+    const projectIdField = formData.get("projectId");
     const estimatedDurationField = formData.get("estimatedDurationSeconds");
-    const template =
-      typeof templateField === "string" && templateField.trim()
-        ? normalizeTemplate(templateField)
-        : "default";
+    const templateResolution = await resolveTemplateSelectionForUser(
+      user.id,
+      typeof templateField === "string" ? templateField : undefined,
+    );
+    const template = templateResolution.storedTemplate;
+    const projectId =
+      typeof projectIdField === "string" && projectIdField.trim()
+        ? projectIdField.trim()
+        : null;
     const estimatedDurationSeconds =
       typeof estimatedDurationField === "string" &&
       estimatedDurationField.trim() &&
@@ -105,13 +135,28 @@ export async function POST(request: Request) {
     const key = `users/${user.id}/${Date.now()}-${safeName}`;
     uploadedKey = key;
 
+    if (projectId) {
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, userId: user.id },
+        select: { id: true },
+      });
+      if (!project) {
+        return NextResponse.json({ error: "Project not found" }, { status: 404 });
+      }
+    }
+
     const transcription = await prisma.transcription.create({
       data: {
         userId: user.id,
+        projectId,
         fileName: file.name || safeName,
         fileUrl: key,
         status: "uploading",
         template,
+        searchText: buildTranscriptionSearchText({
+          fileName: file.name || safeName,
+          template,
+        }),
       },
       select: { id: true },
     });
@@ -131,9 +176,8 @@ export async function POST(request: Request) {
       },
     });
 
-    const inngestEnv = process.env.INNGEST_ENV?.trim();
-
     try {
+      console.info("Inngest enqueue attempt", getInngestDebugSnapshot());
       await inngest.send({
         name: "voxly/audio.uploaded",
         data: {
@@ -141,22 +185,19 @@ export async function POST(request: Request) {
           fileKey: upload.key,
           template,
         },
-      }, inngestEnv ? { env: inngestEnv } : undefined);
+      });
     } catch (err) {
-      if (shouldProcessInline(err)) {
-        await processUploadedAudio({
-          transcriptionId: transcription.id,
-          fileKey: upload.key,
-          template,
-        });
-
-        return NextResponse.json({
-          ok: true,
-          transcriptionId: transcription.id,
-          key: upload.key,
-          queued: false,
-          processedInline: true,
-        });
+      console.error("Inngest enqueue failed", {
+        debug: getInngestDebugSnapshot(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+      if (shouldProcessInline(err) && isLocalDevelopment()) {
+        console.warn(
+          "Inngest enqueue failed in local development; background processing must be started manually.",
+          err,
+        );
+      } else {
+        console.error("Failed to enqueue uploaded audio for background processing", err);
       }
 
       try {
