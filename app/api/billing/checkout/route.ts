@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
@@ -12,6 +10,7 @@ import {
   getOrCreateStripeCustomer,
 } from "@/lib/billing";
 import { getStripe } from "@/lib/stripe";
+import { requireWorkspaceBillingContext } from "@/lib/workspace-billing";
 
 export const runtime = "nodejs";
 
@@ -34,17 +33,19 @@ export async function POST(request: Request) {
     });
     if (rateLimitError) return rateLimitError;
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-    if (!email) {
+    const billingContext = await requireWorkspaceBillingContext();
+    if (!billingContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!billingContext.canManageBilling) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const billingUser = await prisma.user.findUnique({
+      where: { id: billingContext.billingUserId },
       include: { subscription: true },
     });
-    if (!user) {
+    if (!billingUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -56,17 +57,17 @@ export async function POST(request: Request) {
     }
 
     const customerId = await getOrCreateStripeCustomer({
-      userId: user.id,
-      email: user.email,
-      name: user.name,
+      userId: billingUser.id,
+      email: billingUser.email,
+      name: billingUser.name,
     });
 
     const stripe = getStripe();
 
     if (
       parsed.data.purchaseType === "subscription" &&
-      user.subscription?.status &&
-      ACTIVE_SUBSCRIPTION_STATUSES.has(user.subscription.status)
+      billingUser.subscription?.status &&
+      ACTIVE_SUBSCRIPTION_STATUSES.has(billingUser.subscription.status)
     ) {
       return NextResponse.json(
         { error: "An active subscription already exists. Use the billing portal to manage it." },
@@ -90,15 +91,19 @@ export async function POST(request: Request) {
             quantity: 1,
           },
         ],
-        client_reference_id: user.id,
+        client_reference_id: billingUser.id,
         metadata: {
-          userId: user.id,
+          userId: billingUser.id,
+          initiatedByUserId: billingContext.context.user.id,
+          workspaceId: billingContext.workspace.id,
           purchaseType: "subscription",
           plan: plan.plan,
         },
         subscription_data: {
           metadata: {
-            userId: user.id,
+            userId: billingUser.id,
+            initiatedByUserId: billingContext.context.user.id,
+            workspaceId: billingContext.workspace.id,
             plan: plan.plan,
           },
         },
@@ -123,9 +128,11 @@ export async function POST(request: Request) {
           quantity: 1,
         },
       ],
-      client_reference_id: user.id,
+      client_reference_id: billingUser.id,
       metadata: {
-        userId: user.id,
+        userId: billingUser.id,
+        initiatedByUserId: billingContext.context.user.id,
+        workspaceId: billingContext.workspace.id,
         purchaseType: "topup",
         creditPack: creditPack.key,
       },

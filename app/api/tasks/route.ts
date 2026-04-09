@@ -1,55 +1,81 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { actionTaskCreateSchema } from "@/lib/api/validation";
+import { requireWorkspaceContext } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
 const actionTaskDelegate = (prisma as typeof prisma & {
   actionTask: {
-    findMany: typeof prisma.$queryRaw;
-    create: typeof prisma.$queryRaw;
+    findMany: (...args: any[]) => Promise<any[]>;
+    create: (...args: any[]) => Promise<any>;
   };
 }).actionTask;
 
+type WorkspaceContext = NonNullable<
+  Awaited<ReturnType<typeof requireWorkspaceContext>>
+>;
+
+function getWorkspaceTaskWhere(context: WorkspaceContext) {
+  return {
+    OR: [
+      { workspaceId: context.activeWorkspace.id },
+      { workspaceId: null, userId: context.user.id },
+    ],
+  } as const;
+}
+
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const transcriptionId = searchParams.get("transcriptionId")?.trim();
+    const status = searchParams.get("status")?.trim();
+    const assignee = searchParams.get("assignee")?.trim();
 
-    if (!transcriptionId) {
-      return NextResponse.json(
-        { error: "transcriptionId is required" },
-        { status: 400 },
-      );
-    }
+    const taskWhere = {
+      ...getWorkspaceTaskWhere(context),
+      ...(status && status !== "all" ? { status } : {}),
+      ...(assignee ? { assignee } : {}),
+    } as any;
 
-    const transcription = await prisma.transcription.findFirst({
-      where: { id: transcriptionId, userId: user.id },
-      select: { id: true },
-    });
+    if (transcriptionId) {
+      const transcription = await prisma.transcription.findFirst({
+        where: {
+          id: transcriptionId,
+          OR: [
+            { workspaceId: context.activeWorkspace.id },
+            { workspaceId: null, userId: context.user.id },
+          ],
+        } as any,
+        select: { id: true },
+      });
 
-    if (!transcription) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (!transcription) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+
+      taskWhere.transcriptionId = transcriptionId;
     }
 
     const tasks = await actionTaskDelegate.findMany({
-      where: { userId: user.id, transcriptionId },
+      where: taskWhere,
+      include: {
+        transcription: {
+          select: {
+            id: true,
+            fileName: true,
+            status: true,
+          },
+        },
+      },
       orderBy: [{ status: "asc" }, { createdAt: "asc" }],
     });
 
@@ -69,15 +95,8 @@ export async function POST(request: Request) {
       return originError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -99,7 +118,13 @@ export async function POST(request: Request) {
     } = parsed.data;
 
     const transcription = await prisma.transcription.findFirst({
-      where: { id: transcriptionId, userId: user.id },
+      where: {
+        id: transcriptionId,
+        OR: [
+          { workspaceId: context.activeWorkspace.id },
+          { workspaceId: null, userId: context.user.id },
+        ],
+      } as any,
       select: { id: true },
     });
 
@@ -109,7 +134,8 @@ export async function POST(request: Request) {
 
     const task = await actionTaskDelegate.create({
       data: {
-        userId: user.id,
+        userId: context.user.id,
+        workspaceId: context.activeWorkspace.id,
         transcriptionId,
         title,
         priority: priority || "MEDIUM",
@@ -117,7 +143,7 @@ export async function POST(request: Request) {
         dueDate: dueDate instanceof Date ? dueDate : null,
         sourceActionIndex:
           typeof sourceActionIndex === "number" ? sourceActionIndex : null,
-      },
+      } as any,
     });
 
     return NextResponse.json({ ok: true, task });

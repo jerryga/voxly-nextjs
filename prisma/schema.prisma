@@ -24,15 +24,112 @@ model User {
   summaryTemplates SummaryTemplate[]
   assistantMessages AssistantMessage[]
   actionTasks    ActionTask[]
+  workspaceComments WorkspaceComment[]
+  workspaceNotifications WorkspaceNotification[]
+  projectInsights ProjectInsight[] @relation("ProjectInsightCreator")
+  workspaceInsights WorkspaceInsight[] @relation("WorkspaceInsightCreator")
+  ownedWorkspaces Workspace[]        @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]
+  workspaceInvitesSent WorkspaceInvite[] @relation("WorkspaceInviteSender")
+  workspaceAuditLogs WorkspaceAuditLog[] @relation("WorkspaceAuditActor")
   subscription   Subscription?
   creditTransactions CreditTransaction[]
   promoRedemptions PromotionRedemption[]
+  notificationPreferences UserNotificationPreferences?
+  recurringReportTemplates RecurringReportTemplate[]
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  ownerUserId String
+  owner       User     @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  isPersonal  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members          WorkspaceMember[]
+  invites          WorkspaceInvite[]
+  auditLogs        WorkspaceAuditLog[]
+  projects         Project[]
+  transcriptions   Transcription[]
+  summaryTemplates SummaryTemplate[]
+  actionTasks      ActionTask[]
+  comments         WorkspaceComment[]
+  notifications    WorkspaceNotification[]
+  projectInsights  ProjectInsight[]
+  workspaceInsights WorkspaceInsight[]
+  recurringReportRuns RecurringReportRun[]
+  digestSettings   WorkspaceDigestSettings?
+  slackSettings    WorkspaceSlackSettings?
+  slackDestinations WorkspaceSlackDestination[]
+  notionSettings   WorkspaceNotionSettings?
+  recurringReportTemplates RecurringReportTemplate[]
+
+  @@index([ownerUserId, createdAt])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String    @default("owner")
+  status      String    @default("active")
+  joinedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([userId, status, createdAt])
+  @@index([workspaceId, status, createdAt])
+}
+
+model WorkspaceInvite {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email         String
+  role          String    @default("member")
+  token         String    @unique
+  invitedByUserId String
+  invitedByUser User      @relation("WorkspaceInviteSender", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId, createdAt])
+  @@index([email, expiresAt])
+}
+
+model WorkspaceAuditLog {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  actorUser   User?     @relation("WorkspaceAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  targetType  String?
+  targetId    String?
+  summary     String
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([workspaceId, action, createdAt])
 }
 
 model SummaryTemplate {
   id                 String   @id @default(cuid())
   userId             String
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId        String?
+  workspace          Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   name               String
   slug               String
   baseTemplate       String   @default("default")
@@ -41,6 +138,7 @@ model SummaryTemplate {
   updatedAt          DateTime @updatedAt
 
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@unique([userId, slug])
 }
 
@@ -80,14 +178,20 @@ model Project {
   id            String          @id @default(cuid())
   userId        String
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId   String?
+  workspace     Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   name          String
   description   String?         @db.Text
   color         String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   transcriptions Transcription[]
+  insights      ProjectInsight[]
+  digestSettings ProjectDigestSettings?
+  recurringReportRuns RecurringReportRun[]
 
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@unique([userId, name])
 }
 
@@ -95,6 +199,8 @@ model Transcription {
   id       String @id @default(cuid())
   userId   String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   fileName String
@@ -112,9 +218,11 @@ model Transcription {
   duration   Int?
   assistantMessages AssistantMessage[]
   actionTasks ActionTask[]
+  comments WorkspaceComment[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([userId, projectId, createdAt])
   @@index([userId, status, createdAt])
   @@index([userId, template, createdAt])
@@ -125,6 +233,8 @@ model ActionTask {
   id                String        @id @default(cuid())
   userId            String
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId       String?
+  workspace         Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   transcriptionId   String
   transcription     Transcription @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
   title             String
@@ -136,8 +246,10 @@ model ActionTask {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   completedAt       DateTime?
+  comments          WorkspaceComment[]
 
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([transcriptionId, createdAt])
   @@index([transcriptionId, status, createdAt])
 }
@@ -154,6 +266,248 @@ model AssistantMessage {
 
   @@index([userId, transcriptionId, createdAt])
   @@index([transcriptionId, createdAt])
+}
+
+model WorkspaceComment {
+  id              String        @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcriptionId String?
+  transcription   Transcription? @relation(fields: [transcriptionId], references: [id], onDelete: Cascade)
+  actionTaskId    String?
+  actionTask      ActionTask?   @relation(fields: [actionTaskId], references: [id], onDelete: Cascade)
+  projectInsightId String?
+  projectInsight  ProjectInsight? @relation(fields: [projectInsightId], references: [id], onDelete: Cascade)
+  workspaceInsightId String?
+  workspaceInsight  WorkspaceInsight? @relation(fields: [workspaceInsightId], references: [id], onDelete: Cascade)
+  content         String        @db.Text
+  mentions        Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([workspaceId, createdAt])
+  @@index([transcriptionId, createdAt])
+  @@index([actionTaskId, createdAt])
+  @@index([projectInsightId, createdAt])
+  @@index([workspaceInsightId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model WorkspaceNotification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String
+  title       String
+  body        String
+  link        String?
+  metadata    Json?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
+}
+
+model WorkspaceDigestSettings {
+  id             String    @id @default(cuid())
+  workspaceId    String    @unique
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  enabled        Boolean   @default(false)
+  cadence        String    @default("weekly")
+  reportType     String    @default("summary")
+  weekday        Int       @default(1)
+  dayOfMonth     Int       @default(1)
+  hourLocal      Int       @default(9)
+  timezone       String    @default("UTC")
+  recipientScope String    @default("managers")
+  sendEmail      Boolean   @default(true)
+  sendSlack      Boolean   @default(false)
+  slackDestinationId String?
+  slackDestination   WorkspaceSlackDestination? @relation("WorkspaceDigestSlackDestination", fields: [slackDestinationId], references: [id], onDelete: SetNull)
+  lastSentAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([enabled, cadence, weekday, hourLocal])
+}
+
+model WorkspaceSlackSettings {
+  id          String    @id @default(cuid())
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  enabled     Boolean   @default(false)
+  sendDigests Boolean   @default(true)
+  webhookUrl  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([enabled, sendDigests])
+}
+
+model WorkspaceSlackDestination {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  webhookUrl  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspaceDigests WorkspaceDigestSettings[] @relation("WorkspaceDigestSlackDestination")
+  projectDigests   ProjectDigestSettings[]   @relation("ProjectDigestSlackDestination")
+  reportTemplates  RecurringReportTemplate[] @relation("RecurringReportTemplateSlackDestination")
+
+  @@index([workspaceId, createdAt])
+}
+
+model ProjectDigestSettings {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  enabled        Boolean  @default(false)
+  cadence        String   @default("weekly")
+  reportType     String   @default("summary")
+  weekday        Int      @default(1)
+  dayOfMonth     Int      @default(1)
+  hourLocal      Int      @default(9)
+  timezone       String   @default("UTC")
+  recipientScope String   @default("managers")
+  sendEmail      Boolean  @default(true)
+  sendSlack      Boolean  @default(false)
+  slackDestinationId String?
+  slackDestination   WorkspaceSlackDestination? @relation("ProjectDigestSlackDestination", fields: [slackDestinationId], references: [id], onDelete: SetNull)
+  lastSentAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([enabled, cadence, weekday, hourLocal])
+}
+
+model WorkspaceNotionSettings {
+  id           String    @id @default(cuid())
+  workspaceId  String    @unique
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  enabled      Boolean   @default(false)
+  apiToken     String
+  parentPageId String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastSyncedAt DateTime?
+}
+
+model RecurringReportTemplate {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  name           String
+  targetScope    String
+  cadence        String    @default("weekly")
+  reportType     String    @default("summary")
+  weekday        Int       @default(1)
+  dayOfMonth     Int       @default(1)
+  hourLocal      Int       @default(9)
+  timezone       String    @default("UTC")
+  recipientScope String    @default("managers")
+  sendEmail      Boolean   @default(true)
+  sendSlack      Boolean   @default(false)
+  slackDestinationId String?
+  slackDestination   WorkspaceSlackDestination? @relation("RecurringReportTemplateSlackDestination", fields: [slackDestinationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workspaceId, targetScope, createdAt])
+  @@index([createdById, createdAt])
+}
+
+model RecurringReportRun {
+  id                  String    @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId           String?
+  project             Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  scope               String
+  trigger             String
+  cadence             String
+  reportType          String
+  recipientScope      String
+  sendEmail           Boolean   @default(true)
+  sendSlack           Boolean   @default(false)
+  slackDestinationId  String?
+  emailRecipientCount Int       @default(0)
+  slackDelivered      Boolean   @default(false)
+  status              String    @default("success")
+  summary             String
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([workspaceId, scope, createdAt])
+}
+
+model UserNotificationPreferences {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentionEmailEnabled    Boolean  @default(true)
+  mentionInAppEnabled    Boolean  @default(true)
+  digestEmailEnabled     Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model ProjectInsight {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User      @relation("ProjectInsightCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  title          String
+  question       String    @db.Text
+  answer         String    @db.Text
+  confidenceNote String?   @db.Text
+  isPinned       Boolean   @default(false)
+  archivedAt     DateTime?
+  sources        Json
+  comments       WorkspaceComment[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workspaceId, projectId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([createdById, createdAt])
+}
+
+model WorkspaceInsight {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User      @relation("WorkspaceInsightCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  title          String
+  question       String    @db.Text
+  answer         String    @db.Text
+  confidenceNote String?   @db.Text
+  isPinned       Boolean   @default(false)
+  archivedAt     DateTime?
+  projectIds     Json?
+  sources        Json
+  comments       WorkspaceComment[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workspaceId, createdAt])
+  @@index([createdById, createdAt])
 }
 
 model Subscription {

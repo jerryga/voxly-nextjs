@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { billingPortalSchema } from "@/lib/api/validation";
 import { buildAbsoluteUrl } from "@/lib/billing";
 import { getStripe } from "@/lib/stripe";
+import { requireWorkspaceBillingContext } from "@/lib/workspace-billing";
 
 export const runtime = "nodejs";
 
@@ -21,24 +20,23 @@ export async function POST(request: Request) {
     });
     if (rateLimitError) return rateLimitError;
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-    if (!email) {
+    const billingContext = await requireWorkspaceBillingContext();
+    if (!billingContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!billingContext.canManageBilling) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: { subscription: true },
+    const ownerSubscription = await prisma.subscription.findUnique({
+      where: { userId: billingContext.billingUserId },
+      select: { stripeCustomerId: true },
     });
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
-    const stripeCustomerId = user.subscription?.stripeCustomerId;
+    const stripeCustomerId = ownerSubscription?.stripeCustomerId;
     if (!stripeCustomerId) {
       return NextResponse.json(
-        { error: "No billing profile found for this account" },
+        { error: "No billing profile found for this workspace" },
         { status: 404 },
       );
     }
