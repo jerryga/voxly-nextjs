@@ -1,6 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
@@ -8,14 +7,15 @@ import {
   actionTaskDeleteSchema,
   actionTaskUpdateSchema,
 } from "@/lib/api/validation";
+import { requireWorkspaceContext } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
 const actionTaskDelegate = (prisma as typeof prisma & {
   actionTask: {
-    updateMany: typeof prisma.$executeRaw;
-    findFirst: typeof prisma.$queryRaw;
-    deleteMany: typeof prisma.$executeRaw;
+    updateMany: (...args: any[]) => Promise<{ count: number }>;
+    findFirst: (...args: any[]) => Promise<any>;
+    deleteMany: (...args: any[]) => Promise<{ count: number }>;
   };
 }).actionTask;
 
@@ -30,15 +30,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       return originError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const workspaceContext = await requireWorkspaceContext();
+    if (!workspaceContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -54,7 +47,13 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { id, title, status, priority, assignee, dueDate } = parsed.data;
     const updated = await actionTaskDelegate.updateMany({
-      where: { id, userId: user.id },
+      where: {
+        id,
+        OR: [
+          { workspaceId: workspaceContext.activeWorkspace.id },
+          { workspaceId: null, userId: workspaceContext.user.id },
+        ],
+      } as any,
       data: {
         ...(title ? { title } : {}),
         ...(status ? { status, completedAt: status === "done" ? new Date() : null } : {}),
@@ -71,7 +70,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const task = await actionTaskDelegate.findFirst({
-      where: { id, userId: user.id },
+      where: {
+        id,
+        OR: [
+          { workspaceId: workspaceContext.activeWorkspace.id },
+          { workspaceId: null, userId: workspaceContext.user.id },
+        ],
+      } as any,
     });
 
     return NextResponse.json({ ok: true, task });
@@ -90,15 +95,8 @@ export async function DELETE(request: Request, context: RouteContext) {
       return originError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const workspaceContext = await requireWorkspaceContext();
+    if (!workspaceContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -110,7 +108,13 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     const deleted = await actionTaskDelegate.deleteMany({
-      where: { id: parsed.data.id, userId: user.id },
+      where: {
+        id: parsed.data.id,
+        OR: [
+          { workspaceId: workspaceContext.activeWorkspace.id },
+          { workspaceId: null, userId: workspaceContext.user.id },
+        ],
+      } as any,
     });
 
     if (deleted.count === 0) {

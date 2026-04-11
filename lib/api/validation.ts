@@ -20,6 +20,21 @@ const passwordSchema = z
   .max(128, "Password must be 128 characters or fewer.");
 
 const idSchema = z.string().trim().min(1).max(128);
+const slackWebhookSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid Slack webhook URL.")
+  .refine((value) => /^https:\/\/hooks\.slack\.com\/services\//.test(value), {
+    message: "Enter a valid Slack incoming webhook URL.",
+  });
+
+const notionTokenSchema = z.string().trim().min(20).max(200);
+const notionPageIdSchema = z
+  .string()
+  .trim()
+  .min(20)
+  .max(64)
+  .regex(/^[a-f0-9-]+$/i, "Enter a valid Notion page ID.");
 
 const templateSchema = z
   .string()
@@ -78,6 +93,81 @@ export const assistantChatSchema = z.object({
   model: z.string().trim().max(120).optional(),
 });
 
+export const projectIntelligenceQuerySchema = z.object({
+  projectId: idSchema,
+  transcriptionIds: z.array(idSchema).max(20).optional(),
+  question: z.string().trim().min(1).max(4000),
+  provider: z.string().trim().max(40).optional(),
+  model: z.string().trim().max(120).optional(),
+});
+
+export const workspaceIntelligenceQuerySchema = z.object({
+  question: z.string().trim().min(1).max(4000),
+  projectIds: z.array(idSchema).max(12).optional(),
+  provider: z.string().trim().max(40).optional(),
+  model: z.string().trim().max(120).optional(),
+});
+
+export const projectInsightCreateSchema = z.object({
+  projectId: idSchema,
+  title: z.string().trim().min(1).max(120),
+  question: z.string().trim().min(1).max(4000),
+  answer: z.string().trim().min(1).max(20000),
+  confidenceNote: z.union([z.string().trim().max(4000), z.literal(""), z.null()]).optional(),
+  sources: z
+    .array(
+      z.object({
+        sourceId: z.string().trim().min(1).max(200),
+        transcriptionId: idSchema,
+        fileName: z.string().trim().min(1).max(300),
+        excerpt: z.string().trim().min(1).max(6000),
+      }),
+    )
+    .max(20),
+});
+
+export const projectInsightDeleteSchema = z.object({
+  id: idSchema,
+});
+
+export const projectInsightUpdateSchema = z.object({
+  id: idSchema,
+  isPinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+}).refine((value) => typeof value.isPinned === "boolean" || typeof value.archived === "boolean", {
+  message: "Provide at least one project insight update",
+});
+
+export const workspaceInsightCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  question: z.string().trim().min(1).max(4000),
+  answer: z.string().trim().min(1).max(20000),
+  confidenceNote: z.union([z.string().trim().max(4000), z.literal(""), z.null()]).optional(),
+  projectIds: z.array(idSchema).max(12).optional(),
+  sources: z
+    .array(
+      z.object({
+        sourceId: z.string().trim().min(1).max(200),
+        transcriptionId: idSchema,
+        fileName: z.string().trim().min(1).max(300),
+        excerpt: z.string().trim().min(1).max(6000),
+      }),
+    )
+    .max(20),
+});
+
+export const workspaceInsightUpdateSchema = z.object({
+  id: idSchema,
+  isPinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+}).refine((value) => typeof value.isPinned === "boolean" || typeof value.archived === "boolean", {
+  message: "Provide at least one workspace insight update",
+});
+
+export const workspaceInsightDeleteSchema = z.object({
+  id: idSchema,
+});
+
 export const transcriptionUpdateSchema = z.object({
   id: idSchema,
   template: templateSchema.optional(),
@@ -108,6 +198,137 @@ export const actionTaskUpdateSchema = z.object({
 
 export const actionTaskDeleteSchema = z.object({
   id: idSchema,
+});
+
+export const commentCreateSchema = z
+  .object({
+    content: z.string().trim().min(1).max(4000),
+    transcriptionId: idSchema.optional(),
+    taskId: idSchema.optional(),
+    projectInsightId: idSchema.optional(),
+    workspaceInsightId: idSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      Boolean(
+        value.transcriptionId ||
+          value.taskId ||
+          value.projectInsightId ||
+          value.workspaceInsightId,
+      ),
+    {
+      message:
+        "transcriptionId, taskId, projectInsightId, or workspaceInsightId is required",
+    },
+  )
+  .refine(
+    (value) =>
+      [
+        value.transcriptionId,
+        value.taskId,
+        value.projectInsightId,
+        value.workspaceInsightId,
+      ].filter(Boolean)
+        .length === 1,
+    {
+      message: "Provide exactly one comment target",
+    },
+  );
+
+export const commentUpdateSchema = z.object({
+  id: idSchema,
+  content: z.string().trim().min(1).max(4000),
+});
+
+export const commentDeleteSchema = z.object({
+  id: idSchema,
+});
+
+export const workspaceInviteCreateSchema = z.object({
+  email: z.email().transform((value) => value.trim().toLowerCase()),
+  role: z.enum(["admin", "member", "viewer"]).optional(),
+});
+
+export const workspaceMemberUpdateSchema = z.object({
+  role: z.enum(["admin", "member", "viewer"]),
+});
+
+export const workspaceOwnerTransferSchema = z.object({
+  memberId: idSchema,
+});
+
+export const workspaceUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+
+export const workspaceDigestUpdateSchema = z.object({
+  enabled: z.boolean(),
+  cadence: z.enum(["weekly", "monthly"]),
+  reportType: z.enum(["summary", "new_insights", "open_tasks", "risk_watch"]),
+  weekday: z.number().int().min(0).max(6),
+  dayOfMonth: z.number().int().min(1).max(28),
+  hourLocal: z.number().int().min(0).max(23),
+  timezone: z.string().trim().min(1).max(100),
+  recipientScope: z.enum(["managers", "all_members"]),
+  sendEmail: z.boolean(),
+  sendSlack: z.boolean(),
+  slackDestinationId: z.union([idSchema, z.literal(""), z.null(), z.undefined()]).optional(),
+});
+
+export const projectDigestUpdateSchema = z.object({
+  enabled: z.boolean(),
+  cadence: z.enum(["weekly", "monthly"]),
+  reportType: z.enum(["summary", "new_insights", "open_tasks", "risk_watch"]),
+  weekday: z.number().int().min(0).max(6),
+  dayOfMonth: z.number().int().min(1).max(28),
+  hourLocal: z.number().int().min(0).max(23),
+  timezone: z.string().trim().min(1).max(100),
+  recipientScope: z.enum(["managers", "all_members"]),
+  sendEmail: z.boolean(),
+  sendSlack: z.boolean(),
+  slackDestinationId: z.union([idSchema, z.literal(""), z.null(), z.undefined()]).optional(),
+});
+
+export const recurringReportTemplateCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  targetScope: z.enum(["workspace", "project"]),
+  cadence: z.enum(["weekly", "monthly"]),
+  reportType: z.enum(["summary", "new_insights", "open_tasks", "risk_watch"]),
+  weekday: z.number().int().min(0).max(6),
+  dayOfMonth: z.number().int().min(1).max(28),
+  hourLocal: z.number().int().min(0).max(23),
+  timezone: z.string().trim().min(1).max(100),
+  recipientScope: z.enum(["managers", "all_members"]),
+  sendEmail: z.boolean(),
+  sendSlack: z.boolean(),
+  slackDestinationId: z.union([idSchema, z.literal(""), z.null(), z.undefined()]).optional(),
+});
+
+export const workspaceSlackDestinationCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  webhookUrl: slackWebhookSchema,
+});
+
+export const workspaceSlackUpdateSchema = z.object({
+  enabled: z.boolean(),
+  sendDigests: z.boolean(),
+  webhookUrl: z.union([slackWebhookSchema, z.literal(""), z.undefined()]).optional(),
+});
+
+export const workspaceNotionUpdateSchema = z.object({
+  enabled: z.boolean(),
+  apiToken: z.union([notionTokenSchema, z.literal(""), z.undefined()]).optional(),
+  parentPageId: z.union([notionPageIdSchema, z.literal(""), z.undefined()]).optional(),
+});
+
+export const insightSlackShareSchema = z.object({
+  note: z.union([z.string().trim().max(500), z.literal(""), z.undefined()]).optional(),
+});
+
+export const userNotificationPreferencesUpdateSchema = z.object({
+  mentionEmailEnabled: z.boolean(),
+  mentionInAppEnabled: z.boolean(),
+  digestEmailEnabled: z.boolean(),
 });
 
 export const projectCreateSchema = z.object({

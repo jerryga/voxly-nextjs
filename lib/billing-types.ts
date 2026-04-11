@@ -1,4 +1,18 @@
 export type BillingInfo = {
+  workspace: {
+    id: string;
+    name: string;
+    isPersonal: boolean;
+    viewerRole: string;
+  };
+  billingOwner: {
+    userId: string;
+    email: string;
+    name?: string | null;
+  };
+  billingScope: "personal" | "workspace_owner";
+  canManageBilling: boolean;
+  canViewBillingHistory: boolean;
   plan: string;
   status: string;
   billingInterval: string;

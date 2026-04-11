@@ -40,6 +40,7 @@ export function normalizeTemplateSelection(value?: string | null) {
 export async function resolveTemplateSelectionForUser(
   userId: string,
   value?: string | null,
+  workspaceId?: string | null,
 ) {
   const normalizedValue = normalizeTemplateSelection(value);
   if (!isCustomTemplateValue(normalizedValue)) {
@@ -56,7 +57,11 @@ export async function resolveTemplateSelectionForUser(
   }
 
   const customTemplate = await prisma.summaryTemplate.findFirst({
-    where: { id: templateId, userId },
+    where: {
+      id: templateId,
+      userId,
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     select: {
       id: true,
       baseTemplate: true,

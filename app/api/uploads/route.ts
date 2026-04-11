@@ -1,6 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { deleteFromS3, uploadToS3 } from "@/lib/storage/s3";
 import { inngest } from "@/inngest/client";
@@ -13,6 +12,7 @@ import {
 } from "@/lib/api/validation";
 import { buildTranscriptionSearchText } from "@/lib/transcriptions/searchText";
 import { resolveTemplateSelectionForUser } from "@/lib/templates";
+import { requireWorkspaceContext } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -70,15 +70,8 @@ export async function POST(request: Request) {
       return rateLimitError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -88,8 +81,9 @@ export async function POST(request: Request) {
     const projectIdField = formData.get("projectId");
     const estimatedDurationField = formData.get("estimatedDurationSeconds");
     const templateResolution = await resolveTemplateSelectionForUser(
-      user.id,
+      context.user.id,
       typeof templateField === "string" ? templateField : undefined,
+      context.activeWorkspace.id,
     );
     const template = templateResolution.storedTemplate;
     const projectId =
@@ -108,7 +102,7 @@ export async function POST(request: Request) {
     }
 
     await ensureCreditsAvailableForExpectedProcessing(
-      user.id,
+      context.user.id,
       estimatedDurationSeconds,
     );
 
@@ -132,12 +126,18 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const safeName = sanitizeFilename(file.name || "upload");
-    const key = `users/${user.id}/${Date.now()}-${safeName}`;
+    const key = `users/${context.user.id}/${Date.now()}-${safeName}`;
     uploadedKey = key;
 
     if (projectId) {
       const project = await prisma.project.findFirst({
-        where: { id: projectId, userId: user.id },
+        where: {
+          id: projectId,
+          OR: [
+            { workspaceId: context.activeWorkspace.id },
+            { workspaceId: null, userId: context.user.id },
+          ],
+        } as any,
         select: { id: true },
       });
       if (!project) {
@@ -147,7 +147,8 @@ export async function POST(request: Request) {
 
     const transcription = await prisma.transcription.create({
       data: {
-        userId: user.id,
+        userId: context.user.id,
+        workspaceId: context.activeWorkspace.id,
         projectId,
         fileName: file.name || safeName,
         fileUrl: key,
@@ -157,7 +158,7 @@ export async function POST(request: Request) {
           fileName: file.name || safeName,
           template,
         }),
-      },
+      } as any,
       select: { id: true },
     });
     transcriptionId = transcription.id;

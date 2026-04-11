@@ -1,31 +1,36 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { getBillingSnapshotForUser } from "@/lib/billing";
+import { requireWorkspaceBillingContext } from "@/lib/workspace-billing";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
+    const billingContext = await requireWorkspaceBillingContext();
+    if (!billingContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
+    const snapshot = await getBillingSnapshotForUser(billingContext.billingUserId);
+    const billing = {
+      ...snapshot,
+      workspace: {
+        id: billingContext.workspace.id,
+        name: billingContext.workspace.name,
+        isPersonal: billingContext.workspace.isPersonal,
+        viewerRole: billingContext.context.role,
+      },
+      billingOwner: {
+        userId: billingContext.billingOwner.id,
+        email: billingContext.billingOwner.email,
+        name: billingContext.billingOwner.name,
+      },
+      billingScope: billingContext.billingScope,
+      canManageBilling: billingContext.canManageBilling,
+      canViewBillingHistory: billingContext.canViewBillingHistory,
+    };
 
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const billing = await getBillingSnapshotForUser(user.id);
     return NextResponse.json({ ok: true, billing });
   } catch (error) {
     return NextResponse.json(

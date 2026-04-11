@@ -589,8 +589,13 @@ export async function confirmCheckoutSessionForUser({
     expand: ["subscription", "invoice"],
   });
 
-  const sessionUserId = session.metadata?.userId || session.client_reference_id;
-  if (!sessionUserId || sessionUserId !== userId) {
+  const sessionBillingUserId = session.metadata?.userId || session.client_reference_id;
+  const sessionInitiatorUserId =
+    session.metadata?.initiatedByUserId || session.metadata?.userId || session.client_reference_id;
+  if (
+    (!sessionBillingUserId || sessionBillingUserId !== userId) &&
+    (!sessionInitiatorUserId || sessionInitiatorUserId !== userId)
+  ) {
     const error = new Error("Checkout session does not belong to this user.") as Error & {
       statusCode?: number;
     };

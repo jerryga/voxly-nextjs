@@ -1,7 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import {
   enforceRateLimit,
@@ -13,6 +10,7 @@ import {
 import { billingPromoRedeemSchema } from "@/lib/api/validation";
 import { redeemPromotionCode } from "@/lib/billing";
 import { isEmailVerified } from "@/lib/email-verification";
+import { requireWorkspaceBillingContext } from "@/lib/workspace-billing";
 
 export const runtime = "nodejs";
 
@@ -51,21 +49,15 @@ export async function POST(request: Request) {
       }
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-    if (!email) {
+    const billingContext = await requireWorkspaceBillingContext();
+    if (!billingContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    });
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!billingContext.canManageBilling) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const verified = await isEmailVerified(email);
+    const verified = await isEmailVerified(billingContext.context.user.email);
     if (!verified) {
       return NextResponse.json(
         {
@@ -93,7 +85,7 @@ export async function POST(request: Request) {
     }
 
     const result = await redeemPromotionCode({
-      userId: user.id,
+      userId: billingContext.billingUserId,
       code: parsed.data.code,
       ...getRequestSecurityFingerprints(request),
     });

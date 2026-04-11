@@ -1,6 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { inngest } from "@/inngest/client";
 import { ensureCreditsAvailableForExpectedProcessing } from "@/lib/billing";
@@ -9,6 +8,7 @@ import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { hasPersistedTranscriptionResult } from "@/lib/transcriptions/process";
 import { transcriptionProcessSchema } from "@/lib/api/validation";
 import { resolveTemplateSelectionForUser } from "@/lib/templates";
+import { requireWorkspaceContext } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -59,15 +59,8 @@ export async function POST(request: Request) {
       return rateLimitError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -84,7 +77,13 @@ export async function POST(request: Request) {
     const { transcriptionId, template: templateOverride } = parsed.data;
 
     const transcription = await prisma.transcription.findFirst({
-      where: { id: transcriptionId, userId: user.id },
+      where: {
+        id: transcriptionId,
+        OR: [
+          { workspaceId: context.activeWorkspace.id },
+          { workspaceId: null, userId: context.user.id },
+        ],
+      } as any,
     });
 
     if (!transcription) {
@@ -92,7 +91,11 @@ export async function POST(request: Request) {
     }
 
     const effectiveTemplate = templateOverride
-      ? (await resolveTemplateSelectionForUser(user.id, templateOverride)).storedTemplate
+      ? (await resolveTemplateSelectionForUser(
+          context.user.id,
+          templateOverride,
+          context.activeWorkspace.id,
+        )).storedTemplate
       : undefined;
     const currentTemplate = transcription.template || "default";
     if (
@@ -108,7 +111,7 @@ export async function POST(request: Request) {
     }
 
     await ensureCreditsAvailableForExpectedProcessing(
-      user.id,
+      context.user.id,
       transcription.duration,
     );
 

@@ -1,35 +1,27 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { projectCreateSchema } from "@/lib/api/validation";
+import { requireWorkspaceContext } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
-async function requireUser() {
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.toLowerCase().trim();
-  if (!email) {
-    return null;
-  }
-
-  return prisma.user.findUnique({
-    where: { email },
-    select: { id: true },
-  });
-}
-
 export async function GET() {
   try {
-    const user = await requireUser();
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const projects = await prisma.project.findMany({
-      where: { userId: user.id },
+      where: {
+        OR: [
+          { workspaceId: context.activeWorkspace.id },
+          { workspaceId: null, userId: context.user.id },
+        ],
+      } as any,
       orderBy: [{ createdAt: "desc" }],
     });
 
@@ -49,8 +41,8 @@ export async function POST(request: Request) {
       return originError;
     }
 
-    const user = await requireUser();
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -63,11 +55,12 @@ export async function POST(request: Request) {
 
     const project = await prisma.project.create({
       data: {
-        userId: user.id,
+        userId: context.user.id,
+        workspaceId: context.activeWorkspace.id,
         name: parsed.data.name,
         description: parsed.data.description || null,
         color: parsed.data.color || null,
-      },
+      } as any,
     });
 
     return NextResponse.json({ ok: true, project });

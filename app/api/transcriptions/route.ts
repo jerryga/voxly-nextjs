@@ -1,7 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
@@ -10,6 +9,7 @@ import {
   transcriptionDeleteSchema,
   transcriptionUpdateSchema,
 } from "@/lib/api/validation";
+import { requireWorkspaceContext } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -20,20 +20,16 @@ function parsePositiveInt(value: string | null, fallback: number) {
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim();
+    const searchScope = searchParams.get("searchScope")?.trim();
+    const nameOnlySearch =
+      searchScope === "name" || searchParams.get("nameOnly") === "1";
     const status = searchParams.get("status")?.trim();
     const templateParam = searchParams.get("template")?.trim();
     const template = templateParam
@@ -59,21 +55,26 @@ export async function GET(request: Request) {
     }
 
     const where: Prisma.TranscriptionWhereInput = {
-      userId: user.id,
+      OR: [
+        { workspaceId: context.activeWorkspace.id },
+        { workspaceId: null, userId: context.user.id },
+      ],
       ...(status ? { status } : {}),
       ...(template ? { template } : {}),
       ...(projectId ? { projectId } : {}),
       ...(Object.keys(createdAtFilter).length ? { createdAt: createdAtFilter } : {}),
       ...(q
         ? {
-            OR: [
-              { fileName: { contains: q, mode: "insensitive" } },
-              { transcript: { contains: q, mode: "insensitive" } },
-              { searchText: { contains: q, mode: "insensitive" } },
-            ],
+            OR: nameOnlySearch
+              ? [{ fileName: { contains: q, mode: "insensitive" } }]
+              : [
+                  { fileName: { contains: q, mode: "insensitive" } },
+                  { transcript: { contains: q, mode: "insensitive" } },
+                  { searchText: { contains: q, mode: "insensitive" } },
+                ],
           }
         : {}),
-    };
+    } as any;
 
     const [items, total] = await prisma.$transaction([
       prisma.transcription.findMany({
@@ -105,15 +106,8 @@ export async function PATCH(request: Request) {
       return originError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -134,7 +128,13 @@ export async function PATCH(request: Request) {
 
     if (projectId) {
       const project = await prisma.project.findFirst({
-        where: { id: projectId, userId: user.id },
+        where: {
+          id: projectId,
+          OR: [
+            { workspaceId: context.activeWorkspace.id },
+            { workspaceId: null, userId: context.user.id },
+          ],
+        } as any,
         select: { id: true },
       });
       if (!project) {
@@ -143,7 +143,13 @@ export async function PATCH(request: Request) {
     }
 
     const updated = await prisma.transcription.updateMany({
-      where: { id, userId: user.id },
+      where: {
+        id,
+        OR: [
+          { workspaceId: context.activeWorkspace.id },
+          { workspaceId: null, userId: context.user.id },
+        ],
+      } as any,
       data: {
         ...(template ? { template } : {}),
         ...(typeof projectId !== "undefined" ? { projectId } : {}),
@@ -170,15 +176,8 @@ export async function DELETE(request: Request) {
       return originError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase().trim();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -192,7 +191,13 @@ export async function DELETE(request: Request) {
     const { id } = parsed.data;
 
     const deleted = await prisma.transcription.deleteMany({
-      where: { id, userId: user.id },
+      where: {
+        id,
+        OR: [
+          { workspaceId: context.activeWorkspace.id },
+          { workspaceId: null, userId: context.user.id },
+        ],
+      } as any,
     });
 
     if (deleted.count === 0) {
