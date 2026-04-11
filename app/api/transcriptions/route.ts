@@ -27,6 +27,9 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim();
+    const searchScope = searchParams.get("searchScope")?.trim();
+    const nameOnlySearch =
+      searchScope === "name" || searchParams.get("nameOnly") === "1";
     const status = searchParams.get("status")?.trim();
     const templateParam = searchParams.get("template")?.trim();
     const template = templateParam
@@ -62,11 +65,13 @@ export async function GET(request: Request) {
       ...(Object.keys(createdAtFilter).length ? { createdAt: createdAtFilter } : {}),
       ...(q
         ? {
-            OR: [
-              { fileName: { contains: q, mode: "insensitive" } },
-              { transcript: { contains: q, mode: "insensitive" } },
-              { searchText: { contains: q, mode: "insensitive" } },
-            ],
+            OR: nameOnlySearch
+              ? [{ fileName: { contains: q, mode: "insensitive" } }]
+              : [
+                  { fileName: { contains: q, mode: "insensitive" } },
+                  { transcript: { contains: q, mode: "insensitive" } },
+                  { searchText: { contains: q, mode: "insensitive" } },
+                ],
           }
         : {}),
     } as any;

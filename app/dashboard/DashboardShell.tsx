@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SignOutButton } from "./SignOutButton";
 import { BrandLink } from "@/app/components/BrandLink";
 import { prisma } from "@/lib/prisma";
@@ -60,7 +61,7 @@ export async function DashboardShell({
             </p>
             <nav className="mt-3 space-y-1">
               {sidebarLinks.map((item) => (
-                <a
+                <Link
                   key={item.id}
                   href={item.href}
                   className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition ${
@@ -71,7 +72,7 @@ export async function DashboardShell({
                   }`}
                 >
                   {item.label}
-                </a>
+                </Link>
               ))}
             </nav>
           </div>
@@ -112,7 +113,7 @@ export async function DashboardShell({
               <div className="mt-1 space-y-1 pl-7">
                 {sidebarWorkspaceProjects.length ? (
                   sidebarWorkspaceProjects.map((project) => (
-                    <a
+                    <Link
                       key={project.id}
                       href={`/dashboard/transcriptions?projectId=${encodeURIComponent(project.id)}`}
                       className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-sm transition ${
@@ -123,14 +124,14 @@ export async function DashboardShell({
                     >
                       <span className="text-xs text-slate-400">▸</span>
                       {project.name}
-                    </a>
+                    </Link>
                   ))
                 ) : (
                   <p className="px-3 py-2 text-sm text-slate-500">
                     No projects yet
                   </p>
                 )}
-                <a
+                <Link
                   href="/dashboard/settings?section=workspace"
                   className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-sm transition ${
                     activePath === "workspace"
@@ -140,7 +141,7 @@ export async function DashboardShell({
                 >
                   <span className="text-xs text-slate-400">▸</span>
                   Workspace settings
-                </a>
+                </Link>
               </div>
             </details>
           </div>

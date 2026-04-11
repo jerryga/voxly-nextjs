@@ -3,6 +3,7 @@
 import {
   type FormEvent,
   memo,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -63,6 +64,85 @@ type ApiResponse = {
   nextCursor?: string | null;
   error?: string;
 };
+
+const DASHBOARD_CACHE_TTL_MS = 60_000;
+const TRANSCRIPTIONS_CACHE_PREFIX = "voxly:dashboard:transcriptions:";
+const PROJECTS_CACHE_KEY = "voxly:dashboard:projects";
+const BILLING_CACHE_KEY = "voxly:dashboard:billing";
+
+type SessionCacheEntry<T> = {
+  savedAt: number;
+  value: T;
+};
+
+function readSessionCache<T>(key: string): T | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(key);
+    if (!rawValue) {
+      return null;
+    }
+
+    const entry = JSON.parse(rawValue) as SessionCacheEntry<T>;
+    if (!entry?.savedAt || Date.now() - entry.savedAt > DASHBOARD_CACHE_TTL_MS) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+
+    return entry.value;
+  } catch {
+    window.sessionStorage.removeItem(key);
+    return null;
+  }
+}
+
+function writeSessionCache<T>(key: string, value: T) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      key,
+      JSON.stringify({ savedAt: Date.now(), value } satisfies SessionCacheEntry<T>),
+    );
+  } catch {
+    // Ignore cache write failures; the network path is still the source of truth.
+  }
+}
+
+function clearSessionCacheKey(key: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(key);
+}
+
+function clearSessionCachePrefix(prefix: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.sessionStorage.key(index);
+    if (key?.startsWith(prefix)) {
+      window.sessionStorage.removeItem(key);
+    }
+  }
+}
+
+function buildTranscriptionsCacheKey(input: {
+  query: string;
+  status: string;
+  template: string;
+  projectId: string;
+}) {
+  return `${TRANSCRIPTIONS_CACHE_PREFIX}${encodeURIComponent(JSON.stringify(input))}`;
+}
 
 type SummaryTemplate = {
   id: string;
@@ -1029,6 +1109,7 @@ type OverviewCurrentRecordingProps = {
   currentActionTasks: ActionTask[];
   activeTranscriptionId: string | null;
   actionTaskBusyKey: string | null;
+  detailsAutoOpenToken: number;
   onProcess: (transcriptionId: string, template?: string | null) => void;
   onCopySummary: () => void;
   onStartUpload: () => void;
@@ -1060,6 +1141,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
   currentActionTasks,
   activeTranscriptionId,
   actionTaskBusyKey,
+  detailsAutoOpenToken,
   onProcess,
   onCopySummary,
   onStartUpload,
@@ -1068,11 +1150,26 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
   onDeleteActionTask,
 }: OverviewCurrentRecordingProps) {
   const [isTextExpanded, setIsTextExpanded] = useState(false);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isDetailsManuallyOpen, setIsDetailsManuallyOpen] = useState(false);
+  const [detailsDismissedToken, setDetailsDismissedToken] = useState(0);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState("");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const isDetailsOpen = Boolean(
+    focusedSummary &&
+      (isDetailsManuallyOpen || detailsAutoOpenToken > detailsDismissedToken),
+  );
+
+  function handleToggleDetails() {
+    if (isDetailsOpen) {
+      setIsDetailsManuallyOpen(false);
+      setDetailsDismissedToken(detailsAutoOpenToken);
+      return;
+    }
+
+    setIsDetailsManuallyOpen(true);
+  }
 
   return (
     <>
@@ -1136,11 +1233,11 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
             ) : null}
           </div>
           {focusedSummary ? (
-            <div className="flex flex-wrap gap-2 lg:max-w-[24rem] lg:justify-end">
+            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto lg:overflow-visible lg:justify-end">
               <button
                 type="button"
-                onClick={() => setIsDetailsOpen((prev) => !prev)}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                onClick={handleToggleDetails}
+                className="shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
               >
                 {isDetailsOpen ? "Hide Details" : "Show Details"}
               </button>
@@ -1148,7 +1245,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
                 type="button"
                 onClick={() => onProcess(focusedSummary.id, focusedSummary.template)}
                 disabled={!canProcessFocusedSummary}
-                className={`cursor-pointer rounded-full px-4 py-2 text-xs font-semibold ${
+                className={`shrink-0 cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold ${
                   isFocusedSummaryProcessing
                     ? "border border-sky-200 bg-sky-50 text-sky-700"
                     : "bg-slate-950 text-white"
@@ -1163,7 +1260,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
               <button
                 type="button"
                 onClick={onCopySummary}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                className="shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
               >
                 Copy Summary
               </button>
@@ -1481,6 +1578,1185 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
   );
 });
 
+type HistoryFiltersProps = {
+  initialSearchQuery: string;
+  statusFilter: string;
+  templateFilter: string;
+  projectFilter: string;
+  statusOptions: Array<{ id: string; label: string }>;
+  templateOptions: Array<{ id: string; label: string }>;
+  projects: Project[];
+  searchDisabled: boolean;
+  onSearchCommit: (value: string) => void;
+  onSearchInputStart: () => void;
+  onStatusChange: (value: string) => void;
+  onTemplateChange: (value: string) => void;
+  onProjectChange: (value: string) => void;
+};
+
+const HistoryFilters = memo(function HistoryFilters({
+  initialSearchQuery,
+  statusFilter,
+  templateFilter,
+  projectFilter,
+  statusOptions,
+  templateOptions,
+  projects,
+  searchDisabled,
+  onSearchCommit,
+  onSearchInputStart,
+  onStatusChange,
+  onTemplateChange,
+  onProjectChange,
+}: HistoryFiltersProps) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedSearchRef = useRef(initialSearchQuery.trim());
+  const onSearchCommitRef = useRef(onSearchCommit);
+  const onSearchInputStartRef = useRef(onSearchInputStart);
+  const [localStatusFilter, setLocalStatusFilter] = useState(statusFilter);
+  const [localTemplateFilter, setLocalTemplateFilter] = useState(templateFilter);
+  const [localProjectFilter, setLocalProjectFilter] = useState(projectFilter);
+
+  useEffect(() => {
+    onSearchCommitRef.current = onSearchCommit;
+  }, [onSearchCommit]);
+
+  useEffect(() => {
+    onSearchInputStartRef.current = onSearchInputStart;
+  }, [onSearchInputStart]);
+
+  useEffect(() => {
+    committedSearchRef.current = initialSearchQuery.trim();
+    if (searchInputRef.current && searchInputRef.current.value !== initialSearchQuery) {
+      searchInputRef.current.value = initialSearchQuery;
+    }
+  }, [initialSearchQuery]);
+
+  useEffect(() => {
+    setLocalStatusFilter(statusFilter);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    setLocalTemplateFilter(templateFilter);
+  }, [templateFilter]);
+
+  useEffect(() => {
+    setLocalProjectFilter(projectFilter);
+  }, [projectFilter]);
+
+  useEffect(() => {
+    return () => {
+      if (searchCommitTimeoutRef.current) {
+        clearTimeout(searchCommitTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      startTransition(() => {
+        onStatusChange(localStatusFilter);
+        onTemplateChange(localTemplateFilter);
+        onProjectChange(localProjectFilter);
+      });
+    }, 120);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    localProjectFilter,
+    localStatusFilter,
+    localTemplateFilter,
+    onProjectChange,
+    onStatusChange,
+    onTemplateChange,
+  ]);
+
+  function commitSearch(nextSearchValue?: string) {
+    const nextValue = (nextSearchValue ?? searchInputRef.current?.value ?? "").trim();
+    if (nextValue === committedSearchRef.current) {
+      return;
+    }
+    committedSearchRef.current = nextValue;
+    startTransition(() => {
+      onSearchCommitRef.current(nextValue);
+    });
+  }
+
+  useEffect(() => {
+    const input = searchInputRef.current;
+    if (!input) {
+      return;
+    }
+    const activeInput = input;
+
+    function handleInput() {
+      if (activeInput.disabled) {
+        return;
+      }
+
+      const nextValue = activeInput.value;
+      onSearchInputStartRef.current();
+      if (searchCommitTimeoutRef.current) {
+        clearTimeout(searchCommitTimeoutRef.current);
+      }
+      searchCommitTimeoutRef.current = setTimeout(() => {
+        commitSearch(nextValue);
+      }, 700);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      if (searchCommitTimeoutRef.current) {
+        clearTimeout(searchCommitTimeoutRef.current);
+      }
+      commitSearch(activeInput.value);
+    }
+
+    activeInput.addEventListener("input", handleInput);
+    activeInput.addEventListener("keydown", handleKeyDown);
+    return () => {
+      activeInput.removeEventListener("input", handleInput);
+      activeInput.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  return (
+    <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_180px_180px_180px]">
+      <label className="block">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          Search
+        </span>
+        <input
+          type="search"
+          ref={searchInputRef}
+          defaultValue={initialSearchQuery}
+          disabled={searchDisabled}
+          placeholder={
+            searchDisabled ? "Loading history before search..." : "Search recording names"
+          }
+          className="mt-2 w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+        />
+      </label>
+
+      <label className="block">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          Status
+        </span>
+        <select
+          value={localStatusFilter}
+          onChange={(event) => setLocalStatusFilter(event.target.value)}
+          className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+        >
+          {statusOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          Template
+        </span>
+        <select
+          value={localTemplateFilter}
+          onChange={(event) => setLocalTemplateFilter(event.target.value)}
+          className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+        >
+          <option value="all">All templates</option>
+          {templateOptions.map((template) => (
+            <option key={template.id} value={template.id}>
+              {template.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          Project
+        </span>
+        <select
+          value={localProjectFilter}
+          onChange={(event) => setLocalProjectFilter(event.target.value)}
+          className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+        >
+          <option value="all">All projects</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+});
+
+type HistoryRowProps = {
+  item: Transcription;
+  projects: Project[];
+  onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
+  onProcess: (
+    transcriptionId: string,
+    template?: string | null,
+    trackInParent?: boolean,
+  ) => Promise<void>;
+  onDelete: (transcriptionId: string) => Promise<void>;
+};
+
+const HistoryRow = memo(function HistoryRow({
+  item,
+  projects,
+  onAssignProject,
+  onProcess,
+  onDelete,
+}: HistoryRowProps) {
+  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [localProjectId, setLocalProjectId] = useState(item.projectId || "none");
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const transcriptPreview = item.transcript
+    ? item.transcript.length > 1800
+      ? `${item.transcript.slice(0, 1800).trim()}...`
+      : item.transcript
+    : "";
+  const isTranscriptTruncated = Boolean(
+    item.transcript && item.transcript.length > transcriptPreview.length,
+  );
+  const canProcess =
+    !isProcessing && (item.status === "uploaded" || item.status === "done");
+
+  useEffect(() => {
+    setLocalProjectId(item.projectId || "none");
+  }, [item.projectId]);
+
+  return (
+    <div
+      className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 hover:border-slate-300"
+      style={{ contain: "content" }}
+    >
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-semibold text-slate-900">
+            {item.fileName}
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <p className="text-xs text-slate-500">
+              {new Date(item.createdAt).toLocaleString()}
+            </p>
+            <span className="text-slate-300">•</span>
+            <span
+              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                item.status === "done"
+                  ? "bg-green-100 text-green-700"
+                  : item.status === "uploaded"
+                    ? "bg-amber-100 text-amber-700"
+                    : item.status === "uploading"
+                      ? "bg-orange-100 text-orange-700"
+                      : item.status === "processing"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              {item.status}
+            </span>
+            {item.duration ? (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="text-xs text-slate-500">
+                  {Math.max(1, Math.ceil(item.duration / 60))} credits
+                </span>
+              </>
+            ) : null}
+            {item.projectId ? (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="text-xs text-slate-500">
+                  {projects.find((project) => project.id === item.projectId)?.name || "Project"}
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 xl:max-w-[28rem] xl:justify-end">
+          <select
+            value={localProjectId}
+            onChange={async (event) => {
+              const nextProjectId = event.target.value;
+              const previousProjectId = localProjectId;
+              setLocalProjectId(nextProjectId);
+              setIsAssigning(true);
+              const saved = await onAssignProject(item.id, nextProjectId);
+              if (!saved) {
+                setLocalProjectId(previousProjectId);
+              }
+              setIsAssigning(false);
+            }}
+            disabled={isAssigning}
+            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="none">No project</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={async () => {
+              setIsProcessing(true);
+              try {
+                await onProcess(item.id, item.template, false);
+              } finally {
+                setIsProcessing(false);
+              }
+            }}
+            disabled={!canProcess}
+            className={`cursor-pointer rounded-full border px-3.5 py-2 text-[11px] font-semibold active:scale-95 ${
+              isProcessing
+                ? "border-sky-200 bg-sky-50 text-sky-700 shadow-[0_10px_24px_-20px_rgba(14,165,233,0.9)]"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            {isProcessing ? "Processing..." : "Process"}
+          </button>
+
+          {item.transcript ? (
+            <button
+              type="button"
+              onClick={() => setIsTranscriptOpen((prev) => !prev)}
+              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
+            >
+              {isTranscriptOpen ? "Hide Transcript" : "View Transcript"}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={async () => {
+              setIsDeleting(true);
+              try {
+                await onDelete(item.id);
+              } finally {
+                setIsDeleting(false);
+              }
+            }}
+            disabled={isDeleting}
+            className="cursor-pointer rounded-full border border-red-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+          >
+            {isDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+
+      {item.transcript && isTranscriptOpen ? (
+        <div
+          className="mt-4 max-h-[28rem] overflow-hidden rounded-[16px] border border-slate-200 bg-[#fcfbf8] p-4"
+          style={{ contain: "content" }}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Transcript
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">
+                {item.transcript.length.toLocaleString()} chars
+              </span>
+              <button
+                type="button"
+                onClick={() => void navigator.clipboard.writeText(item.transcript || "")}
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+              >
+                Copy full
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 max-h-[20rem] overflow-auto rounded-[14px] bg-white px-4 py-3">
+            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+              {transcriptPreview}
+            </p>
+          </div>
+          {isTranscriptTruncated ? (
+            <p className="mt-3 text-xs text-slate-500">
+              Showing a preview to keep History fast. Use Copy full to grab the complete transcript.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+type HistorySurfaceProps = {
+  isActive: boolean;
+  initialProjectFilter: string;
+  statusOptions: Array<{ id: string; label: string }>;
+  templateOptions: Array<{ id: string; label: string }>;
+  projects: Project[];
+  onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
+  onProcess: (
+    transcriptionId: string,
+    template?: string | null,
+    trackInParent?: boolean,
+  ) => Promise<void>;
+  onDelete: (transcriptionId: string) => Promise<void>;
+};
+
+const HistorySurface = memo(function HistorySurface({
+  isActive,
+  initialProjectFilter,
+  statusOptions,
+  templateOptions,
+  projects,
+  onAssignProject,
+  onProcess,
+  onDelete,
+}: HistorySurfaceProps) {
+  const historyRequestAbortRef = useRef<AbortController | null>(null);
+  const historyInputActiveRef = useRef(false);
+  const initialHistoryLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [historyItems, setHistoryItems] = useState<Transcription[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
+  const [visibleHistoryLimit, setVisibleHistoryLimit] = useState(12);
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
+  const [historyTemplateFilter, setHistoryTemplateFilter] = useState("all");
+  const [historyProjectFilter, setHistoryProjectFilter] = useState(initialProjectFilter);
+
+  useEffect(() => {
+    setHistoryProjectFilter(initialProjectFilter || "all");
+  }, [initialProjectFilter]);
+
+  const pinnedProjectFilter = initialProjectFilter !== "all" ? initialProjectFilter : "all";
+  const hasActiveFilters =
+    historySearchQuery.trim().length > 0 ||
+    historyStatusFilter !== "all" ||
+    historyTemplateFilter !== "all" ||
+    historyProjectFilter !== pinnedProjectFilter;
+
+  const visibleHistoryItems = useMemo(
+    () => historyItems.slice(0, visibleHistoryLimit),
+    [historyItems, visibleHistoryLimit],
+  );
+  const hasMoreHistoryItems = historyItems.length > visibleHistoryLimit;
+  const isRefreshingHistory = historyLoading && historyItems.length > 0;
+  const searchDisabled = isActive && !initialHistoryLoaded;
+
+  const cancelHistoryLoadForInput = useCallback(() => {
+    historyInputActiveRef.current = true;
+    if (initialHistoryLoadTimeoutRef.current) {
+      clearTimeout(initialHistoryLoadTimeoutRef.current);
+      initialHistoryLoadTimeoutRef.current = null;
+    }
+    if (historyRequestAbortRef.current) {
+      historyRequestAbortRef.current.abort();
+      historyRequestAbortRef.current = null;
+    }
+    startTransition(() => {
+      setHistoryLoading(false);
+    });
+  }, []);
+
+  const loadHistoryItems = useCallback(async () => {
+    if (!isActive) {
+      return;
+    }
+
+    if (historyRequestAbortRef.current) {
+      historyRequestAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    historyRequestAbortRef.current = abortController;
+    startTransition(() => {
+      setHistoryLoading(true);
+    });
+
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "24");
+      if (historySearchQuery.trim()) {
+        params.set("q", historySearchQuery.trim());
+        params.set("searchScope", "name");
+      }
+      if (historyStatusFilter !== "all") {
+        params.set("status", historyStatusFilter);
+      }
+      if (historyTemplateFilter !== "all") {
+        params.set("template", historyTemplateFilter);
+      }
+      if (historyProjectFilter !== "all") {
+        params.set("projectId", historyProjectFilter);
+      }
+
+      const queryString = params.toString();
+      const response = await fetch(
+        queryString ? `/api/transcriptions?${queryString}` : "/api/transcriptions",
+        { signal: abortController.signal },
+      );
+      const payload = (await response.json().catch(() => ({}))) as ApiResponse;
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to load history");
+      }
+
+      if (historyRequestAbortRef.current !== abortController) {
+        return;
+      }
+      if (historyInputActiveRef.current && !historySearchQuery.trim()) {
+        return;
+      }
+
+      const nextItems = [...(payload.items || [])].sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      startTransition(() => {
+        setHistoryItems(nextItems);
+        setVisibleHistoryLimit(12);
+        setInitialHistoryLoaded(true);
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
+      startTransition(() => {
+        setHistoryItems([]);
+        setVisibleHistoryLimit(12);
+        setInitialHistoryLoaded(true);
+      });
+    } finally {
+      if (historyRequestAbortRef.current === abortController) {
+        historyRequestAbortRef.current = null;
+      }
+      startTransition(() => {
+        setHistoryLoading(false);
+      });
+    }
+  }, [
+    historyProjectFilter,
+    historySearchQuery,
+    historyStatusFilter,
+    historyTemplateFilter,
+    isActive,
+  ]);
+
+  useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
+    if (initialHistoryLoadTimeoutRef.current) {
+      clearTimeout(initialHistoryLoadTimeoutRef.current);
+    }
+
+    initialHistoryLoadTimeoutRef.current = setTimeout(() => {
+      historyInputActiveRef.current = false;
+      void loadHistoryItems();
+    }, historySearchQuery.trim() ? 0 : 350);
+
+    return () => {
+      if (initialHistoryLoadTimeoutRef.current) {
+        clearTimeout(initialHistoryLoadTimeoutRef.current);
+        initialHistoryLoadTimeoutRef.current = null;
+      }
+    };
+  }, [historySearchQuery, isActive, loadHistoryItems]);
+
+  useEffect(() => {
+    return () => {
+      if (historyRequestAbortRef.current) {
+        historyRequestAbortRef.current.abort();
+      }
+      if (initialHistoryLoadTimeoutRef.current) {
+        clearTimeout(initialHistoryLoadTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function clearHistoryFilters() {
+    startTransition(() => {
+      setHistorySearchQuery("");
+      setHistoryStatusFilter("all");
+      setHistoryTemplateFilter("all");
+      setHistoryProjectFilter(pinnedProjectFilter);
+      setVisibleHistoryLimit(12);
+    });
+  }
+
+  async function handleHistoryAssignProject(transcriptionId: string, projectId: string) {
+    const saved = await onAssignProject(transcriptionId, projectId);
+    if (saved) {
+      const nextProjectId = projectId === "none" ? null : projectId;
+      setHistoryItems((prev) =>
+        prev.map((item) =>
+          item.id === transcriptionId ? { ...item, projectId: nextProjectId } : item,
+        ),
+      );
+    }
+    return saved;
+  }
+
+  async function handleHistoryDelete(transcriptionId: string) {
+    await onDelete(transcriptionId);
+    setHistoryItems((prev) => prev.filter((item) => item.id !== transcriptionId));
+  }
+
+  return (
+    <section
+      id="transcriptions"
+      className={`rounded-[30px] border border-white/80 bg-white/88 p-8 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] ${
+        isActive ? "" : "hidden"
+      }`}
+      style={{ contain: "layout paint style" }}
+    >
+      <div className="border-b border-slate-200 pb-4" style={{ contain: "layout paint" }}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">History</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Search recordings and narrow the list with quick filters.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={clearHistoryFilters}
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] active:scale-95"
+              >
+                Clear Filters
+              </button>
+            ) : null}
+            {isRefreshingHistory ? (
+              <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-500">
+                Updating...
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void loadHistoryItems()}
+              className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <HistoryFilters
+          initialSearchQuery={historySearchQuery}
+          statusFilter={historyStatusFilter}
+          templateFilter={historyTemplateFilter}
+          projectFilter={historyProjectFilter}
+          statusOptions={statusOptions}
+          templateOptions={templateOptions}
+          projects={projects}
+          searchDisabled={searchDisabled}
+          onSearchCommit={setHistorySearchQuery}
+          onSearchInputStart={cancelHistoryLoadForInput}
+          onStatusChange={setHistoryStatusFilter}
+          onTemplateChange={setHistoryTemplateFilter}
+          onProjectChange={setHistoryProjectFilter}
+        />
+      </div>
+
+      {!initialHistoryLoaded || (historyLoading && historyItems.length === 0) ? (
+        <p className="mt-6 text-center text-sm text-slate-400">Loading...</p>
+      ) : historyItems.length === 0 ? (
+        <div className="mt-6 rounded-[22px] border border-dashed border-slate-200 bg-[#fcfbf8] px-6 py-10 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
+            <svg
+              className="h-7 w-7 text-slate-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          </div>
+          <p className="mt-4 text-base font-semibold text-slate-700">
+            {hasActiveFilters ? "No matching history" : "No history yet"}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            {hasActiveFilters
+              ? "Try clearing a filter or searching with a broader phrase."
+              : "Upload a recording from Overview to start building your workspace history."}
+          </p>
+          {hasActiveFilters ? (
+            <div className="mt-5 flex justify-center">
+              <button
+                type="button"
+                onClick={clearHistoryFilters}
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Clear Filters
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-6 space-y-4" style={{ contentVisibility: "auto" }}>
+          {visibleHistoryItems.map((item) => (
+            <HistoryRow
+              key={item.id}
+              item={item}
+              projects={projects}
+              onAssignProject={handleHistoryAssignProject}
+              onProcess={onProcess}
+              onDelete={handleHistoryDelete}
+            />
+          ))}
+          {hasMoreHistoryItems ? (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={() =>
+                  startTransition(() => {
+                    setVisibleHistoryLimit((prev) => prev + 24);
+                  })
+                }
+                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] active:scale-95"
+              >
+                Show more history
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+});
+
+type AssistantRailProps = {
+  projects: Project[];
+  assistantBusy: boolean;
+  assistantRefreshing: boolean;
+  assistantHistoryLoading: boolean;
+  assistantError: string | null;
+  assistantMessages: AssistantMessage[];
+  hasProcessedSummary: boolean;
+  initialScope: AssistantScope;
+  initialProjectId: string;
+  initialWorkspaceProjectIds: string[];
+  suggestions: Record<AssistantScope, string[]>;
+  onRefresh: () => void;
+  onSubmit: (input: {
+    text: string;
+    scope: AssistantScope;
+    projectId: string;
+    workspaceProjectIds: string[];
+  }) => void;
+};
+
+const AssistantRail = memo(function AssistantRail({
+  projects,
+  assistantBusy,
+  assistantRefreshing,
+  assistantHistoryLoading,
+  assistantError,
+  assistantMessages,
+  hasProcessedSummary,
+  initialScope,
+  initialProjectId,
+  initialWorkspaceProjectIds,
+  suggestions,
+  onRefresh,
+  onSubmit,
+}: AssistantRailProps) {
+  const assistantInputRef = useRef<HTMLInputElement | null>(null);
+  const [localScope, setLocalScope] = useState<AssistantScope>(initialScope);
+  const [localProjectId, setLocalProjectId] = useState(initialProjectId);
+  const [localWorkspaceProjectIds, setLocalWorkspaceProjectIds] = useState<string[]>(
+    initialWorkspaceProjectIds,
+  );
+  const [localPrompt, setLocalPrompt] = useState("");
+
+  useEffect(() => {
+    setLocalScope(initialScope);
+  }, [initialScope]);
+
+  useEffect(() => {
+    setLocalProjectId(initialProjectId);
+  }, [initialProjectId]);
+
+  useEffect(() => {
+    setLocalWorkspaceProjectIds(initialWorkspaceProjectIds);
+  }, [initialWorkspaceProjectIds]);
+
+  const canSubmit =
+    !assistantBusy &&
+    !(
+      localScope === "transcript" &&
+      !hasProcessedSummary
+    );
+
+  function submitPrompt(textOverride?: string) {
+    const text = (textOverride ?? localPrompt).trim();
+    if (!text) {
+      return;
+    }
+
+    onSubmit({
+      text,
+      scope: localScope,
+      projectId: localProjectId,
+      workspaceProjectIds: localWorkspaceProjectIds,
+    });
+    setLocalPrompt("");
+  }
+
+  function handleSuggestion(text: string) {
+    setLocalPrompt(text);
+    submitPrompt(text);
+    requestAnimationFrame(() => assistantInputRef.current?.focus());
+  }
+
+  function toggleWorkspaceProject(projectId: string) {
+    setLocalWorkspaceProjectIds((prev) =>
+      prev.includes(projectId)
+        ? prev.filter((entry) => entry !== projectId)
+        : [...prev, projectId],
+    );
+  }
+
+  return (
+    <section className="flex h-full flex-col gap-4 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.28)]">
+      <div className="rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            <span className="text-sm font-semibold text-slate-900">Voxly Tab</span>
+          </div>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={
+              localScope === "transcript" &&
+              (assistantRefreshing || assistantHistoryLoading)
+            }
+            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {localScope === "transcript"
+              ? assistantRefreshing || assistantHistoryLoading
+                ? "Refreshing..."
+                : "Refresh"
+              : "Clear"}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex min-h-[420px] flex-1 flex-col rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
+        <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-orange-700">
+              AI Assistant
+            </p>
+            <h3 className="mt-1 text-xl font-bold text-slate-900">
+              {localScope === "transcript"
+                ? "Ask Voxly to refine the notes"
+                : localScope === "project"
+                  ? "Ask across this project"
+                  : "Ask across the workspace"}
+            </h3>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-4">
+          <div className="mt-4 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["transcript", "Transcript"],
+                ["project", "Project"],
+                ["workspace", "Workspace"],
+              ] as const).map(([scopeId, label]) => (
+                <button
+                  key={scopeId}
+                  type="button"
+                  onClick={() => {
+                    setLocalScope(scopeId);
+                    setLocalPrompt("");
+                  }}
+                  className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                    localScope === scopeId
+                      ? "border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {localScope === "project" ? (
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Project scope
+                </span>
+                <select
+                  value={localProjectId}
+                  onChange={(event) => setLocalProjectId(event.target.value)}
+                  className="mt-2 w-full cursor-pointer rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none"
+                >
+                  <option value="all">Choose a project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            {localScope === "workspace" ? (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Narrow to projects
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {projects.length ? (
+                    projects.map((project) => {
+                      const selected = localWorkspaceProjectIds.includes(project.id);
+                      return (
+                        <button
+                          key={project.id}
+                          type="button"
+                          onClick={() => toggleWorkspaceProject(project.id)}
+                          className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                            selected
+                              ? "border-sky-200 bg-sky-50 text-sky-700"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          {project.name}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      Create a project to narrow workspace answers.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-start gap-3 rounded-[24px] border border-orange-200 bg-[#fff4ec] p-4 shadow-sm">
+              <span className="text-2xl">🤖</span>
+              <div>
+                <p className="text-sm font-bold text-slate-900">
+                  {localScope === "transcript"
+                    ? "How can I help with these notes?"
+                    : localScope === "project"
+                      ? "What should Voxly find across this project?"
+                      : "What should Voxly synthesize across the workspace?"}
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                  {localScope === "transcript"
+                    ? "I can directly edit your notes – add key points, update action items, change priorities, and more."
+                    : "I can search across multiple transcripts, synthesize themes, and answer with grounded sources."}
+                </p>
+              </div>
+            </div>
+
+            {(localScope !== "transcript" || hasProcessedSummary) ? (
+              <div className="mt-4 space-y-2">
+                {suggestions[localScope].map((text) => (
+                  <button
+                    key={text}
+                    type="button"
+                    onClick={() => handleSuggestion(text)}
+                    className="cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[20px] border border-dashed border-slate-200 bg-[#fcfbf8] px-4 py-4 text-xs leading-relaxed text-slate-500">
+                Prompts will appear here after Start Voxly finishes and the
+                recording has been processed.
+              </div>
+            )}
+
+            {assistantMessages.length > 0 && (
+              <div className="mt-4 space-y-4">
+                {assistantMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {message.role === "assistant" && (
+                      <div className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#f97316] shadow-md">
+                        <span className="text-sm">🤖</span>
+                      </div>
+                    )}
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
+                        message.role === "user"
+                          ? "bg-slate-950 text-white"
+                          : "border border-slate-200 bg-[#fffdf9] text-slate-800 shadow-slate-200"
+                      }`}
+                    >
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => (
+                            <p className="text-sm leading-relaxed mb-2 last:mb-0 text-inherit">
+                              {children}
+                            </p>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="text-sm leading-relaxed list-disc ml-4 mb-2 last:mb-0 text-inherit">
+                              {children}
+                            </ul>
+                          ),
+                          ol: ({ children }) => (
+                            <ol className="text-sm leading-relaxed list-decimal ml-4 mb-2 last:mb-0 text-inherit">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }) => (
+                            <li className="text-sm leading-relaxed text-inherit">
+                              {children}
+                            </li>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="font-bold text-inherit">
+                              {children}
+                            </strong>
+                          ),
+                          em: ({ children }) => (
+                            <em className="italic text-inherit">{children}</em>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                    {message.role === "user" && (
+                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 shadow-md">
+                        <span className="text-sm">👤</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+          <div className="flex items-center gap-2">
+            <input
+              placeholder={
+                localScope === "transcript"
+                  ? "Ask me to edit your notes..."
+                  : localScope === "project"
+                    ? "Ask across this project..."
+                    : "Ask across the workspace..."
+              }
+              ref={assistantInputRef}
+              value={localPrompt}
+              disabled={!canSubmit}
+              onChange={(event) => setLocalPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitPrompt();
+                }
+              }}
+              className="flex-1 rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => submitPrompt()}
+              disabled={!canSubmit}
+              className="cursor-pointer rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Send
+            </button>
+          </div>
+          {assistantError && <p className="text-xs text-red-600">{assistantError}</p>}
+          {assistantHistoryLoading ? (
+            <p className="text-xs text-slate-500">Loading notes history...</p>
+          ) : null}
+          <p className="text-xs leading-relaxed text-slate-500">
+            {localScope === "transcript"
+              ? hasProcessedSummary
+                ? "Ready to help. Choose a suggestion or type your own request."
+                : "Process a recording to unlock prompts and assistant edits."
+              : localScope === "project"
+                ? "Project answers use grounded retrieval across recordings in the selected project."
+                : "Workspace answers search across your workspace, or just the projects you select above."}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+});
+
+type DeferredCheckboxProps = {
+  checked: boolean;
+  disabled?: boolean;
+  className?: string;
+  onCheckedChange: (checked: boolean) => void;
+};
+
+const DeferredCheckbox = memo(function DeferredCheckbox({
+  checked,
+  disabled,
+  className,
+  onCheckedChange,
+}: DeferredCheckboxProps) {
+  const [localChecked, setLocalChecked] = useState(checked);
+  const commitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setLocalChecked(checked);
+  }, [checked]);
+
+  useEffect(() => {
+    return () => {
+      if (commitTimeoutRef.current) {
+        clearTimeout(commitTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <input
+      type="checkbox"
+      checked={localChecked}
+      onChange={(event) => {
+        const nextChecked = event.target.checked;
+        setLocalChecked(nextChecked);
+        if (commitTimeoutRef.current) {
+          clearTimeout(commitTimeoutRef.current);
+        }
+        commitTimeoutRef.current = setTimeout(() => {
+          startTransition(() => {
+            onCheckedChange(nextChecked);
+          });
+        }, 80);
+      }}
+      disabled={disabled}
+      className={className}
+    />
+  );
+});
+
 export function TranscriptionClient({
   initialSurface = "overview",
   initialSettingsSection = "workspace",
@@ -1506,7 +2782,6 @@ export function TranscriptionClient({
   const router = useRouter();
   const pathname = usePathname();
   const fileInputId = useId();
-  const assistantInputRef = useRef<HTMLInputElement | null>(null);
   const resultAreaRef = useRef<HTMLElement | null>(null);
   const shouldScrollToSummaryRef = useRef(false);
   const listRequestAbortRef = useRef<AbortController | null>(null);
@@ -1521,14 +2796,12 @@ export function TranscriptionClient({
   );
   const [items, setItems] = useState<Transcription[]>([]);
   const [allItems, setAllItems] = useState<Transcription[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [overviewServerLoading, setOverviewServerLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [templateFilter, setTemplateFilter] = useState("all");
+  const debouncedSearchQuery = "";
+  const statusFilter = "all";
+  const templateFilter = "all";
   const [projectFilter, setProjectFilter] = useState(initialProjectFilter);
   const [customTemplates, setCustomTemplates] = useState<SummaryTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
@@ -1663,14 +2936,11 @@ export function TranscriptionClient({
   const [uploadTemplate, setUploadTemplate] = useState("default");
   const [testDataLoading, setTestDataLoading] = useState(false);
   const [testDataStatus, setTestDataStatus] = useState<string | null>(null);
-  const [expandedTranscripts, setExpandedTranscripts] = useState<
-    Record<string, boolean>
-  >({});
   const [processingIds, setProcessingIds] = useState<Record<string, boolean>>(
     {},
   );
   const [focusedSummaryId, setFocusedSummaryId] = useState<string | null>(null);
-  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [overviewDetailsAutoOpenToken, setOverviewDetailsAutoOpenToken] = useState(0);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantRefreshing, setAssistantRefreshing] = useState(false);
@@ -1863,16 +3133,7 @@ export function TranscriptionClient({
   useEffect(() => {
     setProjectFilter(initialProjectFilter || "all");
   }, [initialProjectFilter]);
-  const pinnedProjectFilter =
-    workspaceSurface === "transcriptions" && initialProjectFilter !== "all"
-      ? initialProjectFilter
-      : "all";
   const isDev = process.env.NODE_ENV !== "production";
-  const hasActiveFilters =
-    debouncedSearchQuery.trim().length > 0 ||
-    statusFilter !== "all" ||
-    templateFilter !== "all" ||
-    projectFilter !== pinnedProjectFilter;
 
   const sortedItems = useMemo(() => {
     return [...items].sort(
@@ -2185,8 +3446,31 @@ export function TranscriptionClient({
     }
   }
 
-  const loadItems = useCallback(async (options?: { showLoading?: boolean }) => {
+  const loadItems = useCallback(async (options?: { showLoading?: boolean; force?: boolean }) => {
     const showLoading = options?.showLoading ?? true;
+    const trimmedQuery = debouncedSearchQuery.trim();
+    const cacheKey = buildTranscriptionsCacheKey({
+      query: trimmedQuery,
+      status: statusFilter,
+      template: templateFilter,
+      projectId: projectFilter,
+    });
+    if (!options?.force && showLoading) {
+      const cachedItems = readSessionCache<Transcription[]>(cacheKey);
+      if (cachedItems) {
+        setItems(cachedItems);
+        setAllItems((prev) => {
+          const merged = new Map(prev.map((item) => [item.id, item]));
+          for (const item of cachedItems) {
+            merged.set(item.id, item);
+          }
+          return Array.from(merged.values());
+        });
+        setOverviewServerLoading(false);
+        return cachedItems;
+      }
+    }
+
     if (listRequestAbortRef.current) {
       listRequestAbortRef.current.abort();
     }
@@ -2194,12 +3478,11 @@ export function TranscriptionClient({
     listRequestAbortRef.current = abortController;
 
     if (showLoading) {
-      setLoading(true);
+      setOverviewServerLoading(true);
     }
     setError(null);
     try {
       const params = new URLSearchParams();
-      const trimmedQuery = debouncedSearchQuery.trim();
       if (trimmedQuery) {
         params.set("q", trimmedQuery);
       }
@@ -2227,6 +3510,7 @@ export function TranscriptionClient({
       }
       const nextItems = payload.items || [];
       setItems(nextItems);
+      writeSessionCache(cacheKey, nextItems);
       setAllItems((prev) => {
         const merged = new Map(prev.map((item) => [item.id, item]));
         for (const item of nextItems) {
@@ -2246,22 +3530,20 @@ export function TranscriptionClient({
         listRequestAbortRef.current = null;
       }
       if (showLoading) {
-        setLoading(false);
+        setOverviewServerLoading(false);
       }
     }
   }, [debouncedSearchQuery, statusFilter, templateFilter, projectFilter]);
 
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery.trim());
-    }, 300);
+  async function loadBilling(options?: { force?: boolean }) {
+    const cachedBilling = options?.force
+      ? null
+      : readSessionCache<BillingInfo | null>(BILLING_CACHE_KEY);
+    if (cachedBilling !== null) {
+      setBilling(cachedBilling);
+      return;
+    }
 
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [searchQuery]);
-
-  async function loadBilling() {
     try {
       const res = await fetch("/api/billing/subscription");
       const payload = (await res.json()) as BillingResponse;
@@ -2269,7 +3551,9 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load billing");
       }
 
-      setBilling(payload.billing || null);
+      const nextBilling = payload.billing || null;
+      setBilling(nextBilling);
+      writeSessionCache(BILLING_CACHE_KEY, nextBilling);
     } catch (err) {
       setBilling(null);
       const message =
@@ -2298,7 +3582,16 @@ export function TranscriptionClient({
     }
   }
 
-  async function loadProjects() {
+  async function loadProjects(options?: { force?: boolean }) {
+    const cachedProjects = options?.force
+      ? null
+      : readSessionCache<Project[]>(PROJECTS_CACHE_KEY);
+    if (cachedProjects) {
+      setProjects(cachedProjects);
+      setProjectsLoading(false);
+      return;
+    }
+
     setProjectsLoading(true);
     try {
       const res = await fetch("/api/projects");
@@ -2307,7 +3600,9 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load projects");
       }
 
-      setProjects(payload.projects || []);
+      const nextProjects = payload.projects || [];
+      setProjects(nextProjects);
+      writeSessionCache(PROJECTS_CACHE_KEY, nextProjects);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load projects");
     } finally {
@@ -3230,7 +4525,7 @@ export function TranscriptionClient({
   async function pollForProcessedResult(id: string) {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      const nextItems = await loadItems({ showLoading: false });
+      const nextItems = await loadItems({ showLoading: false, force: true });
       if (!nextItems) {
         continue;
       }
@@ -3241,7 +4536,7 @@ export function TranscriptionClient({
       }
 
       if (currentItem.status === "done" || currentItem.status === "error") {
-        await loadBilling();
+        await loadBilling({ force: true });
         return currentItem;
       }
     }
@@ -3280,6 +4575,8 @@ export function TranscriptionClient({
       if (!res.ok) {
         throw new Error(payload?.error || "Upload failed");
       }
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearSessionCacheKey(BILLING_CACHE_KEY);
       const optimisticItem: Transcription | null = payload?.transcriptionId
         ? {
             id: payload.transcriptionId,
@@ -3317,11 +4614,11 @@ export function TranscriptionClient({
       setOverviewUploadPanelVersion((prev) => prev + 1);
       const initialItem =
         payload?.transcriptionId
-          ? (await loadItems())?.find(
+          ? (await loadItems({ force: true }))?.find(
               (item) => item.id === payload.transcriptionId,
             ) || null
           : null;
-      await loadBilling();
+      await loadBilling({ force: true });
       setUploading(false);
       showUploadStatusNotice(
         payload?.queued
@@ -3339,6 +4636,7 @@ export function TranscriptionClient({
           if (currentItem?.status === "done") {
             shouldScrollToSummaryRef.current = true;
             setFocusedSummaryId(currentItem.id);
+            setOverviewDetailsAutoOpenToken((prev) => prev + 1);
             showCompletionTip(
               "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
             );
@@ -3350,6 +4648,7 @@ export function TranscriptionClient({
       if (initialItem?.status === "done") {
         shouldScrollToSummaryRef.current = true;
         setFocusedSummaryId(initialItem.id);
+        setOverviewDetailsAutoOpenToken((prev) => prev + 1);
         showCompletionTip(
           "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
         );
@@ -3374,7 +4673,8 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load test data");
       }
       setTestDataStatus("Test data loaded successfully.");
-      await loadItems();
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      await loadItems({ force: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load test data");
     } finally {
@@ -3382,7 +4682,11 @@ export function TranscriptionClient({
     }
   }
 
-  async function handleProcess(id: string, template?: string | null) {
+  async function handleProcess(
+    id: string,
+    template?: string | null,
+    trackInParent = true,
+  ) {
     setError(null);
     setAssistantError(null);
     setAssistantSummary(null);
@@ -3390,7 +4694,9 @@ export function TranscriptionClient({
     setFocusedSummaryId(id);
     setOverviewUploadPanelStartExpanded(false);
     setOverviewUploadPanelVersion((prev) => prev + 1);
-    setProcessingIds((prev) => ({ ...prev, [id]: true }));
+    if (trackInParent) {
+      setProcessingIds((prev) => ({ ...prev, [id]: true }));
+    }
     try {
       const res = await fetch("/api/transcriptions/process", {
         method: "POST",
@@ -3404,8 +4710,10 @@ export function TranscriptionClient({
       if (!res.ok) {
         throw new Error(payload?.error || "Processing failed");
       }
-      const nextItems = await loadItems({ showLoading: false });
-      await loadBilling();
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearSessionCacheKey(BILLING_CACHE_KEY);
+      const nextItems = await loadItems({ showLoading: false, force: true });
+      await loadBilling({ force: true });
       let currentItem = nextItems?.find((item) => item.id === id) || null;
 
       window.sessionStorage.setItem("voxly:overview-focus", id);
@@ -3426,6 +4734,7 @@ export function TranscriptionClient({
       if (currentItem?.status === "done") {
         shouldScrollToSummaryRef.current = true;
         setFocusedSummaryId(currentItem.id);
+        setOverviewDetailsAutoOpenToken((prev) => prev + 1);
         showCompletionTip(
           "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
         );
@@ -3433,11 +4742,13 @@ export function TranscriptionClient({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Processing failed");
     } finally {
-      setProcessingIds((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
+      if (trackInParent) {
+        setProcessingIds((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
     }
   }
 
@@ -3447,7 +4758,6 @@ export function TranscriptionClient({
     );
     if (!confirmed) return;
 
-    setDeletingId(id);
     setError(null);
     try {
       const res = await fetch("/api/transcriptions", {
@@ -3460,11 +4770,6 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Delete failed");
       }
 
-      setExpandedTranscripts((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
       setAllItems((prev) => prev.filter((item) => item.id !== id));
       if (focusedSummaryId === id) {
         setFocusedSummaryId(null);
@@ -3475,19 +4780,11 @@ export function TranscriptionClient({
         delete next[id];
         return next;
       });
-      await loadItems();
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      await loadItems({ force: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
-    } finally {
-      setDeletingId(null);
     }
-  }
-
-  function toggleTranscript(id: string) {
-    setExpandedTranscripts((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
   }
 
   async function handleRefreshNotes() {
@@ -3502,7 +4799,7 @@ export function TranscriptionClient({
     setAssistantError(null);
 
     try {
-      const nextItems = await loadItems({ showLoading: false });
+      const nextItems = await loadItems({ showLoading: false, force: true });
       setAssistantSummary(null);
 
       const nextFocusedSummary =
@@ -3529,43 +4826,51 @@ export function TranscriptionClient({
     }
   }
 
-  async function handleAssistantSubmit(promptText?: string) {
-    const text = (promptText ?? assistantPrompt).trim();
+  async function handleAssistantSubmitWithContext(input: {
+    text: string;
+    scope: AssistantScope;
+    projectId: string;
+    workspaceProjectIds: string[];
+  }) {
+    const text = input.text.trim();
     const activeSummary = focusedSummary;
     if (!text) return;
 
-    if (assistantScope === "transcript" && !activeSummary) {
+    if (input.scope === "transcript" && !activeSummary) {
       setAssistantError("No summary available yet.");
       return;
     }
-    if (assistantScope === "project" && assistantProjectId === "all") {
+    if (input.scope === "project" && input.projectId === "all") {
       setAssistantError("Choose a project before asking across recordings.");
       return;
     }
 
     setAssistantBusy(true);
     setAssistantError(null);
+    setAssistantScope(input.scope);
+    setAssistantProjectId(input.projectId);
+    setAssistantWorkspaceProjectIds(input.workspaceProjectIds);
     const nextMessages: typeof assistantMessages = [
       ...assistantMessages,
       { role: "user", content: text },
     ];
     setAssistantMessages(nextMessages);
     try {
-      if (assistantScope !== "transcript") {
+      if (input.scope !== "transcript") {
         const endpoint =
-          assistantScope === "workspace"
+          input.scope === "workspace"
             ? "/api/intelligence/workspace"
             : "/api/intelligence/project";
         const body =
-          assistantScope === "workspace"
+          input.scope === "workspace"
             ? {
                 question: text,
-                ...(assistantWorkspaceProjectIds.length
-                  ? { projectIds: assistantWorkspaceProjectIds }
+                ...(input.workspaceProjectIds.length
+                  ? { projectIds: input.workspaceProjectIds }
                   : {}),
               }
             : {
-                projectId: assistantProjectId,
+                projectId: input.projectId,
                 question: text,
               };
 
@@ -3578,7 +4883,7 @@ export function TranscriptionClient({
         if (!res.ok) {
           throw new Error(
             payload?.error ||
-              (assistantScope === "workspace"
+              (input.scope === "workspace"
                 ? "Assistant workspace query failed"
                 : "Assistant project query failed"),
           );
@@ -3589,18 +4894,17 @@ export function TranscriptionClient({
           ...prev,
           { role: "assistant", content: assistantReply },
         ]);
-        setAssistantPrompt("");
 
-        setIntelligenceScope(assistantScope === "workspace" ? "workspace" : "project");
+        setIntelligenceScope(input.scope === "workspace" ? "workspace" : "project");
         setIntelligenceQuestion(text);
         setIntelligenceResult(payload);
         setSelectedProjectInsightId(null);
         setSelectedWorkspaceInsightId(null);
-        if (assistantScope === "project") {
-          setIntelligenceProjectId(assistantProjectId);
+        if (input.scope === "project") {
+          setIntelligenceProjectId(input.projectId);
           setIntelligenceTitleDraft(buildInsightTitle(text));
         } else {
-          setWorkspaceIntelligenceProjectIds(assistantWorkspaceProjectIds);
+          setWorkspaceIntelligenceProjectIds(input.workspaceProjectIds);
           setIntelligenceTitleDraft("");
         }
         return;
@@ -3686,7 +4990,6 @@ export function TranscriptionClient({
         ];
         return newMessages;
       });
-      setAssistantPrompt("");
     } catch (err) {
       setAssistantError(
         err instanceof Error ? err.message : "Assistant request failed",
@@ -3704,19 +5007,6 @@ export function TranscriptionClient({
     } finally {
       setAssistantBusy(false);
     }
-  }
-
-  function handleAssistantSuggestion(text: string) {
-    setAssistantPrompt(text);
-    handleAssistantSubmit(text);
-    requestAnimationFrame(() => assistantInputRef.current?.focus());
-  }
-
-  function clearFilters() {
-    setSearchQuery("");
-    setStatusFilter("all");
-    setTemplateFilter("all");
-    setProjectFilter(pinnedProjectFilter);
   }
 
   async function handleCreateTemplate(input: {
@@ -3776,7 +5066,8 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to create project");
       }
 
-      await loadProjects();
+      clearSessionCacheKey(PROJECTS_CACHE_KEY);
+      await loadProjects({ force: true });
       if (payload.project?.id) {
         setUploadProjectId(payload.project.id);
       }
@@ -3813,8 +5104,11 @@ export function TranscriptionClient({
           item.id === transcriptionId ? { ...item, projectId: nextProjectId } : item,
         ),
       );
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update project");
+      return false;
     }
   }
 
@@ -3851,9 +5145,12 @@ export function TranscriptionClient({
       setSelectedWorkspaceInsightId(null);
       setUploadProjectId("none");
       setProjectFilter("all");
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearSessionCacheKey(PROJECTS_CACHE_KEY);
+      clearSessionCacheKey(BILLING_CACHE_KEY);
       await Promise.all([
-        loadItems(),
-        loadProjects(),
+        loadItems({ force: true }),
+        loadProjects({ force: true }),
         loadTemplates(),
         loadWorkspaces(),
         loadWorkspacePeople(),
@@ -4705,10 +6002,13 @@ export function TranscriptionClient({
       setWorkspaceIntelligenceProjectIds([]);
       setSavedWorkspaceInsights([]);
       setSelectedWorkspaceInsightId(null);
+      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearSessionCacheKey(PROJECTS_CACHE_KEY);
+      clearSessionCacheKey(BILLING_CACHE_KEY);
       await Promise.all([
         loadWorkspaces(),
-        loadItems(),
-        loadProjects(),
+        loadItems({ force: true }),
+        loadProjects({ force: true }),
         loadTemplates(),
         loadWorkspacePeople(),
         loadWorkspaceActivity(),
@@ -4932,14 +6232,6 @@ export function TranscriptionClient({
 
   function handleToggleWorkspaceIntelligenceProject(projectId: string) {
     setWorkspaceIntelligenceProjectIds((prev) =>
-      prev.includes(projectId)
-        ? prev.filter((id) => id !== projectId)
-        : [...prev, projectId],
-    );
-  }
-
-  function handleToggleAssistantWorkspaceProject(projectId: string) {
-    setAssistantWorkspaceProjectIds((prev) =>
       prev.includes(projectId)
         ? prev.filter((id) => id !== projectId)
         : [...prev, projectId],
@@ -6253,10 +7545,9 @@ export function TranscriptionClient({
                         <p className="text-sm font-semibold text-slate-900">{item.body}</p>
                         <p className="mt-1 text-sm text-slate-500">{item.note}</p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <DeferredCheckbox
                         checked={item.checked}
-                        onChange={(event) => item.setChecked(event.target.checked)}
+                        onCheckedChange={item.setChecked}
                         disabled={notificationPreferencesLoading || notificationPreferencesBusy}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                       />
@@ -6423,10 +7714,9 @@ export function TranscriptionClient({
                         When enabled, Voxly will run this report on the saved schedule.
                       </p>
                     </div>
-                    <input
-                      type="checkbox"
+                    <DeferredCheckbox
                       checked={workspaceDigestEnabled}
-                      onChange={(event) => setWorkspaceDigestEnabled(event.target.checked)}
+                      onCheckedChange={setWorkspaceDigestEnabled}
                       disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
                       className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                     />
@@ -6589,10 +7879,9 @@ export function TranscriptionClient({
                           Respect each member&apos;s personal digest email preference.
                         </p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <DeferredCheckbox
                         checked={workspaceDigestSendEmail}
-                        onChange={(event) => setWorkspaceDigestSendEmail(event.target.checked)}
+                        onCheckedChange={setWorkspaceDigestSendEmail}
                         disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                       />
@@ -6604,10 +7893,9 @@ export function TranscriptionClient({
                           Requires a workspace Slack destination to be configured.
                         </p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <DeferredCheckbox
                         checked={workspaceDigestSendSlack}
-                        onChange={(event) => setWorkspaceDigestSendSlack(event.target.checked)}
+                        onCheckedChange={setWorkspaceDigestSendSlack}
                         disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                       />
@@ -6917,10 +8205,9 @@ export function TranscriptionClient({
                           Lets Voxly send test messages, digests, and shared insights.
                         </p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <DeferredCheckbox
                         checked={workspaceSlackEnabled}
-                        onChange={(event) => setWorkspaceSlackEnabled(event.target.checked)}
+                        onCheckedChange={setWorkspaceSlackEnabled}
                         disabled={workspaceSlackLoading || !activeWorkspace?.canManage}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                       />
@@ -6932,10 +8219,9 @@ export function TranscriptionClient({
                           Workspace reports can post directly to the connected channel.
                         </p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <DeferredCheckbox
                         checked={workspaceSlackSendDigests}
-                        onChange={(event) => setWorkspaceSlackSendDigests(event.target.checked)}
+                        onCheckedChange={setWorkspaceSlackSendDigests}
                         disabled={workspaceSlackLoading || !activeWorkspace?.canManage}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                       />
@@ -7056,10 +8342,9 @@ export function TranscriptionClient({
                         Allows saved insights to create real pages in Notion.
                       </p>
                     </div>
-                    <input
-                      type="checkbox"
+                    <DeferredCheckbox
                       checked={workspaceNotionEnabled}
-                      onChange={(event) => setWorkspaceNotionEnabled(event.target.checked)}
+                      onCheckedChange={setWorkspaceNotionEnabled}
                       disabled={workspaceNotionLoading || !activeWorkspace?.canManage}
                       className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                     />
@@ -7832,10 +9117,9 @@ export function TranscriptionClient({
                             Run a weekly report for this project.
                           </p>
                         </div>
-                        <input
-                          type="checkbox"
+                        <DeferredCheckbox
                           checked={projectDigestEnabled}
-                          onChange={(event) => setProjectDigestEnabled(event.target.checked)}
+                          onCheckedChange={setProjectDigestEnabled}
                           disabled={projectDigestLoading || !activeWorkspace?.canManage}
                           className="h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                         />
@@ -7921,12 +9205,9 @@ export function TranscriptionClient({
                               Respect each member&apos;s personal digest email preference.
                             </p>
                           </div>
-                          <input
-                            type="checkbox"
+                          <DeferredCheckbox
                             checked={projectDigestSendEmail}
-                            onChange={(event) =>
-                              setProjectDigestSendEmail(event.target.checked)
-                            }
+                            onCheckedChange={setProjectDigestSendEmail}
                             disabled={projectDigestLoading || !activeWorkspace?.canManage}
                             className="h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                           />
@@ -7938,12 +9219,9 @@ export function TranscriptionClient({
                               Requires workspace Slack digests to be enabled.
                             </p>
                           </div>
-                          <input
-                            type="checkbox"
+                          <DeferredCheckbox
                             checked={projectDigestSendSlack}
-                            onChange={(event) =>
-                              setProjectDigestSendSlack(event.target.checked)
-                            }
+                            onCheckedChange={setProjectDigestSendSlack}
                             disabled={projectDigestLoading || !activeWorkspace?.canManage}
                             className="h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                           />
@@ -9152,317 +10430,65 @@ export function TranscriptionClient({
           ref={resultAreaRef}
           className={`space-y-4 ${workspaceSurface === "overview" ? "" : "hidden"}`}
         >
-          <OverviewCurrentRecording
-            key={focusedSummary?.id || "no-recording"}
-            activeWorkspace={activeWorkspace}
-            focusedSummary={focusedSummary}
-            displaySummary={displaySummary}
-            selectedProjectName={selectedProjectName}
-            currentRecordingText={currentRecordingText}
-            currentRecordingSnippet={currentRecordingSnippet}
-            hasExpandableCurrentRecordingText={hasExpandableCurrentRecordingText}
-            focusedSummaryHiddenByFilters={focusedSummaryHiddenByFilters}
-            isFocusedSummaryProcessing={isFocusedSummaryProcessing}
-            canProcessFocusedSummary={canProcessFocusedSummary}
-            currentActionTasks={currentActionTasks}
-            activeTranscriptionId={activeTranscriptionId}
-            actionTaskBusyKey={actionTaskBusyKey}
-            onProcess={handleProcess}
-            onCopySummary={() =>
-              void handleCopyText(
-                "Summary",
-                buildSummaryText(displaySummary || focusedSummary),
-              )
-            }
-            onStartUpload={() => scrollToSection("upload")}
-            onCreateActionTask={handleCreateActionTask}
-            onUpdateActionTask={handleUpdateActionTask}
-            onDeleteActionTask={handleDeleteActionTask}
-          />
-        </section>
-
-        <section
-          id="transcriptions"
-          className={`rounded-[30px] border border-white/80 bg-white/88 p-8 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] ${
-            workspaceSurface === "transcriptions" ? "" : "hidden"
-          }`}
-        >
-          <div className="border-b border-slate-200 pb-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">History</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Search recordings and narrow the list with quick filters.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {hasActiveFilters ? (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] active:scale-95"
-                  >
-                    Clear Filters
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => void loadItems()}
-                  className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_180px_180px_180px]">
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Search
-                </span>
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search recordings, transcripts, or notes"
-                  className="mt-2 w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Status
-                </span>
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                >
-                  {statusOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Template
-                </span>
-                <select
-                  value={templateFilter}
-                  onChange={(event) => setTemplateFilter(event.target.value)}
-                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                >
-                  <option value="all">All templates</option>
-                  {templateOptions.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Project
-                </span>
-                <select
-                  value={projectFilter}
-                  onChange={(event) => setProjectFilter(event.target.value)}
-                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                >
-                  <option value="all">All projects</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
-
-          {loading ? (
-            <p className="mt-6 text-sm text-slate-400 text-center">
-              Loading...
-            </p>
-          ) : sortedItems.length === 0 ? (
-            <div className="mt-6 rounded-[22px] border border-dashed border-slate-200 bg-[#fcfbf8] px-6 py-10 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
-                <svg
-                  className="h-7 w-7 text-slate-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-              </div>
-              <p className="mt-4 text-base font-semibold text-slate-700">
-                {hasActiveFilters ? "No matching history" : "No history yet"}
+          {overviewServerLoading && !focusedSummary ? (
+            <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.18)] sm:px-6">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+                Current Workspace
               </p>
-              <p className="mt-2 text-sm text-slate-500">
-                {hasActiveFilters
-                  ? "Try clearing a filter or searching with a broader phrase."
-                  : "Upload your first recording to start building your workspace."}
-              </p>
-              <div className="mt-5 flex justify-center gap-3">
-                {hasActiveFilters ? (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-                  >
-                    Clear Filters
-                  </button>
-                ) : (
-                  <Link
-                    href="/dashboard"
-                    className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-                  >
-                    Start Upload
-                  </Link>
-                )}
+              <div className="mt-4 flex items-center gap-3">
+                <span className="h-3 w-3 animate-pulse rounded-full bg-orange-500" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Loading overview...
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Fetching the latest recordings from the server.
+                  </p>
+                </div>
               </div>
             </div>
           ) : (
-            <div className="mt-6 space-y-4">
-              {sortedItems.map((item) => {
-                const isProcessing =
-                  processingIds[item.id] || item.status === "processing";
-                const canProcess =
-                  !isProcessing &&
-                  (item.status === "uploaded" || item.status === "done");
-
-                return (
-                  <div
-                    key={item.id}
-                    className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 transition-all hover:border-slate-300"
-                  >
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-semibold text-slate-900">
-                          {item.fileName}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <p className="text-xs text-slate-500">
-                            {new Date(item.createdAt).toLocaleString()}
-                          </p>
-                          <span className="text-slate-300">•</span>
-                          <span
-                            className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                              item.status === "done"
-                                ? "bg-green-100 text-green-700"
-                                : item.status === "uploaded"
-                                  ? "bg-amber-100 text-amber-700"
-                                  : item.status === "uploading"
-                                    ? "bg-orange-100 text-orange-700"
-                                : item.status === "processing"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {item.status}
-                          </span>
-                          {item.duration ? (
-                            <>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-xs text-slate-500">
-                                {Math.max(1, Math.ceil(item.duration / 60))}{" "}
-                                credits
-                              </span>
-                            </>
-                          ) : null}
-                          {item.projectId ? (
-                            <>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-xs text-slate-500">
-                                {projects.find((project) => project.id === item.projectId)?.name ||
-                                  "Project"}
-                              </span>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 xl:max-w-[28rem] xl:justify-end">
-                        <select
-                          value={item.projectId || "none"}
-                          onChange={(event) =>
-                            void handleAssignProject(item.id, event.target.value)
-                          }
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700"
-                        >
-                          <option value="none">No project</option>
-                          {projects.map((project) => (
-                            <option key={project.id} value={project.id}>
-                              {project.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => handleProcess(item.id, item.template)}
-                          disabled={!canProcess}
-                          className={`cursor-pointer rounded-full border px-3.5 py-2 text-[11px] font-semibold active:scale-95 ${
-                            isProcessing
-                              ? "border-sky-200 bg-sky-50 text-sky-700 shadow-[0_10px_24px_-20px_rgba(14,165,233,0.9)]"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700"
-                          } disabled:cursor-not-allowed disabled:opacity-50`}
-                        >
-                          {isProcessing ? "Processing..." : "Process"}
-                        </button>
-
-                        {item.transcript && (
-                          <button
-                            type="button"
-                            onClick={() => toggleTranscript(item.id)}
-                            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
-                          >
-                            {expandedTranscripts[item.id]
-                              ? "Hide Transcript"
-                              : "View Transcript"}
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(item.id)}
-                          disabled={deletingId === item.id}
-                          className="cursor-pointer rounded-full border border-red-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-                        >
-                          {deletingId === item.id ? "Deleting..." : "Delete"}
-                        </button>
-                      </div>
-                    </div>
-
-                    {item.transcript && expandedTranscripts[item.id] && (
-                      <div className="mt-4 rounded-[16px] border border-slate-200 bg-[#fcfbf8] p-4">
-                        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Transcript
-                          </p>
-                          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">
-                            {item.transcript.length.toLocaleString()} chars
-                          </span>
-                        </div>
-                        <p className="mt-3 whitespace-pre-wrap leading-6 text-sm text-slate-700">
-                          {item.transcript}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <OverviewCurrentRecording
+              key={focusedSummary?.id || "no-recording"}
+              activeWorkspace={activeWorkspace}
+              focusedSummary={focusedSummary}
+              displaySummary={displaySummary}
+              selectedProjectName={selectedProjectName}
+              currentRecordingText={currentRecordingText}
+              currentRecordingSnippet={currentRecordingSnippet}
+              hasExpandableCurrentRecordingText={hasExpandableCurrentRecordingText}
+              focusedSummaryHiddenByFilters={focusedSummaryHiddenByFilters}
+              isFocusedSummaryProcessing={isFocusedSummaryProcessing}
+              canProcessFocusedSummary={canProcessFocusedSummary}
+              currentActionTasks={currentActionTasks}
+              activeTranscriptionId={activeTranscriptionId}
+              actionTaskBusyKey={actionTaskBusyKey}
+              detailsAutoOpenToken={overviewDetailsAutoOpenToken}
+              onProcess={handleProcess}
+              onCopySummary={() =>
+                void handleCopyText(
+                  "Summary",
+                  buildSummaryText(displaySummary || focusedSummary),
+                )
+              }
+              onStartUpload={() => scrollToSection("upload")}
+              onCreateActionTask={handleCreateActionTask}
+              onUpdateActionTask={handleUpdateActionTask}
+              onDeleteActionTask={handleDeleteActionTask}
+            />
           )}
         </section>
+
+        <HistorySurface
+          isActive={workspaceSurface === "transcriptions"}
+          initialProjectFilter={initialProjectFilter}
+          statusOptions={statusOptions}
+          templateOptions={templateOptions}
+          projects={projects}
+          onAssignProject={handleAssignProject}
+          onProcess={handleProcess}
+          onDelete={handleDelete}
+        />
       </div>
 
       <aside
@@ -9471,285 +10497,21 @@ export function TranscriptionClient({
           workspaceSurface === "settings" ? "hidden" : ""
         }`}
       >
-        <section className="flex h-full flex-col gap-4 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.28)]">
-          <div className="rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <span className="text-sm font-semibold text-slate-900">Voxly Tab</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleRefreshNotes()}
-                disabled={
-                  assistantScope === "transcript" &&
-                  (assistantRefreshing || assistantHistoryLoading)
-                }
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {assistantScope === "transcript"
-                  ? assistantRefreshing || assistantHistoryLoading
-                    ? "Refreshing..."
-                    : "Refresh"
-                  : "Clear"}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex min-h-[420px] flex-1 flex-col rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
-            <div className="flex items-start justify-between border-b border-slate-200 pb-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-orange-700">
-                  AI Assistant
-                </p>
-                <h3 className="mt-1 text-xl font-bold text-slate-900">
-                  {assistantScope === "transcript"
-                    ? "Ask Voxly to refine the notes"
-                    : assistantScope === "project"
-                      ? "Ask across this project"
-                      : "Ask across the workspace"}
-                </h3>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-4">
-          <div className="mt-4 space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["transcript", "Transcript"],
-                ["project", "Project"],
-                ["workspace", "Workspace"],
-              ] as const).map(([scopeId, label]) => (
-                <button
-                  key={scopeId}
-                  type="button"
-                  onClick={() => {
-                    setAssistantScope(scopeId);
-                    setAssistantError(null);
-                    setAssistantPrompt("");
-                  }}
-                  className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
-                    assistantScope === scopeId
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {assistantScope === "project" ? (
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Project scope
-                </span>
-                <select
-                  value={assistantProjectId}
-                  onChange={(event) => setAssistantProjectId(event.target.value)}
-                  className="mt-2 w-full cursor-pointer rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none"
-                >
-                  <option value="all">Choose a project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-
-            {assistantScope === "workspace" ? (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Narrow to projects
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {projects.length ? (
-                    projects.map((project) => {
-                      const selected = assistantWorkspaceProjectIds.includes(project.id);
-                      return (
-                        <button
-                          key={project.id}
-                          type="button"
-                          onClick={() => handleToggleAssistantWorkspaceProject(project.id)}
-                          className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                            selected
-                              ? "border-sky-200 bg-sky-50 text-sky-700"
-                              : "border-slate-200 bg-white text-slate-700"
-                          }`}
-                        >
-                          {project.name}
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <p className="text-xs text-slate-500">
-                      Create a project to narrow workspace answers.
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-          <div className="flex items-start gap-3 rounded-[24px] border border-orange-200 bg-[#fff4ec] p-4 shadow-sm">
-              <span className="text-2xl">🤖</span>
-              <div>
-                <p className="text-sm font-bold text-slate-900">
-                  {assistantScope === "transcript"
-                    ? "How can I help with these notes?"
-                    : assistantScope === "project"
-                      ? "What should Voxly find across this project?"
-                      : "What should Voxly synthesize across the workspace?"}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                  {assistantScope === "transcript"
-                    ? "I can directly edit your notes – add key points, update action items, change priorities, and more."
-                    : "I can search across multiple transcripts, synthesize themes, and answer with grounded sources."}
-                </p>
-              </div>
-            </div>
-
-            {(assistantScope !== "transcript" || hasProcessedSummary) ? (
-              <div className="mt-4 space-y-2">
-                {assistantScopeSuggestions[assistantScope].map((text) => (
-                  <button
-                    key={text}
-                    type="button"
-                    onClick={() => handleAssistantSuggestion(text)}
-                    className="cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
-                  >
-                    {text}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4 rounded-[20px] border border-dashed border-slate-200 bg-[#fcfbf8] px-4 py-4 text-xs leading-relaxed text-slate-500">
-                Prompts will appear here after Start Voxly finishes and the
-                recording has been processed.
-              </div>
-            )}
-
-            {assistantMessages.length > 0 && (
-              <div className="mt-4 space-y-4">
-                {assistantMessages.map((message, index) => (
-                  <div
-                    key={`${message.role}-${index}`}
-                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    {message.role === "assistant" && (
-                      <div className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#f97316] shadow-md">
-                        <span className="text-sm">🤖</span>
-                      </div>
-                    )}
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
-                        message.role === "user"
-                          ? "bg-slate-950 text-white"
-                          : "border border-slate-200 bg-[#fffdf9] text-slate-800 shadow-slate-200"
-                      }`}
-                    >
-                      <ReactMarkdown
-                        components={{
-                          p: ({ children }) => (
-                            <p className="text-sm leading-relaxed mb-2 last:mb-0 text-inherit">
-                              {children}
-                            </p>
-                          ),
-                          ul: ({ children }) => (
-                            <ul className="text-sm leading-relaxed list-disc ml-4 mb-2 last:mb-0 text-inherit">
-                              {children}
-                            </ul>
-                          ),
-                          ol: ({ children }) => (
-                            <ol className="text-sm leading-relaxed list-decimal ml-4 mb-2 last:mb-0 text-inherit">
-                              {children}
-                            </ol>
-                          ),
-                          li: ({ children }) => (
-                            <li className="text-sm leading-relaxed text-inherit">
-                              {children}
-                            </li>
-                          ),
-                          strong: ({ children }) => (
-                            <strong className="font-bold text-inherit">
-                              {children}
-                            </strong>
-                          ),
-                          em: ({ children }) => (
-                            <em className="italic text-inherit">{children}</em>
-                          ),
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                    {message.role === "user" && (
-                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 shadow-md">
-                        <span className="text-sm">👤</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          </div>
-
-            <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
-            <div className="flex items-center gap-2">
-              <input
-                placeholder={
-                  assistantScope === "transcript"
-                    ? "Ask me to edit your notes..."
-                    : assistantScope === "project"
-                      ? "Ask across this project..."
-                      : "Ask across the workspace..."
-                }
-                ref={assistantInputRef}
-                value={assistantPrompt}
-                disabled={
-                  assistantBusy || (assistantScope === "transcript" && !hasProcessedSummary)
-                }
-                onChange={(event) => setAssistantPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    handleAssistantSubmit();
-                  }
-                }}
-                className="flex-1 rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              <button
-                type="button"
-                onClick={() => handleAssistantSubmit()}
-                disabled={
-                  assistantBusy || (assistantScope === "transcript" && !hasProcessedSummary)
-                }
-                className="cursor-pointer rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Send
-              </button>
-            </div>
-            {assistantError && (
-              <p className="text-xs text-red-600">{assistantError}</p>
-            )}
-            {assistantHistoryLoading ? (
-              <p className="text-xs text-slate-500">Loading notes history...</p>
-            ) : null}
-            <p className="text-xs leading-relaxed text-slate-500">
-              {assistantScope === "transcript"
-                ? hasProcessedSummary
-                  ? "Ready to help. Choose a suggestion or type your own request."
-                  : "Process a recording to unlock prompts and assistant edits."
-                : assistantScope === "project"
-                  ? "Project answers use grounded retrieval across recordings in the selected project."
-                  : "Workspace answers search across your workspace, or just the projects you select above."}
-            </p>
-            </div>
-          </div>
-
-        </section>
+        <AssistantRail
+          projects={projects}
+          assistantBusy={assistantBusy}
+          assistantRefreshing={assistantRefreshing}
+          assistantHistoryLoading={assistantHistoryLoading}
+          assistantError={assistantError}
+          assistantMessages={assistantMessages}
+          hasProcessedSummary={hasProcessedSummary}
+          initialScope={assistantScope}
+          initialProjectId={assistantProjectId}
+          initialWorkspaceProjectIds={assistantWorkspaceProjectIds}
+          suggestions={assistantScopeSuggestions}
+          onRefresh={() => void handleRefreshNotes()}
+          onSubmit={(input) => void handleAssistantSubmitWithContext(input)}
+        />
       </aside>
       </div>
     </div>
