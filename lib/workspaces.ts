@@ -214,3 +214,19 @@ export function canEditWorkspaceMember(
 export function canTransferWorkspaceOwnership(role: WorkspaceRole) {
   return role === "owner";
 }
+
+export function activeWorkspaceResourceWhere(context: {
+  activeWorkspace: { id: string; isPersonal?: boolean | null };
+  user: { id: string };
+}) {
+  if (context.activeWorkspace.isPersonal) {
+    return {
+      OR: [
+        { workspaceId: context.activeWorkspace.id },
+        { workspaceId: null, userId: context.user.id },
+      ],
+    };
+  }
+
+  return { workspaceId: context.activeWorkspace.id };
+}

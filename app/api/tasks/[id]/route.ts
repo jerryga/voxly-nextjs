@@ -7,7 +7,10 @@ import {
   actionTaskDeleteSchema,
   actionTaskUpdateSchema,
 } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -49,10 +52,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const updated = await actionTaskDelegate.updateMany({
       where: {
         id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
       data: {
         ...(title ? { title } : {}),
@@ -72,10 +72,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const task = await actionTaskDelegate.findFirst({
       where: {
         id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
     });
 
@@ -110,10 +107,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     const deleted = await actionTaskDelegate.deleteMany({
       where: {
         id: parsed.data.id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
     });
 

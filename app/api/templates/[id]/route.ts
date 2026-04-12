@@ -5,7 +5,10 @@ import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { summaryTemplateUpdateSchema } from "@/lib/api/validation";
 import { slugifyTemplateName } from "@/lib/templates";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -36,10 +39,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const existing = await prisma.summaryTemplate.findFirst({
       where: {
         id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
       select: { id: true, name: true },
     });
@@ -55,10 +55,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       await prisma.summaryTemplate.findFirst({
         where: {
           slug,
-          OR: [
-            { workspaceId: workspaceContext.activeWorkspace.id },
-            { workspaceId: null, userId: workspaceContext.user.id },
-          ],
+          ...activeWorkspaceResourceWhere(workspaceContext),
           NOT: { id },
         } as any,
         select: { id: true },
@@ -110,10 +107,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const deleted = await prisma.summaryTemplate.deleteMany({
       where: {
         id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
     });
 

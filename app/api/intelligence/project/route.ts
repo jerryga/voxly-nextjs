@@ -5,7 +5,10 @@ import { answerProjectQuestion } from "@/lib/llm/agent";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { projectIntelligenceQuerySchema } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 import {
   buildProjectContextChunks,
   buildProjectIntelligencePrompt,
@@ -45,10 +48,7 @@ export async function POST(request: Request) {
     const project = await prisma.project.findFirst({
       where: {
         id: projectId,
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
       } as any,
       select: { id: true, name: true },
     });
@@ -63,10 +63,7 @@ export async function POST(request: Request) {
         projectId,
         status: "done",
         transcript: { not: null },
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
         ...(allowedIds ? { id: { in: allowedIds } } : {}),
       } as any,
       select: {

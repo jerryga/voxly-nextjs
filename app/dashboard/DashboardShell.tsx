@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { CreateWorkspaceButton } from "./CreateWorkspaceButton";
+import { DashboardSidebarNav } from "./DashboardSidebarNav";
 import { SignOutButton } from "./SignOutButton";
 import { WorkspaceTree } from "./WorkspaceTree";
 import { BrandLink } from "@/app/components/BrandLink";
@@ -67,22 +67,11 @@ export async function DashboardShell({
             <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
               Navigate
             </p>
-            <nav className="mt-3 space-y-1">
-              {sidebarLinks.map((item) => (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  className={`flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition ${
-                    activePath === item.id &&
-                    !(item.id === "transcriptions" && activeProjectId)
-                      ? "bg-slate-950 text-white"
-                      : "text-slate-600 hover:bg-[#f7f7f3] hover:text-slate-950"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+            <DashboardSidebarNav
+              links={sidebarLinks}
+              activePath={activePath}
+              activeProjectId={activeProjectId}
+            />
           </div>
 
           <div className="mt-7">

@@ -12,7 +12,10 @@ import {
 } from "@/lib/api/validation";
 import { buildTranscriptionSearchText } from "@/lib/transcriptions/searchText";
 import { resolveTemplateSelectionForUser } from "@/lib/templates";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -133,10 +136,7 @@ export async function POST(request: Request) {
       const project = await prisma.project.findFirst({
         where: {
           id: projectId,
-          OR: [
-            { workspaceId: context.activeWorkspace.id },
-            { workspaceId: null, userId: context.user.id },
-          ],
+          ...activeWorkspaceResourceWhere(context),
         } as any,
         select: { id: true },
       });

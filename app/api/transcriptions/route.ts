@@ -9,7 +9,10 @@ import {
   transcriptionDeleteSchema,
   transcriptionUpdateSchema,
 } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -56,10 +59,7 @@ export async function GET(request: Request) {
     }
 
     const where: Prisma.TranscriptionWhereInput = {
-      OR: [
-        { workspaceId: context.activeWorkspace.id },
-        { workspaceId: null, userId: context.user.id },
-      ],
+      ...activeWorkspaceResourceWhere(context),
       ...(id ? { id } : {}),
       ...(status ? { status } : {}),
       ...(template ? { template } : {}),
@@ -132,10 +132,7 @@ export async function PATCH(request: Request) {
       const project = await prisma.project.findFirst({
         where: {
           id: projectId,
-          OR: [
-            { workspaceId: context.activeWorkspace.id },
-            { workspaceId: null, userId: context.user.id },
-          ],
+          ...activeWorkspaceResourceWhere(context),
         } as any,
         select: { id: true },
       });
@@ -147,10 +144,7 @@ export async function PATCH(request: Request) {
     const updated = await prisma.transcription.updateMany({
       where: {
         id,
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
       } as any,
       data: {
         ...(template ? { template } : {}),
@@ -195,10 +189,7 @@ export async function DELETE(request: Request) {
     const deleted = await prisma.transcription.deleteMany({
       where: {
         id,
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
       } as any,
     });
 

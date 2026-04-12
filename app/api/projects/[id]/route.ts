@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { projectUpdateSchema } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -35,10 +38,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const updated = await prisma.project.updateMany({
       where: {
         id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
       data: {
         ...(parsed.data.name ? { name: parsed.data.name } : {}),
@@ -78,10 +78,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const deleted = await prisma.project.deleteMany({
       where: {
         id,
-        OR: [
-          { workspaceId: workspaceContext.activeWorkspace.id },
-          { workspaceId: null, userId: workspaceContext.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(workspaceContext),
       } as any,
     });
 

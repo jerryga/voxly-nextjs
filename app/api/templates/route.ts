@@ -5,7 +5,10 @@ import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { summaryTemplateCreateSchema } from "@/lib/api/validation";
 import { slugifyTemplateName } from "@/lib/templates";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -17,12 +20,7 @@ export async function GET() {
     }
 
     const templates = await prisma.summaryTemplate.findMany({
-      where: {
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
-      } as any,
+      where: activeWorkspaceResourceWhere(context) as any,
       orderBy: [{ createdAt: "desc" }],
       select: {
         id: true,
@@ -72,10 +70,7 @@ export async function POST(request: Request) {
       await prisma.summaryTemplate.findFirst({
         where: {
           slug,
-          OR: [
-            { workspaceId: context.activeWorkspace.id },
-            { workspaceId: null, userId: context.user.id },
-          ],
+          ...activeWorkspaceResourceWhere(context),
         } as any,
         select: { id: true },
       })
