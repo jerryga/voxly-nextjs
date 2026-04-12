@@ -2,6 +2,7 @@ import Link from "next/link";
 
 type SearchParams = Promise<{
   email?: string;
+  callbackUrl?: string;
 }>;
 
 export default async function CheckInboxPage({
@@ -11,6 +12,14 @@ export default async function CheckInboxPage({
 }) {
   const params = await searchParams;
   const email = params.email?.trim() || "";
+  const rawCallbackUrl = params.callbackUrl?.trim() || "";
+  const callbackUrl =
+    rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//")
+      ? rawCallbackUrl
+      : "";
+  const signInHref = callbackUrl
+    ? `/auth/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`
+    : "/auth/sign-in";
 
   return (
     <div className="min-h-screen bg-[#f4efe7] px-6 pb-16 pt-24 text-slate-900">
@@ -49,7 +58,7 @@ export default async function CheckInboxPage({
             Resend verification email
           </Link>
           <Link
-            href="/auth/sign-in"
+            href={signInHref}
             className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-[#f8f5ef]"
           >
             Back to sign in

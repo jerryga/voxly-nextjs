@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export function InviteAcceptClient({ token }: { token: string }) {
@@ -12,8 +12,9 @@ export function InviteAcceptClient({ token }: { token: string }) {
     role: string;
     billingOwnerName: string;
   } | null>(null);
+  const autoAcceptStartedRef = useRef(false);
 
-  async function handleAccept() {
+  const handleAccept = useCallback(async () => {
     setBusy(true);
     setError(null);
 
@@ -41,7 +42,16 @@ export function InviteAcceptClient({ token }: { token: string }) {
     } finally {
       setBusy(false);
     }
-  }
+  }, [token]);
+
+  useEffect(() => {
+    if (autoAcceptStartedRef.current) {
+      return;
+    }
+
+    autoAcceptStartedRef.current = true;
+    void handleAccept();
+  }, [handleAccept]);
 
   return (
     <div className="min-h-screen bg-[#f4efe7] px-4 py-16 text-slate-900">
@@ -50,10 +60,12 @@ export function InviteAcceptClient({ token }: { token: string }) {
           Workspace Invite
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-          Join workspace
+          {accepted ? "Workspace joined" : "Joining workspace"}
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          Accept this invitation to join the shared Voxly workspace. Make sure you are signed in with the invited email address before continuing.
+          {accepted
+            ? "Your invitation has been accepted."
+            : "Voxly is checking your signed-in account and accepting the workspace invitation."}
         </p>
 
         {error ? (

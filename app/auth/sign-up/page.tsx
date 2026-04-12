@@ -1,18 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { BrandLink } from "@/app/components/BrandLink";
 
-export default function SignUpPage() {
+function SignUpContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const rawCallbackUrl = searchParams.get("callbackUrl") || "";
+  const callbackUrl =
+    rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//")
+      ? rawCallbackUrl
+      : "";
+  const callbackQuery = callbackUrl
+    ? `?callbackUrl=${encodeURIComponent(callbackUrl)}`
+    : "";
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,9 +48,11 @@ export default function SignUpPage() {
       return;
     }
 
-    router.push(
-      `/auth/verify-email/check-inbox?email=${encodeURIComponent(email)}`,
-    );
+    const inboxParams = new URLSearchParams({ email });
+    if (callbackUrl) {
+      inboxParams.set("callbackUrl", callbackUrl);
+    }
+    router.push(`/auth/verify-email/check-inbox?${inboxParams.toString()}`);
   }
 
   return (
@@ -56,7 +67,7 @@ export default function SignUpPage() {
               <div className="flex items-center gap-2">
                 <Link
                   className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-[#f8f5ef]"
-                  href="/auth/sign-in"
+                  href={`/auth/sign-in${callbackQuery}`}
                 >
                   Sign in
                 </Link>
@@ -141,7 +152,7 @@ export default function SignUpPage() {
           <div className="mt-6 text-sm text-slate-500">
             Already have an account?{" "}
             <Link
-              href="/auth/sign-in"
+              href={`/auth/sign-in${callbackQuery}`}
               className="font-medium text-slate-900 hover:underline"
             >
               Sign in
@@ -150,5 +161,13 @@ export default function SignUpPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignUpContent />
+    </Suspense>
   );
 }
