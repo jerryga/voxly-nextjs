@@ -67,8 +67,24 @@ type ApiResponse = {
 
 const DASHBOARD_CACHE_TTL_MS = 60_000;
 const TRANSCRIPTIONS_CACHE_PREFIX = "voxly:dashboard:transcriptions:";
+const HISTORY_CACHE_PREFIX = "voxly:dashboard:history:";
 const PROJECTS_CACHE_KEY = "voxly:dashboard:projects";
 const BILLING_CACHE_KEY = "voxly:dashboard:billing";
+const TEMPLATES_CACHE_KEY = "voxly:dashboard:templates";
+const WORKSPACES_CACHE_KEY = "voxly:dashboard:workspaces";
+const WORKSPACE_DIGEST_CACHE_KEY = "voxly:dashboard:workspace-digest";
+const REPORT_TEMPLATES_CACHE_KEY = "voxly:dashboard:report-templates";
+const WORKSPACE_SLACK_CACHE_KEY = "voxly:dashboard:workspace-slack";
+const WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY =
+  "voxly:dashboard:workspace-slack-destinations";
+const NOTIFICATION_PREFERENCES_CACHE_KEY =
+  "voxly:dashboard:notification-preferences";
+const WORKSPACE_NOTION_CACHE_KEY = "voxly:dashboard:workspace-notion";
+const WORKSPACE_PEOPLE_CACHE_KEY = "voxly:dashboard:workspace-people";
+const WORKSPACE_ACTIVITY_CACHE_KEY = "voxly:dashboard:workspace-activity";
+const WORKSPACE_TASKS_CACHE_KEY = "voxly:dashboard:workspace-tasks";
+
+const dashboardMemoryCache = new Map<string, SessionCacheEntry<unknown>>();
 
 type SessionCacheEntry<T> = {
   savedAt: number;
@@ -76,6 +92,14 @@ type SessionCacheEntry<T> = {
 };
 
 function readSessionCache<T>(key: string): T | null {
+  const memoryEntry = dashboardMemoryCache.get(key) as SessionCacheEntry<T> | undefined;
+  if (memoryEntry?.savedAt && Date.now() - memoryEntry.savedAt <= DASHBOARD_CACHE_TTL_MS) {
+    return memoryEntry.value;
+  }
+  if (memoryEntry) {
+    dashboardMemoryCache.delete(key);
+  }
+
   if (typeof window === "undefined") {
     return null;
   }
@@ -89,17 +113,22 @@ function readSessionCache<T>(key: string): T | null {
     const entry = JSON.parse(rawValue) as SessionCacheEntry<T>;
     if (!entry?.savedAt || Date.now() - entry.savedAt > DASHBOARD_CACHE_TTL_MS) {
       window.sessionStorage.removeItem(key);
+      dashboardMemoryCache.delete(key);
       return null;
     }
 
+    dashboardMemoryCache.set(key, entry as SessionCacheEntry<unknown>);
     return entry.value;
   } catch {
     window.sessionStorage.removeItem(key);
+    dashboardMemoryCache.delete(key);
     return null;
   }
 }
 
 function writeSessionCache<T>(key: string, value: T) {
+  dashboardMemoryCache.set(key, { savedAt: Date.now(), value });
+
   if (typeof window === "undefined") {
     return;
   }
@@ -115,6 +144,7 @@ function writeSessionCache<T>(key: string, value: T) {
 }
 
 function clearSessionCacheKey(key: string) {
+  dashboardMemoryCache.delete(key);
   if (typeof window === "undefined") {
     return;
   }
@@ -123,6 +153,12 @@ function clearSessionCacheKey(key: string) {
 }
 
 function clearSessionCachePrefix(prefix: string) {
+  for (const key of dashboardMemoryCache.keys()) {
+    if (key.startsWith(prefix)) {
+      dashboardMemoryCache.delete(key);
+    }
+  }
+
   if (typeof window === "undefined") {
     return;
   }
@@ -135,6 +171,23 @@ function clearSessionCachePrefix(prefix: string) {
   }
 }
 
+function clearTranscriptionCaches() {
+  clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+  clearSessionCachePrefix(HISTORY_CACHE_PREFIX);
+}
+
+function clearWorkspaceAdminCaches() {
+  clearSessionCacheKey(WORKSPACES_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_DIGEST_CACHE_KEY);
+  clearSessionCacheKey(REPORT_TEMPLATES_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_SLACK_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_NOTION_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+  clearSessionCacheKey(WORKSPACE_TASKS_CACHE_KEY);
+}
+
 function buildTranscriptionsCacheKey(input: {
   query: string;
   status: string;
@@ -142,6 +195,15 @@ function buildTranscriptionsCacheKey(input: {
   projectId: string;
 }) {
   return `${TRANSCRIPTIONS_CACHE_PREFIX}${encodeURIComponent(JSON.stringify(input))}`;
+}
+
+function buildHistoryCacheKey(input: {
+  query: string;
+  status: string;
+  template: string;
+  projectId: string;
+}) {
+  return `${HISTORY_CACHE_PREFIX}${encodeURIComponent(JSON.stringify(input))}`;
 }
 
 type SummaryTemplate = {
@@ -2182,6 +2244,24 @@ const HistorySurface = memo(function HistorySurface({
       return;
     }
 
+    const trimmedQuery = historySearchQuery.trim();
+    const cacheKey = buildHistoryCacheKey({
+      query: trimmedQuery,
+      status: historyStatusFilter,
+      template: historyTemplateFilter,
+      projectId: historyProjectFilter,
+    });
+    const cachedItems = readSessionCache<Transcription[]>(cacheKey);
+    if (cachedItems) {
+      startTransition(() => {
+        setHistoryItems(cachedItems);
+        setVisibleHistoryLimit(12);
+        setInitialHistoryLoaded(true);
+        setHistoryLoading(false);
+      });
+      return;
+    }
+
     if (historyRequestAbortRef.current) {
       historyRequestAbortRef.current.abort();
     }
@@ -2194,8 +2274,8 @@ const HistorySurface = memo(function HistorySurface({
     try {
       const params = new URLSearchParams();
       params.set("limit", "24");
-      if (historySearchQuery.trim()) {
-        params.set("q", historySearchQuery.trim());
+      if (trimmedQuery) {
+        params.set("q", trimmedQuery);
         params.set("searchScope", "name");
       }
       if (historyStatusFilter !== "all") {
@@ -2229,6 +2309,7 @@ const HistorySurface = memo(function HistorySurface({
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
+      writeSessionCache(cacheKey, nextItems);
       startTransition(() => {
         setHistoryItems(nextItems);
         setVisibleHistoryLimit(12);
@@ -2252,8 +2333,8 @@ const HistorySurface = memo(function HistorySurface({
       });
     }
   }, [
-    historyProjectFilter,
     historySearchQuery,
+    historyProjectFilter,
     historyStatusFilter,
     historyTemplateFilter,
     isActive,
@@ -3716,6 +3797,13 @@ export function TranscriptionClient({
   }
 
   async function loadTemplates() {
+    const cachedTemplates = readSessionCache<SummaryTemplate[]>(TEMPLATES_CACHE_KEY);
+    if (cachedTemplates) {
+      setCustomTemplates(cachedTemplates);
+      setTemplatesLoading(false);
+      return;
+    }
+
     setTemplatesLoading(true);
     try {
       const res = await fetch("/api/templates");
@@ -3724,7 +3812,9 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load templates");
       }
 
-      setCustomTemplates(payload.templates || []);
+      const nextTemplates = payload.templates || [];
+      setCustomTemplates(nextTemplates);
+      writeSessionCache(TEMPLATES_CACHE_KEY, nextTemplates);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load templates");
     } finally {
@@ -3761,6 +3851,14 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaces() {
+    const cachedPayload = readSessionCache<WorkspacesResponse>(WORKSPACES_CACHE_KEY);
+    if (cachedPayload) {
+      setActiveWorkspace(cachedPayload.activeWorkspace || null);
+      setCurrentUser(cachedPayload.currentUser || null);
+      setWorkspaceDraftName(cachedPayload.activeWorkspace?.name || "");
+      return;
+    }
+
     try {
       const res = await fetch("/api/workspaces");
       const payload = (await res.json()) as WorkspacesResponse;
@@ -3771,12 +3869,32 @@ export function TranscriptionClient({
       setActiveWorkspace(payload.activeWorkspace || null);
       setCurrentUser(payload.currentUser || null);
       setWorkspaceDraftName(payload.activeWorkspace?.name || "");
+      writeSessionCache(WORKSPACES_CACHE_KEY, payload);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load workspaces");
     }
   }
 
   async function loadWorkspaceDigestSettings() {
+    const cachedSettings = readSessionCache<WorkspaceDigestSettings>(
+      WORKSPACE_DIGEST_CACHE_KEY,
+    );
+    if (cachedSettings) {
+      setWorkspaceDigestSettings(cachedSettings);
+      setWorkspaceDigestEnabled(cachedSettings.enabled);
+      setWorkspaceDigestCadence(cachedSettings.cadence);
+      setWorkspaceDigestReportType(cachedSettings.reportType);
+      setWorkspaceDigestWeekday(String(cachedSettings.weekday));
+      setWorkspaceDigestDayOfMonth(String(cachedSettings.dayOfMonth));
+      setWorkspaceDigestHour(String(cachedSettings.hourLocal));
+      setWorkspaceDigestRecipientScope(cachedSettings.recipientScope);
+      setWorkspaceDigestSendEmail(cachedSettings.sendEmail);
+      setWorkspaceDigestSendSlack(cachedSettings.sendSlack);
+      setWorkspaceDigestSlackDestinationId(cachedSettings.slackDestinationId || "default");
+      setWorkspaceDigestLoading(false);
+      return;
+    }
+
     setWorkspaceDigestLoading(true);
     try {
       const res = await fetch("/api/workspaces/digest");
@@ -3796,6 +3914,7 @@ export function TranscriptionClient({
       setWorkspaceDigestSendEmail(payload.settings.sendEmail);
       setWorkspaceDigestSendSlack(payload.settings.sendSlack);
       setWorkspaceDigestSlackDestinationId(payload.settings.slackDestinationId || "default");
+      writeSessionCache(WORKSPACE_DIGEST_CACHE_KEY, payload.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load digest settings");
     } finally {
@@ -3804,6 +3923,15 @@ export function TranscriptionClient({
   }
 
   async function loadReportTemplates() {
+    const cachedTemplates = readSessionCache<RecurringReportTemplate[]>(
+      REPORT_TEMPLATES_CACHE_KEY,
+    );
+    if (cachedTemplates) {
+      setReportTemplates(cachedTemplates);
+      setReportTemplatesLoading(false);
+      return;
+    }
+
     setReportTemplatesLoading(true);
     try {
       const res = await fetch("/api/report-templates");
@@ -3812,7 +3940,9 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load report templates");
       }
 
-      setReportTemplates(payload.templates || []);
+      const nextTemplates = payload.templates || [];
+      setReportTemplates(nextTemplates);
+      writeSessionCache(REPORT_TEMPLATES_CACHE_KEY, nextTemplates);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load report templates");
     } finally {
@@ -3972,6 +4102,18 @@ export function TranscriptionClient({
   }, []);
 
   async function loadWorkspaceSlackSettings() {
+    const cachedSettings = readSessionCache<WorkspaceSlackSettings>(
+      WORKSPACE_SLACK_CACHE_KEY,
+    );
+    if (cachedSettings) {
+      setWorkspaceSlackSettings(cachedSettings);
+      setWorkspaceSlackEnabled(cachedSettings.enabled);
+      setWorkspaceSlackSendDigests(cachedSettings.sendDigests);
+      setWorkspaceSlackWebhookDraft("");
+      setWorkspaceSlackLoading(false);
+      return;
+    }
+
     setWorkspaceSlackLoading(true);
     try {
       const res = await fetch("/api/workspaces/slack");
@@ -3984,6 +4126,7 @@ export function TranscriptionClient({
       setWorkspaceSlackEnabled(payload.settings.enabled);
       setWorkspaceSlackSendDigests(payload.settings.sendDigests);
       setWorkspaceSlackWebhookDraft("");
+      writeSessionCache(WORKSPACE_SLACK_CACHE_KEY, payload.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Slack settings");
     } finally {
@@ -3992,6 +4135,14 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceSlackDestinations() {
+    const cachedDestinations = readSessionCache<WorkspaceSlackDestination[]>(
+      WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY,
+    );
+    if (cachedDestinations) {
+      setWorkspaceSlackDestinations(cachedDestinations);
+      return;
+    }
+
     try {
       const res = await fetch("/api/workspaces/slack/destinations");
       const payload = (await res.json().catch(() => ({}))) as WorkspaceSlackDestinationsResponse;
@@ -3999,13 +4150,27 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load Slack destinations");
       }
 
-      setWorkspaceSlackDestinations(payload.destinations || []);
+      const nextDestinations = payload.destinations || [];
+      setWorkspaceSlackDestinations(nextDestinations);
+      writeSessionCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, nextDestinations);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Slack destinations");
     }
   }
 
   async function loadNotificationPreferences() {
+    const cachedPreferences = readSessionCache<UserNotificationPreferences>(
+      NOTIFICATION_PREFERENCES_CACHE_KEY,
+    );
+    if (cachedPreferences) {
+      setNotificationPreferences(cachedPreferences);
+      setMentionEmailEnabled(cachedPreferences.mentionEmailEnabled);
+      setMentionInAppEnabled(cachedPreferences.mentionInAppEnabled);
+      setDigestEmailEnabled(cachedPreferences.digestEmailEnabled);
+      setNotificationPreferencesLoading(false);
+      return;
+    }
+
     setNotificationPreferencesLoading(true);
     try {
       const res = await fetch("/api/notifications/preferences");
@@ -4018,6 +4183,7 @@ export function TranscriptionClient({
       setMentionEmailEnabled(payload.preferences.mentionEmailEnabled);
       setMentionInAppEnabled(payload.preferences.mentionInAppEnabled);
       setDigestEmailEnabled(payload.preferences.digestEmailEnabled);
+      writeSessionCache(NOTIFICATION_PREFERENCES_CACHE_KEY, payload.preferences);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load notification preferences",
@@ -4028,6 +4194,18 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceNotionSettings() {
+    const cachedSettings = readSessionCache<WorkspaceNotionSettings>(
+      WORKSPACE_NOTION_CACHE_KEY,
+    );
+    if (cachedSettings) {
+      setWorkspaceNotionSettings(cachedSettings);
+      setWorkspaceNotionEnabled(cachedSettings.enabled);
+      setWorkspaceNotionTokenDraft("");
+      setWorkspaceNotionParentPageDraft(cachedSettings.parentPageId || "");
+      setWorkspaceNotionLoading(false);
+      return;
+    }
+
     setWorkspaceNotionLoading(true);
     try {
       const res = await fetch("/api/workspaces/notion");
@@ -4040,6 +4218,7 @@ export function TranscriptionClient({
       setWorkspaceNotionEnabled(payload.settings.enabled);
       setWorkspaceNotionTokenDraft("");
       setWorkspaceNotionParentPageDraft(payload.settings.parentPageId || "");
+      writeSessionCache(WORKSPACE_NOTION_CACHE_KEY, payload.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Notion settings");
     } finally {
@@ -4048,6 +4227,17 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspacePeople() {
+    const cachedPeople = readSessionCache<{
+      members: WorkspaceMemberEntry[];
+      invites: WorkspaceInviteEntry[];
+    }>(WORKSPACE_PEOPLE_CACHE_KEY);
+    if (cachedPeople) {
+      setWorkspaceMembers(cachedPeople.members);
+      setWorkspaceInvites(cachedPeople.invites);
+      setWorkspacePeopleLoading(false);
+      return;
+    }
+
     setWorkspacePeopleLoading(true);
     try {
       const [membersRes, invitesRes] = await Promise.all([
@@ -4065,8 +4255,13 @@ export function TranscriptionClient({
         throw new Error(invitesPayload?.error || "Failed to load workspace invites");
       }
 
-      setWorkspaceMembers(membersPayload.members || []);
-      setWorkspaceInvites(invitesPayload.invites || []);
+      const nextPeople = {
+        members: membersPayload.members || [],
+        invites: invitesPayload.invites || [],
+      };
+      setWorkspaceMembers(nextPeople.members);
+      setWorkspaceInvites(nextPeople.invites);
+      writeSessionCache(WORKSPACE_PEOPLE_CACHE_KEY, nextPeople);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load workspace people",
@@ -4077,6 +4272,15 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceActivity() {
+    const cachedActivity = readSessionCache<WorkspaceActivityEntry[]>(
+      WORKSPACE_ACTIVITY_CACHE_KEY,
+    );
+    if (cachedActivity) {
+      setWorkspaceActivity(cachedActivity);
+      setWorkspaceActivityLoading(false);
+      return;
+    }
+
     setWorkspaceActivityLoading(true);
     try {
       const res = await fetch("/api/workspaces/activity");
@@ -4085,7 +4289,9 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load workspace activity");
       }
 
-      setWorkspaceActivity(payload.activity || []);
+      const nextActivity = payload.activity || [];
+      setWorkspaceActivity(nextActivity);
+      writeSessionCache(WORKSPACE_ACTIVITY_CACHE_KEY, nextActivity);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load workspace activity",
@@ -4096,6 +4302,13 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceTasks() {
+    const cachedTasks = readSessionCache<ActionTask[]>(WORKSPACE_TASKS_CACHE_KEY);
+    if (cachedTasks) {
+      setWorkspaceTasks(cachedTasks);
+      setWorkspaceTasksLoading(false);
+      return;
+    }
+
     setWorkspaceTasksLoading(true);
     try {
       const res = await fetch("/api/tasks");
@@ -4104,7 +4317,9 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load workspace tasks");
       }
 
-      setWorkspaceTasks(payload.tasks || []);
+      const nextTasks = payload.tasks || [];
+      setWorkspaceTasks(nextTasks);
+      writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, nextTasks);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load workspace tasks");
     } finally {
@@ -4682,7 +4897,7 @@ export function TranscriptionClient({
       setFocusedSummaryId(currentItem.id);
 
       if (currentItem.status === "done" || currentItem.status === "error") {
-        clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+        clearTranscriptionCaches();
         await loadBilling({ force: true });
         return currentItem;
       }
@@ -4722,7 +4937,7 @@ export function TranscriptionClient({
       if (!res.ok) {
         throw new Error(payload?.error || "Upload failed");
       }
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearTranscriptionCaches();
       clearSessionCacheKey(BILLING_CACHE_KEY);
       const optimisticItem: Transcription | null = payload?.transcriptionId
         ? {
@@ -4821,7 +5036,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load test data");
       }
       setTestDataStatus("Test data loaded successfully.");
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearTranscriptionCaches();
       await loadItems({ force: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load test data");
@@ -4858,7 +5073,7 @@ export function TranscriptionClient({
       if (!res.ok) {
         throw new Error(payload?.error || "Processing failed");
       }
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearTranscriptionCaches();
       clearSessionCacheKey(BILLING_CACHE_KEY);
       let currentItem = await loadTranscriptionById(id);
       await loadBilling({ force: true });
@@ -4927,7 +5142,7 @@ export function TranscriptionClient({
         delete next[id];
         return next;
       });
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearTranscriptionCaches();
       await loadItems({ force: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -5179,6 +5394,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to create template");
       }
 
+      clearSessionCacheKey(TEMPLATES_CACHE_KEY);
       await loadTemplates();
       if (payload.template?.id) {
         setUploadTemplate(`custom:${payload.template.id}`);
@@ -5214,6 +5430,7 @@ export function TranscriptionClient({
       }
 
       clearSessionCacheKey(PROJECTS_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACES_CACHE_KEY);
       await loadProjects({ force: true });
       if (payload.project?.id) {
         setUploadProjectId(payload.project.id);
@@ -5251,7 +5468,7 @@ export function TranscriptionClient({
           item.id === transcriptionId ? { ...item, projectId: nextProjectId } : item,
         ),
       );
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearTranscriptionCaches();
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update project");
@@ -5281,6 +5498,8 @@ export function TranscriptionClient({
       setInviteEmail("");
       setInviteRole("member");
       setWorkspaceInvites((prev) => [payload.invite!, ...prev]);
+      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Invitation sent.");
     } catch (err) {
@@ -5313,6 +5532,8 @@ export function TranscriptionClient({
 
       setActiveWorkspace(payload.workspace);
       setWorkspaceDraftName(payload.workspace.name);
+      clearSessionCacheKey(WORKSPACES_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Workspace updated.");
     } catch (err) {
@@ -5365,6 +5586,8 @@ export function TranscriptionClient({
       setWorkspaceDigestRecipientScope(payload.settings.recipientScope);
       setWorkspaceDigestSendEmail(payload.settings.sendEmail);
       setWorkspaceDigestSendSlack(payload.settings.sendSlack);
+      writeSessionCache(WORKSPACE_DIGEST_CACHE_KEY, payload.settings);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Workspace digest settings updated.");
     } catch (err) {
@@ -5598,6 +5821,8 @@ export function TranscriptionClient({
       }
 
       setReportTemplates((prev) => [payload.template as RecurringReportTemplate, ...prev]);
+      clearSessionCacheKey(REPORT_TEMPLATES_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       if (targetScope === "workspace") {
         setWorkspaceDigestTemplateName("");
       } else {
@@ -5626,6 +5851,8 @@ export function TranscriptionClient({
       }
 
       setReportTemplates((prev) => prev.filter((template) => template.id !== templateId));
+      clearSessionCacheKey(REPORT_TEMPLATES_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Report template deleted.");
     } catch (err) {
@@ -5658,9 +5885,14 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to create Slack destination");
       }
 
-      setWorkspaceSlackDestinations((prev) => [payload.destination as WorkspaceSlackDestination, ...prev]);
+      setWorkspaceSlackDestinations((prev) => {
+        const next = [payload.destination as WorkspaceSlackDestination, ...prev];
+        writeSessionCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, next);
+        return next;
+      });
       setWorkspaceSlackDestinationName("");
       setWorkspaceSlackDestinationWebhook("");
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack destination saved.");
     } catch (err) {
@@ -5684,15 +5916,18 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to delete Slack destination");
       }
 
-      setWorkspaceSlackDestinations((prev) =>
-        prev.filter((destination) => destination.id !== destinationId),
-      );
+      setWorkspaceSlackDestinations((prev) => {
+        const next = prev.filter((destination) => destination.id !== destinationId);
+        writeSessionCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, next);
+        return next;
+      });
       if (workspaceDigestSlackDestinationId === destinationId) {
         setWorkspaceDigestSlackDestinationId("default");
       }
       if (projectDigestSlackDestinationId === destinationId) {
         setProjectDigestSlackDestinationId("default");
       }
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack destination deleted.");
     } catch (err) {
@@ -5728,6 +5963,8 @@ export function TranscriptionClient({
       setWorkspaceSlackEnabled(payload.settings.enabled);
       setWorkspaceSlackSendDigests(payload.settings.sendDigests);
       setWorkspaceSlackWebhookDraft("");
+      writeSessionCache(WORKSPACE_SLACK_CACHE_KEY, payload.settings);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack integration updated.");
     } catch (err) {
@@ -5752,7 +5989,9 @@ export function TranscriptionClient({
 
       if (payload.settings) {
         setWorkspaceSlackSettings(payload.settings);
+        writeSessionCache(WORKSPACE_SLACK_CACHE_KEY, payload.settings);
       }
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack test message sent.");
     } catch (err) {
@@ -5788,6 +6027,7 @@ export function TranscriptionClient({
       setMentionEmailEnabled(payload.preferences.mentionEmailEnabled);
       setMentionInAppEnabled(payload.preferences.mentionInAppEnabled);
       setDigestEmailEnabled(payload.preferences.digestEmailEnabled);
+      writeSessionCache(NOTIFICATION_PREFERENCES_CACHE_KEY, payload.preferences);
       showUploadStatusNotice("Notification preferences updated.");
     } catch (err) {
       setError(
@@ -5824,6 +6064,8 @@ export function TranscriptionClient({
       setWorkspaceNotionEnabled(payload.settings.enabled);
       setWorkspaceNotionTokenDraft("");
       setWorkspaceNotionParentPageDraft(payload.settings.parentPageId || "");
+      writeSessionCache(WORKSPACE_NOTION_CACHE_KEY, payload.settings);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Notion integration updated.");
     } catch (err) {
@@ -5848,6 +6090,8 @@ export function TranscriptionClient({
 
       setWorkspaceNotionSettings(payload.settings);
       setWorkspaceNotionEnabled(payload.settings.enabled);
+      writeSessionCache(WORKSPACE_NOTION_CACHE_KEY, payload.settings);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Notion connection verified.");
     } catch (err) {
@@ -5923,6 +6167,8 @@ export function TranscriptionClient({
       }
 
       setWorkspaceInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
+      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to revoke invite");
@@ -5947,6 +6193,8 @@ export function TranscriptionClient({
       setWorkspaceInvites((prev) =>
         prev.map((invite) => (invite.id === inviteId ? payload.invite! : invite)),
       );
+      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Invitation resent.");
     } catch (err) {
@@ -5979,6 +6227,8 @@ export function TranscriptionClient({
           member.id === memberId ? { ...member, role } : member,
         ),
       );
+      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Member role updated.");
     } catch (err) {
@@ -6002,6 +6252,8 @@ export function TranscriptionClient({
       }
 
       setWorkspaceMembers((prev) => prev.filter((member) => member.id !== memberId));
+      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
+      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Member removed from workspace.");
     } catch (err) {
@@ -6040,6 +6292,7 @@ export function TranscriptionClient({
         ),
       );
       setOwnerTransferMemberId("");
+      clearWorkspaceAdminCaches();
       await Promise.all([
         loadWorkspaces(),
         loadWorkspaceActivity(),
@@ -6082,9 +6335,10 @@ export function TranscriptionClient({
       setWorkspaceIntelligenceProjectIds([]);
       setSavedWorkspaceInsights([]);
       setSelectedWorkspaceInsightId(null);
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
+      clearTranscriptionCaches();
       clearSessionCacheKey(PROJECTS_CACHE_KEY);
       clearSessionCacheKey(BILLING_CACHE_KEY);
+      clearWorkspaceAdminCaches();
       await Promise.all([
         loadWorkspaces(),
         loadItems({ force: true }),
@@ -6146,7 +6400,11 @@ export function TranscriptionClient({
           payload.task!,
         ),
       }));
-      setWorkspaceTasks((prev) => upsertTaskCollection(prev, payload.task!));
+      setWorkspaceTasks((prev) => {
+        const next = upsertTaskCollection(prev, payload.task!);
+        writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, next);
+        return next;
+      });
       showCopyStatus("Task saved.");
       return payload.task;
     } catch (err) {
@@ -6179,7 +6437,11 @@ export function TranscriptionClient({
           payload.task!,
         ),
       }));
-      setWorkspaceTasks((prev) => upsertTaskCollection(prev, payload.task!));
+      setWorkspaceTasks((prev) => {
+        const next = upsertTaskCollection(prev, payload.task!);
+        writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, next);
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update task");
     } finally {
@@ -6214,7 +6476,11 @@ export function TranscriptionClient({
           (task) => task.id !== taskId,
         ),
       }));
-      setWorkspaceTasks((prev) => prev.filter((task) => task.id !== taskId));
+      setWorkspaceTasks((prev) => {
+        const next = prev.filter((task) => task.id !== taskId);
+        writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, next);
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete task");
     } finally {
