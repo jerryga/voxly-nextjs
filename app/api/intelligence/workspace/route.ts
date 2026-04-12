@@ -13,6 +13,12 @@ import {
 
 export const runtime = "nodejs";
 
+function isWorkspaceGreeting(question: string) {
+  return /^(hi|hello|hey|yo|good\s+(morning|afternoon|evening))[\s!.?]*$/i.test(
+    question.trim(),
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const originError = enforceSameOrigin(request);
@@ -42,6 +48,20 @@ export async function POST(request: Request) {
 
     const { question, projectIds, provider, model } = parsed.data;
 
+    if (isWorkspaceGreeting(question)) {
+      return NextResponse.json({
+        ok: true,
+        answer:
+          "Hello! Ask me anything about this workspace, such as open risks, project themes, action items, decisions, or what changed recently.",
+        sources: [],
+        coverage: {
+          transcriptCount: 0,
+          chunkCount: 0,
+          projectCount: projectIds?.length || null,
+        },
+      });
+    }
+
     const transcriptions = await prisma.transcription.findMany({
       where: {
         status: "done",
@@ -60,6 +80,13 @@ export async function POST(request: Request) {
         keyPoints: true,
         nextSteps: true,
         actionItems: true,
+        projectId: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 24,

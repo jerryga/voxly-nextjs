@@ -2452,6 +2452,7 @@ const HistorySurface = memo(function HistorySurface({
 
 type AssistantRailProps = {
   projects: Project[];
+  activeWorkspace: ActiveWorkspaceDetails | null;
   assistantBusy: boolean;
   assistantRefreshing: boolean;
   assistantHistoryLoading: boolean;
@@ -2473,6 +2474,7 @@ type AssistantRailProps = {
 
 const AssistantRail = memo(function AssistantRail({
   projects,
+  activeWorkspace,
   assistantBusy,
   assistantRefreshing,
   assistantHistoryLoading,
@@ -2581,6 +2583,15 @@ const AssistantRail = memo(function AssistantRail({
                   ? "Ask across this project"
                   : "Ask across the workspace"}
             </h3>
+            {localScope !== "transcript" ? (
+              <p className="mt-2 max-w-[18rem] truncate text-xs font-semibold text-slate-500">
+                Workspace:{" "}
+                <span className="text-slate-800">
+                  {activeWorkspace?.name || "No workspace selected"}
+                  {activeWorkspace?.isPersonal ? " (Personal)" : ""}
+                </span>
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -2922,10 +2933,6 @@ export function TranscriptionClient({
   const [overviewUploadPanelVersion, setOverviewUploadPanelVersion] = useState(0);
   const [overviewUploadPanelStartExpanded, setOverviewUploadPanelStartExpanded] =
     useState(false);
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
-  const [workspacesLoading, setWorkspacesLoading] = useState(true);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
-  const [workspaceSwitching, setWorkspaceSwitching] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberEntry[]>([]);
   const [workspaceInvites, setWorkspaceInvites] = useState<WorkspaceInviteEntry[]>([]);
   const [workspacePeopleLoading, setWorkspacePeopleLoading] = useState(true);
@@ -3276,8 +3283,10 @@ export function TranscriptionClient({
   const hasProcessedSummary = focusedSummary?.status === "done";
   const isSettingsSurface = workspaceSurface === "settings";
   const isWorkspaceSettingsMode = initialSettingsMode === "workspace";
-  const showWorkspaceSelector =
-    workspaceSurface !== "settings" && workspaceSurface !== "overview";
+  const showCurrentWorkspaceLabel =
+    workspaceSurface === "overview" ||
+    workspaceSurface === "transcriptions" ||
+    workspaceSurface === "settings";
   const currentActionTasks = activeTranscriptionId
     ? actionTasksByTranscription[activeTranscriptionId] || []
     : [];
@@ -3752,7 +3761,6 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaces() {
-    setWorkspacesLoading(true);
     try {
       const res = await fetch("/api/workspaces");
       const payload = (await res.json()) as WorkspacesResponse;
@@ -3760,15 +3768,11 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load workspaces");
       }
 
-      setWorkspaces(payload.workspaces || []);
-      setActiveWorkspaceId(payload.activeWorkspaceId || null);
       setActiveWorkspace(payload.activeWorkspace || null);
       setCurrentUser(payload.currentUser || null);
       setWorkspaceDraftName(payload.activeWorkspace?.name || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load workspaces");
-    } finally {
-      setWorkspacesLoading(false);
     }
   }
 
@@ -4525,7 +4529,11 @@ export function TranscriptionClient({
     setAssistantSummary(null);
     setAssistantError(null);
 
-    if (assistantScope !== "transcript" || !activeTranscriptionId) {
+    if (assistantScope !== "transcript") {
+      return;
+    }
+
+    if (!activeTranscriptionId) {
       setAssistantMessages(defaultAssistantMessages);
       return;
     }
@@ -5251,66 +5259,6 @@ export function TranscriptionClient({
     }
   }
 
-  async function handleSwitchWorkspace(nextWorkspaceId: string) {
-    if (!nextWorkspaceId || nextWorkspaceId === activeWorkspaceId) {
-      return;
-    }
-
-    setWorkspaceSwitching(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/workspaces/active", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId: nextWorkspaceId }),
-      });
-      const payload = (await res.json().catch(() => ({}))) as WorkspacesResponse;
-      if (!res.ok) {
-        throw new Error(payload?.error || "Failed to switch workspace");
-      }
-
-      setActiveWorkspaceId(nextWorkspaceId);
-      setWorkspaceDraftName("");
-      setFocusedSummaryId(null);
-      setAssistantSummary(null);
-      setAssistantMessages(defaultAssistantMessages);
-      setActionTasksByTranscription({});
-      setWorkspaceTasks([]);
-      setProjectInsightCommentsById({});
-      setIntelligenceResult(null);
-      setIntelligenceQuestion("");
-      setWorkspaceIntelligenceProjectIds([]);
-      setSavedWorkspaceInsights([]);
-      setSelectedWorkspaceInsightId(null);
-      setUploadProjectId("none");
-      setProjectFilter("all");
-      clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
-      clearSessionCacheKey(PROJECTS_CACHE_KEY);
-      clearSessionCacheKey(BILLING_CACHE_KEY);
-      await Promise.all([
-        loadItems({ force: true }),
-        loadProjects({ force: true }),
-        loadTemplates(),
-        loadWorkspaces(),
-        loadWorkspacePeople(),
-        loadWorkspaceActivity(),
-        loadWorkspaceTasks(),
-        loadNotifications(),
-        loadWorkspaceDigestSettings(),
-        loadReportTemplates(),
-        loadReportRuns(),
-        loadWorkspaceSlackSettings(),
-        loadWorkspaceSlackDestinations(),
-        loadWorkspaceNotionSettings(),
-      ]);
-      showUploadStatusNotice("Workspace switched.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to switch workspace");
-    } finally {
-      setWorkspaceSwitching(false);
-    }
-  }
-
   async function handleInviteWorkspaceMember(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setInviteBusy(true);
@@ -5365,13 +5313,6 @@ export function TranscriptionClient({
 
       setActiveWorkspace(payload.workspace);
       setWorkspaceDraftName(payload.workspace.name);
-      setWorkspaces((prev) =>
-        prev.map((workspace) =>
-          workspace.id === payload.workspace!.id
-            ? { ...workspace, name: payload.workspace!.name }
-            : workspace,
-        ),
-      );
       await loadWorkspaceActivity();
       showUploadStatusNotice("Workspace updated.");
     } catch (err) {
@@ -7207,7 +7148,7 @@ export function TranscriptionClient({
                 </div>
               )}
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                {workspaceSurface === "overview" ? (
+                {showCurrentWorkspaceLabel ? (
                   <div className="min-w-[240px]">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                       Current Workspace
@@ -7217,29 +7158,6 @@ export function TranscriptionClient({
                       {activeWorkspace?.isPersonal ? " (Personal)" : ""}
                     </div>
                   </div>
-                ) : null}
-                {showWorkspaceSelector ? (
-                  <label className="min-w-[250px]">
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Active Workspace
-                    </span>
-                    <select
-                      value={activeWorkspaceId || ""}
-                      onChange={(event) => void handleSwitchWorkspace(event.target.value)}
-                      disabled={workspacesLoading || workspaceSwitching}
-                      className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-[#f8f8f5] px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="" disabled>
-                        {workspacesLoading ? "Loading workspaces..." : "Select workspace"}
-                      </option>
-                      {workspaces.map((workspace) => (
-                        <option key={workspace.id} value={workspace.id}>
-                          {workspace.name}
-                          {workspace.isPersonal ? " (Personal)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                 ) : null}
                 {workspaceSurface === "settings" ||
                 workspaceSurface === "transcriptions" ||
@@ -10647,6 +10565,7 @@ export function TranscriptionClient({
       >
         <AssistantRail
           projects={projects}
+          activeWorkspace={activeWorkspace}
           assistantBusy={assistantBusy}
           assistantRefreshing={assistantRefreshing}
           assistantHistoryLoading={assistantHistoryLoading}
