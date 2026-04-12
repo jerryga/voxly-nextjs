@@ -3350,6 +3350,13 @@ export function TranscriptionClient({
     return collection.map((item) => (item.id === nextItem.id ? nextItem : item));
   }
 
+  function upsertTranscriptionEverywhere(nextItem: Transcription) {
+    setItems((prev) =>
+      matchesCurrentFilters(nextItem) ? upsertItemCollection(prev, nextItem) : prev,
+    );
+    setAllItems((prev) => upsertItemCollection(prev, nextItem));
+  }
+
   function sortTasksByPriority(tasks: ActionTask[]) {
     const statusRank: Record<ActionTask["status"], number> = {
       open: 0,
@@ -3534,6 +3541,28 @@ export function TranscriptionClient({
       }
     }
   }, [debouncedSearchQuery, statusFilter, templateFilter, projectFilter]);
+
+  async function loadTranscriptionById(id: string) {
+    try {
+      const res = await fetch(
+        `/api/transcriptions?id=${encodeURIComponent(id)}&limit=1`,
+        { cache: "no-store" },
+      );
+      const payload = (await res.json().catch(() => ({}))) as ApiResponse;
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to load transcription");
+      }
+
+      const item = payload.items?.[0] || null;
+      if (item) {
+        upsertTranscriptionEverywhere(item);
+      }
+      return item;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load transcription");
+      return null;
+    }
+  }
 
   async function loadBilling(options?: { force?: boolean }) {
     const cachedBilling = options?.force
@@ -4523,19 +4552,17 @@ export function TranscriptionClient({
   }, [workspaceSurface]);
 
   async function pollForProcessedResult(id: string) {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      const nextItems = await loadItems({ showLoading: false, force: true });
-      if (!nextItems) {
+      const currentItem = await loadTranscriptionById(id);
+      if (!currentItem) {
         continue;
       }
 
-      const currentItem = nextItems.find((item) => item.id === id);
-      if (!currentItem) {
-        break;
-      }
+      setFocusedSummaryId(currentItem.id);
 
       if (currentItem.status === "done" || currentItem.status === "error") {
+        clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
         await loadBilling({ force: true });
         return currentItem;
       }
@@ -4598,10 +4625,10 @@ export function TranscriptionClient({
         : null;
 
       if (optimisticItem) {
-        setAllItems((prev) => upsertItemCollection(prev, optimisticItem));
-        if (matchesCurrentFilters(optimisticItem)) {
-          setItems((prev) => upsertItemCollection(prev, optimisticItem));
-        } else {
+        upsertTranscriptionEverywhere(optimisticItem);
+        setFocusedSummaryId(optimisticItem.id);
+        shouldScrollToSummaryRef.current = true;
+        if (!matchesCurrentFilters(optimisticItem)) {
           showUploadVisibilityNotice(
             "Your upload was added, but it is hidden by the current search or filters.",
           );
@@ -4614,10 +4641,11 @@ export function TranscriptionClient({
       setOverviewUploadPanelVersion((prev) => prev + 1);
       const initialItem =
         payload?.transcriptionId
-          ? (await loadItems({ force: true }))?.find(
-              (item) => item.id === payload.transcriptionId,
-            ) || null
+          ? await loadTranscriptionById(payload.transcriptionId)
           : null;
+      if (initialItem?.id) {
+        setFocusedSummaryId(initialItem.id);
+      }
       await loadBilling({ force: true });
       setUploading(false);
       showUploadStatusNotice(
@@ -4712,9 +4740,8 @@ export function TranscriptionClient({
       }
       clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
       clearSessionCacheKey(BILLING_CACHE_KEY);
-      const nextItems = await loadItems({ showLoading: false, force: true });
+      let currentItem = await loadTranscriptionById(id);
       await loadBilling({ force: true });
-      let currentItem = nextItems?.find((item) => item.id === id) || null;
 
       window.sessionStorage.setItem("voxly:overview-focus", id);
       setWorkspaceSurface("overview");

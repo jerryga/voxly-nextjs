@@ -15,7 +15,15 @@ function SignInContent() {
   const [loading, setLoading] = useState(false);
   const created = searchParams.get("created") === "1";
   const verified = searchParams.get("verified") === "1";
+  const isInviteFlow = searchParams.get("invite") === "1";
   const createdEmail = searchParams.get("email");
+  const rawCallbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//")
+    ? rawCallbackUrl
+    : "/dashboard";
+  const callbackQuery = callbackUrl
+    ? `?callbackUrl=${encodeURIComponent(callbackUrl)}`
+    : "";
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -24,7 +32,7 @@ function SignInContent() {
 
     const result = await signIn("credentials", {
       redirect: false,
-      callbackUrl: "/dashboard",
+      callbackUrl,
       email,
       password,
     });
@@ -41,7 +49,7 @@ function SignInContent() {
       return;
     }
 
-    router.replace("/dashboard");
+    router.replace(callbackUrl);
   }
 
   return (
@@ -56,7 +64,7 @@ function SignInContent() {
               <div className="flex items-center gap-2">
                 <Link
                   className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-[#f8f5ef]"
-                  href="/auth/sign-up"
+                  href={`/auth/sign-up${callbackQuery}`}
                 >
                   Get started
                 </Link>
@@ -73,10 +81,17 @@ function SignInContent() {
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">Sign in</h1>
               <p className="mt-1 text-sm text-slate-500">
-                Welcome back. Enter your details to continue.
+                {isInviteFlow
+                  ? "Sign in first, then Voxly will bring you back to accept the workspace invite."
+                  : "Welcome back. Enter your details to continue."}
               </p>
             </div>
           </div>
+          {isInviteFlow ? (
+            <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+              Workspace invite detected. Use the invited email address, or create an account first.
+            </div>
+          ) : null}
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {created ? (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
@@ -152,7 +167,7 @@ function SignInContent() {
           <div className="mt-6 text-sm text-slate-500">
             New here?{" "}
             <Link
-              href="/auth/sign-up"
+              href={`/auth/sign-up${callbackQuery}`}
               className="font-medium text-slate-900 hover:underline"
             >
               Create an account

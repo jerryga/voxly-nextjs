@@ -26,6 +26,7 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id")?.trim();
     const q = searchParams.get("q")?.trim();
     const searchScope = searchParams.get("searchScope")?.trim();
     const nameOnlySearch =
@@ -59,6 +60,7 @@ export async function GET(request: Request) {
         { workspaceId: context.activeWorkspace.id },
         { workspaceId: null, userId: context.user.id },
       ],
+      ...(id ? { id } : {}),
       ...(status ? { status } : {}),
       ...(template ? { template } : {}),
       ...(projectId ? { projectId } : {}),
