@@ -2,6 +2,11 @@ type ProjectTranscriptRecord = {
   id: string;
   fileName: string;
   transcript: string | null;
+  projectId?: string | null;
+  project?: {
+    id?: string | null;
+    name?: string | null;
+  } | null;
   decisions?: unknown;
   keyPoints?: unknown;
   nextSteps?: unknown;
@@ -12,6 +17,8 @@ export type ProjectContextChunk = {
   sourceId: string;
   transcriptionId: string;
   fileName: string;
+  projectId?: string | null;
+  projectName?: string | null;
   excerpt: string;
   score: number;
 };
@@ -114,6 +121,8 @@ export function buildProjectContextChunks(
 
   transcripts.forEach((transcript) => {
     const transcriptChunks = chunkTranscript(transcript.transcript || "");
+    const projectName = transcript.project?.name?.trim() || null;
+    const projectId = transcript.project?.id || transcript.projectId || null;
     const summaryStrings = [
       ...flattenStrings(transcript.decisions),
       ...flattenStrings(transcript.keyPoints),
@@ -130,6 +139,8 @@ export function buildProjectContextChunks(
         sourceId: `${transcript.id}:${index + 1}`,
         transcriptionId: transcript.id,
         fileName: transcript.fileName,
+        projectId,
+        projectName,
         excerpt,
         score: rankChunk(question, excerpt, transcript.fileName),
       }))
@@ -154,7 +165,9 @@ export function buildProjectIntelligencePrompt({
   const contextBlock = chunks
     .map(
       (chunk) =>
-        `[${chunk.sourceId}] ${chunk.fileName}\n${chunk.excerpt}`,
+        `[${chunk.sourceId}] ${chunk.fileName}${
+          chunk.projectName ? `\nProject: ${chunk.projectName}` : ""
+        }\n${chunk.excerpt}`,
     )
     .join("\n\n---\n\n");
 
@@ -192,7 +205,12 @@ export function buildWorkspaceIntelligencePrompt({
   chunks: ProjectContextChunk[];
 }) {
   const contextBlock = chunks
-    .map((chunk) => `[${chunk.sourceId}] ${chunk.fileName}\n${chunk.excerpt}`)
+    .map(
+      (chunk) =>
+        `[${chunk.sourceId}] ${chunk.fileName}${
+          chunk.projectName ? `\nProject: ${chunk.projectName}` : "\nProject: Unassigned"
+        }\n${chunk.excerpt}`,
+    )
     .join("\n\n---\n\n");
 
   return `You are a grounded workspace intelligence assistant for Voxly.
@@ -201,6 +219,7 @@ Answer the user's question using ONLY the provided transcript excerpts.
 If the context is incomplete, say so briefly instead of guessing.
 Do not invent facts, names, decisions, or action items.
 Synthesize across recordings where useful, but stay anchored to evidence.
+When the user asks about projects, compare or group by the Project line attached to each excerpt.
 Always cite the supporting sourceIds you used.
 
 Return valid JSON only in this shape:
