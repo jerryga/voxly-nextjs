@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CreateWorkspaceButton } from "./CreateWorkspaceButton";
 import { SignOutButton } from "./SignOutButton";
 import { BrandLink } from "@/app/components/BrandLink";
 import { prisma } from "@/lib/prisma";
@@ -81,6 +82,7 @@ export async function DashboardShell({
             <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
               Spaces
             </p>
+            <CreateWorkspaceButton />
             <details
               className="group mt-3 rounded-[24px] bg-[#f4f4f1] p-2"
               open={
@@ -139,7 +141,35 @@ export async function DashboardShell({
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
                   }`}
                 >
-                  <span className="text-xs text-slate-400">▸</span>
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center text-slate-400">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      className="h-4 w-4"
+                    >
+                      <path
+                        d="M4 7h10M18 7h2M4 17h2M10 17h10"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx="16"
+                        cy="7"
+                        r="2"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <circle
+                        cx="8"
+                        cy="17"
+                        r="2"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
                   Workspace settings
                 </Link>
               </div>

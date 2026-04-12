@@ -1119,12 +1119,17 @@ type OverviewCurrentRecordingProps = {
     assignee?: string;
     dueDate?: string;
     sourceActionIndex?: number;
-  }) => Promise<boolean>;
+  }) => Promise<ActionTask | null>;
   onUpdateActionTask: (
     taskId: string,
     updates: Partial<Pick<ActionTask, "status" | "assignee" | "dueDate">>,
   ) => Promise<void>;
   onDeleteActionTask: (taskId: string) => Promise<void>;
+  taskCommentsById: Record<string, WorkspaceComment[]>;
+  taskCommentDrafts: Record<string, string>;
+  commentBusyKey: string | null;
+  onTaskCommentDraftChange: (taskId: string, value: string) => void;
+  onCreateTaskComment: (input: { taskId: string; content: string }) => Promise<void>;
 };
 
 const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
@@ -1148,6 +1153,11 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
   onCreateActionTask,
   onUpdateActionTask,
   onDeleteActionTask,
+  taskCommentsById,
+  taskCommentDrafts,
+  commentBusyKey,
+  onTaskCommentDraftChange,
+  onCreateTaskComment,
 }: OverviewCurrentRecordingProps) {
   const [isTextExpanded, setIsTextExpanded] = useState(false);
   const [isDetailsManuallyOpen, setIsDetailsManuallyOpen] = useState(false);
@@ -1155,6 +1165,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState("");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
+  const [newTaskComment, setNewTaskComment] = useState("");
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const isDetailsOpen = Boolean(
     focusedSummary &&
@@ -1175,7 +1186,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
     <>
       <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.18)] sm:px-6 sm:py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
               Current Workspace:{" "}
               <span className="font-semibold normal-case tracking-normal text-slate-900">
@@ -1186,46 +1197,6 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
             <p className="mt-1.5 truncate text-lg font-semibold text-slate-950">
               {focusedSummary?.fileName || "No recording in progress yet"}
             </p>
-            {focusedSummary ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  {focusedSummary.status}
-                </span>
-                {focusedSummary.template ? (
-                  <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                    {focusedSummary.template}
-                  </span>
-                ) : null}
-                {focusedSummary.projectId ? (
-                  <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-[11px] font-semibold text-slate-600">
-                    {selectedProjectName}
-                  </span>
-                ) : null}
-                <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-[11px] font-semibold text-slate-600">
-                  Updated {new Date(focusedSummary.updatedAt).toLocaleDateString()}
-                </span>
-              </div>
-            ) : null}
-            <div className="mt-3 max-w-3xl">
-              <p className="text-sm leading-6 text-slate-600">
-                {focusedSummary
-                  ? isTextExpanded
-                    ? currentRecordingText ||
-                      "Voxly is ready to help you continue this recording."
-                    : currentRecordingSnippet ||
-                      "Voxly is ready to help you continue this recording."
-                  : "Upload a new recording above to start building your next transcript, summary, and action-ready notes."}
-              </p>
-              {focusedSummary && hasExpandableCurrentRecordingText ? (
-                <button
-                  type="button"
-                  onClick={() => setIsTextExpanded((prev) => !prev)}
-                  className="mt-3 inline-flex cursor-pointer items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-[#f8f5ef]"
-                >
-                  {isTextExpanded ? "Show less" : "Show more"}
-                </button>
-              ) : null}
-            </div>
             {focusedSummaryHiddenByFilters ? (
               <p className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
                 This selected transcript is hidden by the current filters.
@@ -1237,20 +1208,37 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
               <button
                 type="button"
                 onClick={handleToggleDetails}
-                className="shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-4 text-xs font-semibold text-orange-800 transition hover:border-orange-300 hover:bg-orange-100"
               >
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
+                  <path
+                    d="M5 6h10M5 10h10M5 14h6"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
                 {isDetailsOpen ? "Hide Details" : "Show Details"}
               </button>
               <button
                 type="button"
                 onClick={() => onProcess(focusedSummary.id, focusedSummary.template)}
                 disabled={!canProcessFocusedSummary}
-                className={`shrink-0 cursor-pointer whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold ${
+                className={`inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-4 text-xs font-semibold text-orange-800 transition hover:border-orange-300 hover:bg-orange-100 ${
                   isFocusedSummaryProcessing
-                    ? "border border-sky-200 bg-sky-50 text-sky-700"
-                    : "bg-slate-950 text-white"
+                    ? "border-orange-200 bg-orange-50 text-orange-700"
+                    : ""
                 } disabled:cursor-not-allowed disabled:opacity-50`}
               >
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
+                  <path
+                    d="M15.5 7.5A5.5 5.5 0 0 0 5.7 5.1L4 6.8M4.5 12.5a5.5 5.5 0 0 0 9.8 2.4L16 13.2M4 3.5v3.3h3.3M16 16.5v-3.3h-3.3"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
                 {isFocusedSummaryProcessing
                   ? "Processing..."
                   : focusedSummary.status === "done"
@@ -1260,8 +1248,17 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
               <button
                 type="button"
                 onClick={onCopySummary}
-                className="shrink-0 cursor-pointer whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
+                className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-4 text-xs font-semibold text-orange-800 transition hover:border-orange-300 hover:bg-orange-100"
               >
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
+                  <path
+                    d="M7 6.5V5a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-1.5M4 7h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
                 Copy Summary
               </button>
             </div>
@@ -1274,6 +1271,46 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
               Start Upload
             </button>
           )}
+        </div>
+        {focusedSummary ? (
+          <div className="mt-4 flex w-full flex-nowrap items-center gap-2">
+            <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+              {focusedSummary.status}
+            </span>
+            {focusedSummary.template ? (
+              <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                {focusedSummary.template}
+              </span>
+            ) : null}
+            {focusedSummary.projectId ? (
+              <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold text-slate-600">
+                {selectedProjectName}
+              </span>
+            ) : null}
+            <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold text-slate-600">
+              Updated {new Date(focusedSummary.updatedAt).toLocaleDateString()}
+            </span>
+          </div>
+        ) : null}
+        <div className="mt-4 w-full">
+          <p className="text-sm leading-6 text-slate-600">
+            {focusedSummary
+              ? isTextExpanded
+                ? currentRecordingText ||
+                  "Voxly is ready to help you continue this recording."
+                : currentRecordingSnippet ||
+                  "Voxly is ready to help you continue this recording."
+              : "Upload a new recording above to start building your next transcript, summary, and action-ready notes."}
+          </p>
+          {focusedSummary && hasExpandableCurrentRecordingText ? (
+            <button
+              type="button"
+              onClick={() => setIsTextExpanded((prev) => !prev)}
+              className="mt-3 inline-flex cursor-pointer items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-[#f8f5ef]"
+            >
+              {isTextExpanded ? "Show less" : "Show more"}
+            </button>
+          ) : null}
         </div>
       </div>
       <div className={`space-y-8 ${focusedSummary && isDetailsOpen ? "min-h-[24rem]" : "hidden"}`}>
@@ -1402,7 +1439,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
             )}
           </div>
           <div className="rounded-[24px] border border-dashed border-slate-200 bg-[#fffdf9] p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_12rem_11rem_auto] lg:items-end">
               <label className="flex-1">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Add Task
@@ -1415,7 +1452,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
                   className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
                 />
               </label>
-              <label className="lg:w-48">
+              <label>
                 <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Assignee
                 </span>
@@ -1427,7 +1464,7 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
                   className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
                 />
               </label>
-              <label className="lg:w-44">
+              <label>
                 <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   Due Date
                 </span>
@@ -1448,9 +1485,16 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
                     dueDate: newTaskDueDate,
                   });
                   if (saved) {
+                    if (newTaskComment.trim()) {
+                      await onCreateTaskComment({
+                        taskId: saved.id,
+                        content: newTaskComment,
+                      });
+                    }
                     setNewTaskTitle("");
                     setNewTaskAssignee("");
                     setNewTaskDueDate("");
+                    setNewTaskComment("");
                   }
                   setIsCreatingTask(false);
                 }}
@@ -1464,6 +1508,18 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
                 {isCreatingTask ? "Saving..." : "Save Task"}
               </button>
             </div>
+            <label className="mt-4 block">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Comment
+              </span>
+              <textarea
+                value={newTaskComment}
+                onChange={(event) => setNewTaskComment(event.target.value)}
+                placeholder="Optional context, decision notes, or instructions for this task"
+                rows={3}
+                className="mt-2 w-full resize-none rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none"
+              />
+            </label>
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -1475,97 +1531,151 @@ const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
               </span>
             </div>
             {currentActionTasks.length ? (
-              currentActionTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.16)]"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold leading-relaxed text-slate-900">
-                        {task.title}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                        <span
-                          className={`rounded-full px-2.5 py-1 font-bold ${
-                            task.priority === "HIGH"
-                              ? "bg-red-100 text-red-700"
-                              : task.priority === "MEDIUM"
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {task.priority}
-                        </span>
-                        <span
-                          className={`rounded-full px-2.5 py-1 font-bold ${
-                            task.status === "done"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : task.status === "in_progress"
-                                ? "bg-sky-100 text-sky-700"
-                                : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {task.status.replace("_", " ")}
-                        </span>
-                        <span className="text-slate-500">@{task.assignee?.trim() || "Unassigned"}</span>
-                        {task.dueDate ? (
-                          <span className="text-slate-500">
-                            Due {new Date(task.dueDate).toLocaleDateString()}
+              currentActionTasks.map((task) => {
+                const taskComments = taskCommentsById[task.id] || [];
+                const draft = taskCommentDrafts[task.id] || "";
+                const commentKey = `task:${task.id}`;
+                return (
+                  <div
+                    key={task.id}
+                    className="rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.16)]"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold leading-relaxed text-slate-900">
+                          {task.title}
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <span
+                            className={`rounded-full px-2.5 py-1 font-bold ${
+                              task.priority === "HIGH"
+                                ? "bg-red-100 text-red-700"
+                                : task.priority === "MEDIUM"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {task.priority}
                           </span>
-                        ) : null}
+                          <span
+                            className={`rounded-full px-2.5 py-1 font-bold ${
+                              task.status === "done"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : task.status === "in_progress"
+                                  ? "bg-sky-100 text-sky-700"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {task.status.replace("_", " ")}
+                          </span>
+                          <span className="text-slate-500">
+                            @{task.assignee?.trim() || "Unassigned"}
+                          </span>
+                          {task.dueDate ? (
+                            <span className="text-slate-500">
+                              Due {new Date(task.dueDate).toLocaleDateString()}
+                            </span>
+                          ) : null}
+                          <span className="text-slate-400">
+                            {taskComments.length} comment{taskComments.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <select
+                          value={task.status}
+                          onChange={(event) =>
+                            void onUpdateActionTask(task.id, {
+                              status: event.target.value as ActionTask["status"],
+                            })
+                          }
+                          disabled={actionTaskBusyKey === `update:${task.id}`}
+                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="open">Open</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="done">Done</option>
+                        </select>
+                        <input
+                          type="text"
+                          defaultValue={task.assignee || ""}
+                          placeholder="Assignee"
+                          onBlur={(event) =>
+                            void onUpdateActionTask(task.id, {
+                              assignee: event.target.value,
+                            })
+                          }
+                          disabled={actionTaskBusyKey === `update:${task.id}`}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <input
+                          type="date"
+                          defaultValue={task.dueDate ? task.dueDate.slice(0, 10) : ""}
+                          onBlur={(event) =>
+                            void onUpdateActionTask(task.id, {
+                              dueDate: event.target.value,
+                            })
+                          }
+                          disabled={actionTaskBusyKey === `update:${task.id}`}
+                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void onDeleteActionTask(task.id)}
+                          disabled={actionTaskBusyKey === `delete:${task.id}`}
+                          className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <select
-                        value={task.status}
-                        onChange={(event) =>
-                          void onUpdateActionTask(task.id, {
-                            status: event.target.value as ActionTask["status"],
-                          })
-                        }
-                        disabled={actionTaskBusyKey === `update:${task.id}`}
-                        className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <option value="open">Open</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
-                      </select>
-                      <input
-                        type="text"
-                        defaultValue={task.assignee || ""}
-                        placeholder="Assignee"
-                        onBlur={(event) =>
-                          void onUpdateActionTask(task.id, {
-                            assignee: event.target.value,
-                          })
-                        }
-                        disabled={actionTaskBusyKey === `update:${task.id}`}
-                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                      <input
-                        type="date"
-                        defaultValue={task.dueDate ? task.dueDate.slice(0, 10) : ""}
-                        onBlur={(event) =>
-                          void onUpdateActionTask(task.id, {
-                            dueDate: event.target.value,
-                          })
-                        }
-                        disabled={actionTaskBusyKey === `update:${task.id}`}
-                        className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void onDeleteActionTask(task.id)}
-                        disabled={actionTaskBusyKey === `delete:${task.id}`}
-                        className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Delete
-                      </button>
+                    <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                      {taskComments.length ? (
+                        <div className="space-y-2">
+                          {taskComments.map((comment) => (
+                            <div
+                              key={comment.id}
+                              className="rounded-[18px] border border-slate-200 bg-white px-4 py-3"
+                            >
+                              <p className="text-sm leading-6 text-slate-700">{comment.content}</p>
+                              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                {comment.user?.name?.trim() ||
+                                  comment.user?.email ||
+                                  "Comment"}{" "}
+                                · {new Date(comment.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          type="text"
+                          value={draft}
+                          onChange={(event) =>
+                            onTaskCommentDraftChange(task.id, event.target.value)
+                          }
+                          placeholder="Add a comment"
+                          className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onCreateTaskComment({
+                              taskId: task.id,
+                              content: draft,
+                            })
+                          }
+                          disabled={!draft.trim() || commentBusyKey === commentKey}
+                          className="cursor-pointer rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {commentBusyKey === commentKey ? "Adding..." : "Add Comment"}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
                 No managed tasks yet. Track an AI action item or add one manually.
@@ -2979,7 +3089,9 @@ export function TranscriptionClient({
   const [, setTranscriptionCommentsById] = useState<Record<string, WorkspaceComment[]>>(
     {},
   );
-  const [, setTaskCommentsById] = useState<Record<string, WorkspaceComment[]>>({});
+  const [taskCommentsById, setTaskCommentsById] = useState<
+    Record<string, WorkspaceComment[]>
+  >({});
   const [projectInsightCommentsById, setProjectInsightCommentsById] = useState<
     Record<string, WorkspaceComment[]>
   >({});
@@ -2988,7 +3100,7 @@ export function TranscriptionClient({
   >({});
   const [commentBusyKey, setCommentBusyKey] = useState<string | null>(null);
   const [, setTranscriptionCommentDraft] = useState("");
-  const [, setTaskCommentDrafts] = useState<Record<string, string>>({});
+  const [taskCommentDrafts, setTaskCommentDrafts] = useState<Record<string, string>>({});
   const [projectInsightCommentDrafts, setProjectInsightCommentDrafts] = useState<
     Record<string, string>
   >({});
@@ -6064,7 +6176,7 @@ export function TranscriptionClient({
   }) {
     if (!activeTranscriptionId) {
       setError("Choose a transcription before creating a task.");
-      return false;
+      return null;
     }
 
     setError(null);
@@ -6095,10 +6207,10 @@ export function TranscriptionClient({
       }));
       setWorkspaceTasks((prev) => upsertTaskCollection(prev, payload.task!));
       showCopyStatus("Task saved.");
-      return true;
+      return payload.task;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
-      return false;
+      return null;
     }
   }
 
@@ -10490,6 +10602,9 @@ export function TranscriptionClient({
               currentActionTasks={currentActionTasks}
               activeTranscriptionId={activeTranscriptionId}
               actionTaskBusyKey={actionTaskBusyKey}
+              taskCommentsById={taskCommentsById}
+              taskCommentDrafts={taskCommentDrafts}
+              commentBusyKey={commentBusyKey}
               detailsAutoOpenToken={overviewDetailsAutoOpenToken}
               onProcess={handleProcess}
               onCopySummary={() =>
@@ -10502,6 +10617,12 @@ export function TranscriptionClient({
               onCreateActionTask={handleCreateActionTask}
               onUpdateActionTask={handleUpdateActionTask}
               onDeleteActionTask={handleDeleteActionTask}
+              onTaskCommentDraftChange={(taskId, value) =>
+                setTaskCommentDrafts((prev) => ({ ...prev, [taskId]: value }))
+              }
+              onCreateTaskComment={(input) =>
+                handleCreateComment({ taskId: input.taskId, content: input.content })
+              }
             />
           )}
         </section>

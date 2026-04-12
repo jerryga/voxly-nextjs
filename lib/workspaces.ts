@@ -38,7 +38,7 @@ function slugifyWorkspaceName(name: string) {
     .slice(0, 60);
 }
 
-async function uniqueWorkspaceSlug(baseName: string) {
+export async function uniqueWorkspaceSlug(baseName: string) {
   const baseSlug = slugifyWorkspaceName(baseName) || "workspace";
   let slug = baseSlug;
   let suffix = 1;

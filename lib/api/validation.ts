@@ -261,6 +261,10 @@ export const workspaceUpdateSchema = z.object({
   name: z.string().trim().min(1).max(80),
 });
 
+export const workspaceCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+
 export const workspaceDigestUpdateSchema = z.object({
   enabled: z.boolean(),
   cadence: z.enum(["weekly", "monthly"]),
