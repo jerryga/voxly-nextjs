@@ -13,6 +13,15 @@ import { getStripe, getStripeWebhookSecret } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    endpoint: "stripe-webhook",
+    message:
+      "Stripe webhooks must be sent as signed POST requests. Browser GET checks only confirm that the route exists.",
+  });
+}
+
 function extractSubscriptionId(
   subscription: string | Stripe.Subscription | null | undefined,
 ) {
