@@ -3,23 +3,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { DashboardShell } from "@/app/dashboard/DashboardShell";
 
-const contactOptions = [
-  {
-    title: "General support",
-    value: "support@voxly.ai",
-    description: "Questions about uploads, notes, or day-to-day product use.",
-  },
-  {
-    title: "Sales and team onboarding",
-    value: "sales@voxly.ai",
-    description: "Talk about shared workspaces, rollout planning, or custom setup.",
-  },
-  {
-    title: "Integrations and technical help",
-    value: "engineering@voxly.ai",
-    description: "Get help with Slack, Notion, digests, or API-related workflows.",
-  },
-];
+const supportEmail = "support@chason.app";
 
 export default async function ContactPage() {
   const session = await getServerSession(authOptions);
@@ -43,36 +27,34 @@ export default async function ContactPage() {
             Contact
           </p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-            Reach the right Voxly team quickly
+            Contact support
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-            Use the contact path that matches your need so we can route your
-            request faster and keep your workspace moving.
+            Send product questions, billing issues, workspace access problems,
+            or integration support requests to the same inbox.
           </p>
         </section>
 
-        <section className="space-y-4 pt-8">
-          {contactOptions.map((option) => (
-            <div
-              key={option.title}
-              className="rounded-[22px] border border-slate-200 bg-white px-6 py-5 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.18)]"
-            >
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{option.title}</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    {option.description}
-                  </p>
-                </div>
-                <a
-                  href={`mailto:${option.value}`}
-                  className="rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-800 hover:border-slate-300"
-                >
-                  {option.value}
-                </a>
+        <section className="pt-8">
+          <div className="rounded-[22px] border border-slate-200 bg-white px-6 py-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">
+                  Support inbox
+                </p>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                  We keep support in one place so every request goes through the
+                  same queue and gets tracked clearly.
+                </p>
               </div>
+              <a
+                href={`mailto:${supportEmail}`}
+                className="inline-flex w-fit items-center rounded-full border border-orange-200 bg-orange-50 px-5 py-2.5 text-sm font-semibold text-orange-700 transition hover:border-orange-300 hover:bg-orange-100"
+              >
+                {supportEmail}
+              </a>
             </div>
-          ))}
+          </div>
         </section>
       </div>
     </DashboardShell>
