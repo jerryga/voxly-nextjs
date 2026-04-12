@@ -259,7 +259,7 @@ export function BillingClient() {
               Workspace billing
             </h1>
             <p className="mt-1.5 max-w-[58rem] text-sm leading-6 text-slate-600">
-              Manage the active workspace subscription, buy extra credits, and review how the balance changes over time.
+              Manage billing for the current workspace, buy extra credits, and review how the balance changes over time.
             </p>
           </div>
           <div className="flex flex-wrap gap-2.5">
@@ -327,7 +327,7 @@ export function BillingClient() {
               <div className="grid gap-5 md:grid-cols-3">
                 <div className="border-b border-slate-200 pb-4 md:border-b-0 md:pb-0">
                   <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                    Active Workspace
+                    Current Workspace
                   </p>
                   <p className="mt-2 text-base font-semibold text-slate-950">
                     {billing.workspace.name}
@@ -345,8 +345,8 @@ export function BillingClient() {
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
                     {billing.billingScope === "personal"
-                      ? "This workspace bills through your account."
-                      : "This workspace currently bills through the workspace owner account."}
+                      ? "Processing in this workspace spends credits from your account."
+                      : "Processing in this workspace spends credits from the workspace owner account."}
                   </p>
                 </div>
                 <div>
@@ -401,7 +401,7 @@ export function BillingClient() {
                   {billing.creditsRemaining}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Available right now
+                  Owner-backed balance for this workspace
                 </p>
               </div>
                 <div className="rounded-[20px] border border-slate-200 bg-white p-5">
@@ -415,7 +415,7 @@ export function BillingClient() {
                   </span>
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Included with your plan
+                  Included with the billing owner plan
                 </p>
               </div>
                 <div className="rounded-[20px] border border-slate-200 bg-white p-5">
@@ -426,7 +426,7 @@ export function BillingClient() {
                   {billing.topUpCreditsRemaining}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Promo and purchased credits remaining
+                  Promo and purchased credits for this workspace
                 </p>
               </div>
               </div>
@@ -529,7 +529,7 @@ export function BillingClient() {
                   Buy more credits
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Add extra minutes without changing your current plan.
+                  Add credits to the owner-backed balance used by this workspace.
                 </p>
                 <div className="mt-4 space-y-3">
                   {billing.availableCreditPacks
@@ -585,8 +585,8 @@ export function BillingClient() {
                     Promotion code
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Redeem a time-limited code for free credits. Each code can
-                    only be used once per user.
+                    Redeem a time-limited code for credits on this workspace&apos;s
+                    owner-backed balance. Each code can only be used once per user.
                   </p>
                 </div>
                 <div className="text-sm text-slate-500">

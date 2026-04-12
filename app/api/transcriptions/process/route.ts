@@ -8,7 +8,10 @@ import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { hasPersistedTranscriptionResult } from "@/lib/transcriptions/process";
 import { transcriptionProcessSchema } from "@/lib/api/validation";
 import { resolveTemplateSelectionForUser } from "@/lib/templates";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -79,10 +82,7 @@ export async function POST(request: Request) {
     const transcription = await prisma.transcription.findFirst({
       where: {
         id: transcriptionId,
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
       } as any,
     });
 

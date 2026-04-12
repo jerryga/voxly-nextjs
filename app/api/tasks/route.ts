@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { actionTaskCreateSchema } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -20,12 +23,7 @@ type WorkspaceContext = NonNullable<
 >;
 
 function getWorkspaceTaskWhere(context: WorkspaceContext) {
-  return {
-    OR: [
-      { workspaceId: context.activeWorkspace.id },
-      { workspaceId: null, userId: context.user.id },
-    ],
-  } as const;
+  return activeWorkspaceResourceWhere(context);
 }
 
 export async function GET(request: Request) {
@@ -50,10 +48,7 @@ export async function GET(request: Request) {
       const transcription = await prisma.transcription.findFirst({
         where: {
           id: transcriptionId,
-          OR: [
-            { workspaceId: context.activeWorkspace.id },
-            { workspaceId: null, userId: context.user.id },
-          ],
+          ...activeWorkspaceResourceWhere(context),
         } as any,
         select: { id: true },
       });
@@ -120,10 +115,7 @@ export async function POST(request: Request) {
     const transcription = await prisma.transcription.findFirst({
       where: {
         id: transcriptionId,
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
       } as any,
       select: { id: true },
     });

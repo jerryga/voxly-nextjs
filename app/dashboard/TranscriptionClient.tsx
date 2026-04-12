@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  type FormEvent,
   memo,
   startTransition,
   useCallback,
@@ -15,14 +14,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import type { BillingInfo, BillingResponse } from "@/lib/billing-types";
+import { OverviewSurface, UploadPanelBody } from "./OverviewSurface";
 
-type ActionItem = {
+export type ActionItem = {
   text: string;
   priority?: string;
   assignee?: string;
 };
 
-type ActionTask = {
+export type ActionTask = {
   id: string;
   transcriptionId: string;
   title: string;
@@ -41,7 +41,7 @@ type ActionTask = {
   };
 };
 
-type Transcription = {
+export type Transcription = {
   id: string;
   fileName: string;
   status: string;
@@ -171,6 +171,19 @@ function clearSessionCachePrefix(prefix: string) {
   }
 }
 
+function buildScopedCacheKey(baseKey: string, workspaceId?: string | null) {
+  return `${baseKey}:${workspaceId || "pending"}`;
+}
+
+function clearScopedCache(baseKey: string, workspaceId?: string | null) {
+  if (workspaceId) {
+    clearSessionCacheKey(buildScopedCacheKey(baseKey, workspaceId));
+    return;
+  }
+
+  clearSessionCachePrefix(`${baseKey}:`);
+}
+
 function clearTranscriptionCaches() {
   clearSessionCachePrefix(TRANSCRIPTIONS_CACHE_PREFIX);
   clearSessionCachePrefix(HISTORY_CACHE_PREFIX);
@@ -178,17 +191,18 @@ function clearTranscriptionCaches() {
 
 function clearWorkspaceAdminCaches() {
   clearSessionCacheKey(WORKSPACES_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_DIGEST_CACHE_KEY);
-  clearSessionCacheKey(REPORT_TEMPLATES_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_SLACK_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_NOTION_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
-  clearSessionCacheKey(WORKSPACE_TASKS_CACHE_KEY);
+  clearScopedCache(WORKSPACE_DIGEST_CACHE_KEY);
+  clearScopedCache(REPORT_TEMPLATES_CACHE_KEY);
+  clearScopedCache(WORKSPACE_SLACK_CACHE_KEY);
+  clearScopedCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY);
+  clearScopedCache(WORKSPACE_NOTION_CACHE_KEY);
+  clearScopedCache(WORKSPACE_PEOPLE_CACHE_KEY);
+  clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY);
+  clearScopedCache(WORKSPACE_TASKS_CACHE_KEY);
 }
 
 function buildTranscriptionsCacheKey(input: {
+  workspaceId?: string | null;
   query: string;
   status: string;
   template: string;
@@ -198,6 +212,7 @@ function buildTranscriptionsCacheKey(input: {
 }
 
 function buildHistoryCacheKey(input: {
+  workspaceId?: string | null;
   query: string;
   status: string;
   template: string;
@@ -223,7 +238,7 @@ type TemplatesResponse = {
   error?: string;
 };
 
-type Project = {
+export type Project = {
   id: string;
   name: string;
   description?: string | null;
@@ -247,7 +262,7 @@ type WorkspaceSummary = {
   role: string;
 };
 
-type ActiveWorkspaceDetails = {
+export type ActiveWorkspaceDetails = {
   id: string;
   name: string;
   slug: string;
@@ -340,7 +355,7 @@ type TasksResponse = {
   error?: string;
 };
 
-type WorkspaceComment = {
+export type WorkspaceComment = {
   id: string;
   content: string;
   mentions?: Array<{
@@ -683,6 +698,8 @@ type AssistantMessage = {
 };
 
 type AssistantScope = "transcript" | "project" | "workspace";
+type DashboardSurface = "overview" | "upload" | "transcriptions" | "intelligence" | "operations" | "settings";
+type SettingsSection = "workspace" | "delivery" | "integrations" | "access" | "personal";
 
 const defaultAssistantMessages: AssistantMessage[] = [
   {
@@ -723,1032 +740,6 @@ const builtInTemplates = [
   { id: "lecture", label: "Lecture Notes" },
   { id: "voice-memo", label: "Voice Memo Notes" },
 ];
-
-type UploadPanelBodyProps = {
-  fileInputId: string;
-  file: File | null;
-  onFileChange: (nextFile: File | null) => void;
-  estimatedDurationSeconds: number | null;
-  isDev: boolean;
-  testDataLoading: boolean;
-  testDataStatus: string | null;
-  onLoadTestData: () => void;
-  uploadTemplate: string;
-  onUploadTemplateChange: (value: string) => void;
-  templateOptions: Array<{ id: string; label: string }>;
-  templatesStatusText: string;
-  templateBusy: boolean;
-  onCreateTemplate: (input: {
-    name: string;
-    baseTemplate: string;
-    promptInstructions: string;
-  }) => Promise<boolean>;
-  uploadProjectId: string;
-  onUploadProjectIdChange: (value: string) => void;
-  projects: Project[];
-  projectsStatusText: string;
-  projectBusy: boolean;
-  onCreateProject: (input: {
-    name: string;
-    description: string;
-  }) => Promise<boolean>;
-  onUpload: (event: FormEvent<HTMLFormElement>) => void;
-  uploading: boolean;
-  durationLoading: boolean;
-  hasEnoughEstimatedCredits: boolean;
-  estimatedCredits: number | null;
-  billing: BillingInfo | null;
-};
-
-const UploadPanelBody = memo(function UploadPanelBody({
-  fileInputId,
-  file,
-  onFileChange,
-  estimatedDurationSeconds,
-  isDev,
-  testDataLoading,
-  testDataStatus,
-  onLoadTestData,
-  uploadTemplate,
-  onUploadTemplateChange,
-  templateOptions,
-  templatesStatusText,
-  templateBusy,
-  onCreateTemplate,
-  uploadProjectId,
-  onUploadProjectIdChange,
-  projects,
-  projectsStatusText,
-  projectBusy,
-  onCreateProject,
-  onUpload,
-  uploading,
-  durationLoading,
-  hasEnoughEstimatedCredits,
-  estimatedCredits,
-  billing,
-}: UploadPanelBodyProps) {
-  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
-  const [projectManagerOpen, setProjectManagerOpen] = useState(false);
-  const [newTemplateName, setNewTemplateName] = useState("");
-  const [newTemplateBase, setNewTemplateBase] = useState("default");
-  const [newTemplateInstructions, setNewTemplateInstructions] = useState("");
-  const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectDescription, setNewProjectDescription] = useState("");
-
-  return (
-    <>
-      <input
-        id={fileInputId}
-        type="file"
-        accept="audio/*"
-        onChange={(event) => onFileChange(event.target.files?.[0] || null)}
-        className="hidden"
-      />
-
-      <div className="mt-5 rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.18)]">
-        <label
-          htmlFor={fileInputId}
-          className="block cursor-pointer rounded-[20px] border border-dashed border-[#e6dccf] bg-[linear-gradient(180deg,#fbf8f2_0%,#fffdf9_100%)] p-5 transition-all duration-200 hover:border-[#d7cab7] hover:bg-[#f8f3eb]"
-        >
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3 text-left">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/90">
-                <svg
-                  className="h-5 w-5 text-orange-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v8"
-                  />
-                </svg>
-              </div>
-              <div>
-                <p className="text-base font-semibold text-slate-950">
-                  {file ? file.name : "Select an audio file"}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  MP3, M4A, WAV up to 500MB
-                </p>
-              </div>
-            </div>
-            <span className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-center text-sm font-semibold text-slate-700">
-              Choose File
-            </span>
-          </div>
-          {file ? (
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600">
-                {(file.size / (1024 * 1024)).toFixed(1)} MB
-              </span>
-              {estimatedDurationSeconds ? (
-                <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 font-medium text-orange-700">
-                  ~{Math.ceil(estimatedDurationSeconds / 60)} credits
-                </span>
-              ) : null}
-              {estimatedDurationSeconds ? (
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600">
-                  {Math.round(estimatedDurationSeconds)} sec
-                </span>
-              ) : null}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-slate-500">No file selected yet.</p>
-          )}
-        </label>
-
-        {isDev ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-              onClick={onLoadTestData}
-              disabled={testDataLoading}
-            >
-              {testDataLoading ? "Loading..." : "Load Test File"}
-            </button>
-          </div>
-        ) : null}
-        {testDataStatus ? (
-          <p className="mt-3 text-sm font-medium text-emerald-600">{testDataStatus}</p>
-        ) : null}
-
-        <div className="mt-6 grid gap-5 lg:grid-cols-2">
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Template
-            </label>
-            <select
-              value={uploadTemplate}
-              onChange={(event) => onUploadTemplateChange(event.target.value)}
-              className="mt-2 w-full cursor-pointer rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-            >
-              {templateOptions.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.label}
-                </option>
-              ))}
-            </select>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setTemplateManagerOpen((prev) => !prev)}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
-              >
-                {templateManagerOpen ? "Hide custom templates" : "Manage templates"}
-              </button>
-              <span className="text-xs text-slate-500">{templatesStatusText}</span>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Project
-            </label>
-            <select
-              value={uploadProjectId}
-              onChange={(event) => onUploadProjectIdChange(event.target.value)}
-              className="mt-2 w-full cursor-pointer rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-            >
-              <option value="none">No project</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setProjectManagerOpen((prev) => !prev)}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
-              >
-                {projectManagerOpen ? "Hide projects" : "Manage projects"}
-              </button>
-              <span className="text-xs text-slate-500">{projectsStatusText}</span>
-            </div>
-          </div>
-        </div>
-
-        {templateManagerOpen ? (
-          <div className="mt-5 rounded-[18px] border border-slate-200 bg-white p-4">
-            <form
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const saved = await onCreateTemplate({
-                  name: newTemplateName,
-                  baseTemplate: newTemplateBase,
-                  promptInstructions: newTemplateInstructions,
-                });
-                if (saved) {
-                  setNewTemplateName("");
-                  setNewTemplateBase("default");
-                  setNewTemplateInstructions("");
-                  setTemplateManagerOpen(false);
-                }
-              }}
-              className="space-y-3"
-            >
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Template name
-                </label>
-                <input
-                  value={newTemplateName}
-                  onChange={(event) => setNewTemplateName(event.target.value)}
-                  className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
-                  placeholder="Candidate Evaluation"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Base template
-                </label>
-                <select
-                  value={newTemplateBase}
-                  onChange={(event) => setNewTemplateBase(event.target.value)}
-                  className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
-                >
-                  {builtInTemplates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Custom instructions
-                </label>
-                <textarea
-                  value={newTemplateInstructions}
-                  onChange={(event) => setNewTemplateInstructions(event.target.value)}
-                  rows={4}
-                  className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
-                  placeholder="Focus on strengths, weaknesses, evidence, and recommendation."
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={
-                  templateBusy ||
-                  !newTemplateName.trim() ||
-                  !newTemplateInstructions.trim()
-                }
-                className="cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {templateBusy ? "Saving..." : "Save Template"}
-              </button>
-            </form>
-          </div>
-        ) : null}
-
-        {projectManagerOpen ? (
-          <div className="mt-5 rounded-[18px] border border-slate-200 bg-white p-4">
-            <form
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const saved = await onCreateProject({
-                  name: newProjectName,
-                  description: newProjectDescription,
-                });
-                if (saved) {
-                  setNewProjectName("");
-                  setNewProjectDescription("");
-                  setProjectManagerOpen(false);
-                }
-              }}
-              className="space-y-3"
-            >
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Project name
-                </label>
-                <input
-                  value={newProjectName}
-                  onChange={(event) => setNewProjectName(event.target.value)}
-                  className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
-                  placeholder="Candidate Interviews"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Description
-                </label>
-                <textarea
-                  value={newProjectDescription}
-                  onChange={(event) => setNewProjectDescription(event.target.value)}
-                  rows={3}
-                  className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
-                  placeholder="Group related transcripts into one workspace."
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={projectBusy || !newProjectName.trim()}
-                className="cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {projectBusy ? "Saving..." : "Save Project"}
-              </button>
-            </form>
-          </div>
-        ) : null}
-
-        <form onSubmit={onUpload} className="mt-6 border-t border-slate-200 pt-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-950">Ready to process</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Upload your recording and let Voxly continue processing in the background.
-              </p>
-            </div>
-            <button
-              type="submit"
-              disabled={!file || uploading || durationLoading || !hasEnoughEstimatedCredits}
-              className="cursor-pointer rounded-full bg-[#f97316] px-8 py-3 text-sm font-bold text-white shadow-[0_18px_34px_-18px_rgba(249,115,22,0.9)] hover:bg-[#ea580c] disabled:cursor-not-allowed disabled:bg-[#fdc9a8] disabled:text-white/90 disabled:opacity-100 active:scale-95 disabled:active:scale-100"
-            >
-              {uploading
-                ? "Uploading..."
-                : durationLoading
-                  ? "Reading duration..."
-                  : "Start Voxly"}
-            </button>
-          </div>
-          {!file ? (
-            <p className="mt-3 text-xs text-slate-500">
-              Choose a file to enable Start Voxly.
-            </p>
-          ) : null}
-          {!hasEnoughEstimatedCredits && estimatedCredits ? (
-            <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              This file is estimated to require {estimatedCredits} credits, but this
-              workspace currently has only {billing?.creditsRemaining ?? 0} remaining
-              through the owner billing account.
-            </p>
-          ) : null}
-          {!hasEnoughEstimatedCredits && estimatedCredits && billing ? (
-            <p className="mt-2 text-xs text-slate-500">
-              Billing owner: {billing.billingOwner.name?.trim() || billing.billingOwner.email}. Open billing details to top up credits or change the plan.
-            </p>
-          ) : null}
-        </form>
-      </div>
-    </>
-  );
-});
-
-type OverviewUploadSectionProps = {
-  hasFocusedSummary: boolean;
-  startExpanded: boolean;
-  bodyProps: UploadPanelBodyProps;
-};
-
-const OverviewUploadSection = memo(function OverviewUploadSection({
-  hasFocusedSummary,
-  startExpanded,
-  bodyProps,
-}: OverviewUploadSectionProps) {
-  const [isOpen, setIsOpen] = useState(startExpanded || !hasFocusedSummary);
-
-  return (
-    <>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
-            Upload
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-[2rem]">
-            Drop in a recording and let Voxly shape it.
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Choose a notes template, upload your file, and Voxly will turn the
-            recording into a transcript, summary, and action-ready output.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setIsOpen((prev) => !prev)}
-          className={`cursor-pointer self-start rounded-full px-4 py-2 text-xs font-semibold ${
-            isOpen
-              ? "border border-slate-200 bg-white text-slate-700"
-              : "bg-[#f97316] px-5 py-2.5 text-sm text-white shadow-[0_16px_34px_-18px_rgba(249,115,22,0.65)] hover:bg-[#ea580c]"
-          }`}
-        >
-          {isOpen ? "Hide Upload" : "Upload Another"}
-        </button>
-      </div>
-
-      <div
-        className={`overflow-hidden transition-all duration-200 ${
-          isOpen ? "max-h-[2400px] opacity-100" : "max-h-0 opacity-0"
-        }`}
-        aria-hidden={!isOpen}
-      >
-        <UploadPanelBody {...bodyProps} />
-      </div>
-    </>
-  );
-});
-
-type OverviewCurrentRecordingProps = {
-  activeWorkspace: ActiveWorkspaceDetails | null;
-  focusedSummary: Transcription | null;
-  displaySummary:
-    | Pick<Transcription, "decisions" | "keyPoints" | "nextSteps" | "actionItems">
-    | null;
-  selectedProjectName: string;
-  currentRecordingText: string;
-  currentRecordingSnippet: string;
-  hasExpandableCurrentRecordingText: boolean;
-  focusedSummaryHiddenByFilters: boolean;
-  isFocusedSummaryProcessing: boolean;
-  canProcessFocusedSummary: boolean;
-  currentActionTasks: ActionTask[];
-  activeTranscriptionId: string | null;
-  actionTaskBusyKey: string | null;
-  detailsAutoOpenToken: number;
-  onProcess: (transcriptionId: string, template?: string | null) => void;
-  onCopySummary: () => void;
-  onStartUpload: () => void;
-  onCreateActionTask: (input: {
-    title: string;
-    priority?: string;
-    assignee?: string;
-    dueDate?: string;
-    sourceActionIndex?: number;
-  }) => Promise<ActionTask | null>;
-  onUpdateActionTask: (
-    taskId: string,
-    updates: Partial<Pick<ActionTask, "status" | "assignee" | "dueDate">>,
-  ) => Promise<void>;
-  onDeleteActionTask: (taskId: string) => Promise<void>;
-  taskCommentsById: Record<string, WorkspaceComment[]>;
-  taskCommentDrafts: Record<string, string>;
-  commentBusyKey: string | null;
-  onTaskCommentDraftChange: (taskId: string, value: string) => void;
-  onCreateTaskComment: (input: { taskId: string; content: string }) => Promise<void>;
-};
-
-const OverviewCurrentRecording = memo(function OverviewCurrentRecording({
-  activeWorkspace,
-  focusedSummary,
-  displaySummary,
-  selectedProjectName,
-  currentRecordingText,
-  currentRecordingSnippet,
-  hasExpandableCurrentRecordingText,
-  focusedSummaryHiddenByFilters,
-  isFocusedSummaryProcessing,
-  canProcessFocusedSummary,
-  currentActionTasks,
-  activeTranscriptionId,
-  actionTaskBusyKey,
-  detailsAutoOpenToken,
-  onProcess,
-  onCopySummary,
-  onStartUpload,
-  onCreateActionTask,
-  onUpdateActionTask,
-  onDeleteActionTask,
-  taskCommentsById,
-  taskCommentDrafts,
-  commentBusyKey,
-  onTaskCommentDraftChange,
-  onCreateTaskComment,
-}: OverviewCurrentRecordingProps) {
-  const [isTextExpanded, setIsTextExpanded] = useState(false);
-  const [isDetailsManuallyOpen, setIsDetailsManuallyOpen] = useState(false);
-  const [detailsDismissedToken, setDetailsDismissedToken] = useState(0);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskAssignee, setNewTaskAssignee] = useState("");
-  const [newTaskDueDate, setNewTaskDueDate] = useState("");
-  const [newTaskComment, setNewTaskComment] = useState("");
-  const [isCreatingTask, setIsCreatingTask] = useState(false);
-  const isDetailsOpen = Boolean(
-    focusedSummary &&
-      (isDetailsManuallyOpen || detailsAutoOpenToken > detailsDismissedToken),
-  );
-
-  function handleToggleDetails() {
-    if (isDetailsOpen) {
-      setIsDetailsManuallyOpen(false);
-      setDetailsDismissedToken(detailsAutoOpenToken);
-      return;
-    }
-
-    setIsDetailsManuallyOpen(true);
-  }
-
-  return (
-    <>
-      <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.18)] sm:px-6 sm:py-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
-              Current Workspace:{" "}
-              <span className="font-semibold normal-case tracking-normal text-slate-900">
-                {activeWorkspace?.name || "No workspace selected"}
-                {activeWorkspace?.isPersonal ? " (Personal)" : ""}
-              </span>
-            </p>
-            <p className="mt-1.5 truncate text-lg font-semibold text-slate-950">
-              {focusedSummary?.fileName || "No recording in progress yet"}
-            </p>
-            {focusedSummaryHiddenByFilters ? (
-              <p className="mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-                This selected transcript is hidden by the current filters.
-              </p>
-            ) : null}
-          </div>
-          {focusedSummary ? (
-            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto lg:overflow-visible lg:justify-end">
-              <button
-                type="button"
-                onClick={handleToggleDetails}
-                className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-4 text-xs font-semibold text-orange-800 transition hover:border-orange-300 hover:bg-orange-100"
-              >
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
-                  <path
-                    d="M5 6h10M5 10h10M5 14h6"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                {isDetailsOpen ? "Hide Details" : "Show Details"}
-              </button>
-              <button
-                type="button"
-                onClick={() => onProcess(focusedSummary.id, focusedSummary.template)}
-                disabled={!canProcessFocusedSummary}
-                className={`inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-4 text-xs font-semibold text-orange-800 transition hover:border-orange-300 hover:bg-orange-100 ${
-                  isFocusedSummaryProcessing
-                    ? "border-orange-200 bg-orange-50 text-orange-700"
-                    : ""
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
-                  <path
-                    d="M15.5 7.5A5.5 5.5 0 0 0 5.7 5.1L4 6.8M4.5 12.5a5.5 5.5 0 0 0 9.8 2.4L16 13.2M4 3.5v3.3h3.3M16 16.5v-3.3h-3.3"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                {isFocusedSummaryProcessing
-                  ? "Processing..."
-                  : focusedSummary.status === "done"
-                    ? "Reprocess Recording"
-                    : "Process Recording"}
-              </button>
-              <button
-                type="button"
-                onClick={onCopySummary}
-                className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-4 text-xs font-semibold text-orange-800 transition hover:border-orange-300 hover:bg-orange-100"
-              >
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-3.5 w-3.5">
-                  <path
-                    d="M7 6.5V5a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-1.5M4 7h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Copy Summary
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onStartUpload}
-              className="cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white"
-            >
-              Start Upload
-            </button>
-          )}
-        </div>
-        {focusedSummary ? (
-          <div className="mt-4 flex w-full flex-nowrap items-center gap-2">
-            <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-              {focusedSummary.status}
-            </span>
-            {focusedSummary.template ? (
-              <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                {focusedSummary.template}
-              </span>
-            ) : null}
-            {focusedSummary.projectId ? (
-              <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold text-slate-600">
-                {selectedProjectName}
-              </span>
-            ) : null}
-            <span className="min-w-fit flex-1 whitespace-nowrap rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 text-center text-[11px] font-semibold text-slate-600">
-              Updated {new Date(focusedSummary.updatedAt).toLocaleDateString()}
-            </span>
-          </div>
-        ) : null}
-        <div className="mt-4 w-full">
-          <p className="text-sm leading-6 text-slate-600">
-            {focusedSummary
-              ? isTextExpanded
-                ? currentRecordingText ||
-                  "Voxly is ready to help you continue this recording."
-                : currentRecordingSnippet ||
-                  "Voxly is ready to help you continue this recording."
-              : "Upload a new recording above to start building your next transcript, summary, and action-ready notes."}
-          </p>
-          {focusedSummary && hasExpandableCurrentRecordingText ? (
-            <button
-              type="button"
-              onClick={() => setIsTextExpanded((prev) => !prev)}
-              className="mt-3 inline-flex cursor-pointer items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-[#f8f5ef]"
-            >
-              {isTextExpanded ? "Show less" : "Show more"}
-            </button>
-          ) : null}
-        </div>
-      </div>
-      <div className={`space-y-8 ${focusedSummary && isDetailsOpen ? "min-h-[24rem]" : "hidden"}`}>
-        {[
-          {
-            title: "Decisions",
-            items: displaySummary?.decisions,
-          },
-          {
-            title: "Key Points",
-            items: displaySummary?.keyPoints,
-          },
-          {
-            title: "Next Steps",
-            items: displaySummary?.nextSteps,
-          },
-        ].map((block) => (
-          <div key={block.title} className="space-y-3">
-            <h3 className="text-xl font-semibold text-slate-900">{block.title}</h3>
-            <div className="space-y-3">
-              {block.items && Array.isArray(block.items) && block.items.length ? (
-                block.items.map((item, idx) => {
-                  const itemText =
-                    typeof item === "string" ? item : (item as ActionItem)?.text;
-                  const itemAssignee =
-                    typeof item === "string" ? undefined : (item as ActionItem)?.assignee;
-                  return (
-                    <div
-                      key={`${block.title}-${idx}`}
-                      className="flex gap-4 rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]"
-                    >
-                      <div className="w-1.5 rounded-full bg-orange-300" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold leading-relaxed text-slate-900">
-                          {itemText}
-                        </p>
-                        {itemAssignee && itemText !== itemAssignee ? (
-                          <p className="mt-1 text-xs text-slate-500">{itemAssignee}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
-                  No data yet.
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-
-        <div className="space-y-3">
-          <h3 className="text-xl font-semibold text-slate-900">Action Items</h3>
-          <div className="space-y-3">
-            {displaySummary?.actionItems && displaySummary.actionItems.length ? (
-              displaySummary.actionItems.map((item, idx) => {
-                const linkedTask = currentActionTasks.find(
-                  (task) => task.sourceActionIndex === idx,
-                );
-
-                return (
-                  <div
-                    key={`Action Items-${idx}`}
-                    className="rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="mt-1 h-5 w-5 rounded-full border border-orange-300 bg-orange-50" />
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold leading-relaxed text-slate-900">
-                          {item.text}
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                          <span
-                            className={`rounded-full px-2.5 py-1 font-bold ${
-                              item.priority === "HIGH"
-                                ? "bg-red-100 text-red-700"
-                                : item.priority === "MEDIUM"
-                                  ? "bg-orange-100 text-orange-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {item.priority || "MEDIUM"}
-                          </span>
-                          <span className="text-slate-500">
-                            @{item.assignee && item.assignee.trim() ? item.assignee : "Unassigned"}
-                          </span>
-                          {linkedTask ? (
-                            <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-700">
-                              Tracking: {linkedTask.status.replace("_", " ")}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                      {linkedTask ? (
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
-                          Tracked
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setIsCreatingTask(true);
-                            await onCreateActionTask({
-                              title: item.text,
-                              priority: item.priority || "MEDIUM",
-                              assignee: item.assignee || "",
-                              sourceActionIndex: idx,
-                            });
-                            setIsCreatingTask(false);
-                          }}
-                          disabled={isCreatingTask}
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Track Task
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
-                No data yet.
-              </div>
-            )}
-          </div>
-          <div className="rounded-[24px] border border-dashed border-slate-200 bg-[#fffdf9] p-5">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_12rem_11rem_auto] lg:items-end">
-              <label className="flex-1">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Add Task
-                </span>
-                <input
-                  type="text"
-                  value={newTaskTitle}
-                  onChange={(event) => setNewTaskTitle(event.target.value)}
-                  placeholder="Create a follow-up that isn’t in the AI summary yet"
-                  className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-                />
-              </label>
-              <label>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Assignee
-                </span>
-                <input
-                  type="text"
-                  value={newTaskAssignee}
-                  onChange={(event) => setNewTaskAssignee(event.target.value)}
-                  placeholder="Owner"
-                  className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-                />
-              </label>
-              <label>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Due Date
-                </span>
-                <input
-                  type="date"
-                  value={newTaskDueDate}
-                  onChange={(event) => setNewTaskDueDate(event.target.value)}
-                  className="mt-2 w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={async () => {
-                  setIsCreatingTask(true);
-                  const saved = await onCreateActionTask({
-                    title: newTaskTitle,
-                    assignee: newTaskAssignee,
-                    dueDate: newTaskDueDate,
-                  });
-                  if (saved) {
-                    if (newTaskComment.trim()) {
-                      await onCreateTaskComment({
-                        taskId: saved.id,
-                        content: newTaskComment,
-                      });
-                    }
-                    setNewTaskTitle("");
-                    setNewTaskAssignee("");
-                    setNewTaskDueDate("");
-                    setNewTaskComment("");
-                  }
-                  setIsCreatingTask(false);
-                }}
-                disabled={
-                  !newTaskTitle.trim() ||
-                  !activeTranscriptionId ||
-                  isCreatingTask
-                }
-                className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isCreatingTask ? "Saving..." : "Save Task"}
-              </button>
-            </div>
-            <label className="mt-4 block">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Comment
-              </span>
-              <textarea
-                value={newTaskComment}
-                onChange={(event) => setNewTaskComment(event.target.value)}
-                placeholder="Optional context, decision notes, or instructions for this task"
-                rows={3}
-                className="mt-2 w-full resize-none rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none"
-              />
-            </label>
-          </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Managed Tasks
-              </h4>
-              <span className="text-xs font-semibold text-slate-400">
-                {currentActionTasks.length} total
-              </span>
-            </div>
-            {currentActionTasks.length ? (
-              currentActionTasks.map((task) => {
-                const taskComments = taskCommentsById[task.id] || [];
-                const draft = taskCommentDrafts[task.id] || "";
-                const commentKey = `task:${task.id}`;
-                return (
-                  <div
-                    key={task.id}
-                    className="rounded-[24px] border border-slate-200 bg-[#fcfbf8] p-5 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.16)]"
-                  >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold leading-relaxed text-slate-900">
-                          {task.title}
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                          <span
-                            className={`rounded-full px-2.5 py-1 font-bold ${
-                              task.priority === "HIGH"
-                                ? "bg-red-100 text-red-700"
-                                : task.priority === "MEDIUM"
-                                  ? "bg-orange-100 text-orange-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {task.priority}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-1 font-bold ${
-                              task.status === "done"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : task.status === "in_progress"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {task.status.replace("_", " ")}
-                          </span>
-                          <span className="text-slate-500">
-                            @{task.assignee?.trim() || "Unassigned"}
-                          </span>
-                          {task.dueDate ? (
-                            <span className="text-slate-500">
-                              Due {new Date(task.dueDate).toLocaleDateString()}
-                            </span>
-                          ) : null}
-                          <span className="text-slate-400">
-                            {taskComments.length} comment{taskComments.length === 1 ? "" : "s"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <select
-                          value={task.status}
-                          onChange={(event) =>
-                            void onUpdateActionTask(task.id, {
-                              status: event.target.value as ActionTask["status"],
-                            })
-                          }
-                          disabled={actionTaskBusyKey === `update:${task.id}`}
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="open">Open</option>
-                          <option value="in_progress">In Progress</option>
-                          <option value="done">Done</option>
-                        </select>
-                        <input
-                          type="text"
-                          defaultValue={task.assignee || ""}
-                          placeholder="Assignee"
-                          onBlur={(event) =>
-                            void onUpdateActionTask(task.id, {
-                              assignee: event.target.value,
-                            })
-                          }
-                          disabled={actionTaskBusyKey === `update:${task.id}`}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <input
-                          type="date"
-                          defaultValue={task.dueDate ? task.dueDate.slice(0, 10) : ""}
-                          onBlur={(event) =>
-                            void onUpdateActionTask(task.id, {
-                              dueDate: event.target.value,
-                            })
-                          }
-                          disabled={actionTaskBusyKey === `update:${task.id}`}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void onDeleteActionTask(task.id)}
-                          disabled={actionTaskBusyKey === `delete:${task.id}`}
-                          className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
-                      {taskComments.length ? (
-                        <div className="space-y-2">
-                          {taskComments.map((comment) => (
-                            <div
-                              key={comment.id}
-                              className="rounded-[18px] border border-slate-200 bg-white px-4 py-3"
-                            >
-                              <p className="text-sm leading-6 text-slate-700">{comment.content}</p>
-                              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                {comment.user?.name?.trim() ||
-                                  comment.user?.email ||
-                                  "Comment"}{" "}
-                                · {new Date(comment.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          type="text"
-                          value={draft}
-                          onChange={(event) =>
-                            onTaskCommentDraftChange(task.id, event.target.value)
-                          }
-                          placeholder="Add a comment"
-                          className="min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void onCreateTaskComment({
-                              taskId: task.id,
-                              content: draft,
-                            })
-                          }
-                          disabled={!draft.trim() || commentBusyKey === commentKey}
-                          className="cursor-pointer rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {commentBusyKey === commentKey ? "Adding..." : "Add Comment"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="rounded-[24px] border border-white/80 bg-white/88 p-5 text-sm text-slate-400 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.2)]">
-                No managed tasks yet. Track an AI action item or add one manually.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
-  );
-});
 
 type HistoryFiltersProps = {
   initialSearchQuery: string;
@@ -2170,6 +1161,8 @@ const HistoryRow = memo(function HistoryRow({
 
 type HistorySurfaceProps = {
   isActive: boolean;
+  activeWorkspaceId: string | null;
+  activeWorkspace: ActiveWorkspaceDetails | null;
   initialProjectFilter: string;
   statusOptions: Array<{ id: string; label: string }>;
   templateOptions: Array<{ id: string; label: string }>;
@@ -2185,6 +1178,8 @@ type HistorySurfaceProps = {
 
 const HistorySurface = memo(function HistorySurface({
   isActive,
+  activeWorkspaceId,
+  activeWorkspace,
   initialProjectFilter,
   statusOptions,
   templateOptions,
@@ -2210,6 +1205,9 @@ const HistorySurface = memo(function HistorySurface({
   }, [initialProjectFilter]);
 
   const pinnedProjectFilter = initialProjectFilter !== "all" ? initialProjectFilter : "all";
+  const activeWorkspaceLabel = activeWorkspace
+    ? `${activeWorkspace.name}${activeWorkspace.isPersonal ? " (Personal)" : ""}`
+    : "this workspace";
   const hasActiveFilters =
     historySearchQuery.trim().length > 0 ||
     historyStatusFilter !== "all" ||
@@ -2240,12 +1238,13 @@ const HistorySurface = memo(function HistorySurface({
   }, []);
 
   const loadHistoryItems = useCallback(async () => {
-    if (!isActive) {
+    if (!isActive || !activeWorkspaceId) {
       return;
     }
 
     const trimmedQuery = historySearchQuery.trim();
     const cacheKey = buildHistoryCacheKey({
+      workspaceId: activeWorkspaceId,
       query: trimmedQuery,
       status: historyStatusFilter,
       template: historyTemplateFilter,
@@ -2337,6 +1336,7 @@ const HistorySurface = memo(function HistorySurface({
     historyProjectFilter,
     historyStatusFilter,
     historyTemplateFilter,
+    activeWorkspaceId,
     isActive,
   ]);
 
@@ -2460,7 +1460,9 @@ const HistorySurface = memo(function HistorySurface({
       </div>
 
       {!initialHistoryLoaded || (historyLoading && historyItems.length === 0) ? (
-        <p className="mt-6 text-center text-sm text-slate-400">Loading...</p>
+        <p className="mt-6 text-center text-sm text-slate-400">
+          Loading history for {activeWorkspaceLabel}...
+        </p>
       ) : historyItems.length === 0 ? (
         <div className="mt-6 rounded-[22px] border border-dashed border-slate-200 bg-[#fcfbf8] px-6 py-10 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
@@ -2484,7 +1486,7 @@ const HistorySurface = memo(function HistorySurface({
           <p className="mt-2 text-sm text-slate-500">
             {hasActiveFilters
               ? "Try clearing a filter or searching with a broader phrase."
-              : "Upload a recording from Overview to start building your workspace history."}
+              : `Upload a recording from Overview to start building history in ${activeWorkspaceLabel}.`}
           </p>
           {hasActiveFilters ? (
             <div className="mt-5 flex justify-center">
@@ -2625,6 +1627,10 @@ const AssistantRail = memo(function AssistantRail({
     );
   }
 
+  const activeWorkspaceLabel = activeWorkspace
+    ? `${activeWorkspace.name}${activeWorkspace.isPersonal ? " (Personal)" : ""}`
+    : "No workspace selected";
+
   return (
     <section className="flex h-full flex-col gap-4 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.28)]">
       <div className="rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
@@ -2664,15 +1670,10 @@ const AssistantRail = memo(function AssistantRail({
                   ? "Ask across this project"
                   : "Ask across the workspace"}
             </h3>
-            {localScope !== "transcript" ? (
-              <p className="mt-2 max-w-[18rem] truncate text-xs font-semibold text-slate-500">
-                Workspace:{" "}
-                <span className="text-slate-800">
-                  {activeWorkspace?.name || "No workspace selected"}
-                  {activeWorkspace?.isPersonal ? " (Personal)" : ""}
-                </span>
-              </p>
-            ) : null}
+            <p className="mt-2 max-w-[18rem] truncate text-xs font-semibold text-slate-500">
+              Current workspace:{" "}
+              <span className="text-slate-800">{activeWorkspaceLabel}</span>
+            </p>
           </div>
         </div>
 
@@ -2972,12 +1973,7 @@ export function TranscriptionClient({
     | "intelligence"
     | "operations"
     | "settings";
-  initialSettingsSection?:
-    | "workspace"
-    | "delivery"
-    | "integrations"
-    | "access"
-    | "personal";
+  initialSettingsSection?: SettingsSection;
   initialSettingsMode?: "workspace" | "personal";
   initialProjectFilter?: string;
 }) {
@@ -2987,6 +1983,9 @@ export function TranscriptionClient({
   const resultAreaRef = useRef<HTMLElement | null>(null);
   const shouldScrollToSummaryRef = useRef(false);
   const listRequestAbortRef = useRef<AbortController | null>(null);
+  const commentsRequestAbortControllersRef = useRef<Set<AbortController>>(new Set());
+  const tasksRequestAbortRef = useRef<AbortController | null>(null);
+  const assistantRequestAbortRef = useRef<AbortController | null>(null);
   const tipsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -2999,6 +1998,7 @@ export function TranscriptionClient({
   const [items, setItems] = useState<Transcription[]>([]);
   const [allItems, setAllItems] = useState<Transcription[]>([]);
   const [overviewServerLoading, setOverviewServerLoading] = useState(false);
+  const [workspaceSwitching, setWorkspaceSwitching] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debouncedSearchQuery = "";
@@ -3022,6 +2022,10 @@ export function TranscriptionClient({
   const [activeWorkspace, setActiveWorkspace] = useState<ActiveWorkspaceDetails | null>(
     null,
   );
+  const activeWorkspaceId = activeWorkspace?.id ?? null;
+  const activeWorkspaceLabel = activeWorkspace
+    ? `${activeWorkspace.name}${activeWorkspace.isPersonal ? " (Personal)" : ""}`
+    : "No workspace selected";
   const [currentUser, setCurrentUser] = useState<{
     id: string;
     email: string;
@@ -3237,17 +2241,11 @@ export function TranscriptionClient({
   );
   const [projectInsightFilter, setProjectInsightFilter] = useState("active");
   const [workspaceInsightFilter, setWorkspaceInsightFilter] = useState("active");
-  const [workspaceSurface, setWorkspaceSurface] = useState<
-    | "overview"
-    | "upload"
-    | "transcriptions"
-    | "intelligence"
-    | "operations"
-    | "settings"
-  >(initialSurface);
-  const [settingsSection, setSettingsSection] = useState<
-    "workspace" | "delivery" | "integrations" | "access" | "personal"
-  >(initialSettingsSection);
+  const [workspaceSurface, setWorkspaceSurface] =
+    useState<DashboardSurface>(initialSurface);
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>(initialSettingsSection);
+  const lastWorkspaceIdRef = useRef<string | null>(null);
 
   const templateOptions = [
     ...builtInTemplates,
@@ -3333,6 +2331,65 @@ export function TranscriptionClient({
   useEffect(() => {
     setProjectFilter(initialProjectFilter || "all");
   }, [initialProjectFilter]);
+
+  useEffect(() => {
+    function applySurfaceFromPath() {
+      const nextPath = window.location.pathname;
+      if (nextPath === "/dashboard/transcriptions") {
+        setWorkspaceSurface("transcriptions");
+        setProjectFilter(new URLSearchParams(window.location.search).get("projectId") || "all");
+        return;
+      }
+      if (nextPath === "/dashboard/settings") {
+        const section = new URLSearchParams(window.location.search).get("section");
+        setWorkspaceSurface("settings");
+        setSettingsSection(
+          section === "workspace" ||
+            section === "delivery" ||
+            section === "integrations" ||
+            section === "access" ||
+            section === "personal"
+            ? section
+            : "personal",
+        );
+        return;
+      }
+      if (nextPath === "/dashboard") {
+        setWorkspaceSurface("overview");
+        setProjectFilter("all");
+      }
+    }
+
+    function handleSurfaceNavigation(event: Event) {
+      const detail = (event as CustomEvent<{
+        surface?: DashboardSurface;
+        settingsSection?: SettingsSection;
+        projectFilter?: string;
+      }>).detail;
+
+      if (!detail?.surface) {
+        return;
+      }
+
+      setWorkspaceSurface(detail.surface);
+      if (detail.settingsSection) {
+        setSettingsSection(detail.settingsSection);
+      }
+      if (typeof detail.projectFilter === "string") {
+        setProjectFilter(detail.projectFilter);
+      }
+    }
+
+    window.addEventListener("voxly:navigate-dashboard-surface", handleSurfaceNavigation);
+    window.addEventListener("popstate", applySurfaceFromPath);
+    return () => {
+      window.removeEventListener(
+        "voxly:navigate-dashboard-surface",
+        handleSurfaceNavigation,
+      );
+      window.removeEventListener("popstate", applySurfaceFromPath);
+    };
+  }, []);
   const isDev = process.env.NODE_ENV !== "production";
 
   const sortedItems = useMemo(() => {
@@ -3383,8 +2440,8 @@ export function TranscriptionClient({
     focusedSummary && processingIds[focusedSummary.id]
   ) || focusedSummary?.status === "processing";
   const canProcessFocusedSummary = !!focusedSummary && !isFocusedSummaryProcessing;
-  const isUploadSurfaceVisible =
-    workspaceSurface === "upload" || workspaceSurface === "overview";
+  const isOverviewDataResolving =
+    workspaceSurface === "overview" && (workspaceSwitching || overviewServerLoading);
   const hasProjectScopedHistoryView =
     workspaceSurface === "transcriptions" && projectFilter !== "all";
   const currentRecordingText = useMemo(() => {
@@ -3659,6 +2716,7 @@ export function TranscriptionClient({
     const showLoading = options?.showLoading ?? true;
     const trimmedQuery = debouncedSearchQuery.trim();
     const cacheKey = buildTranscriptionsCacheKey({
+      workspaceId: activeWorkspaceId,
       query: trimmedQuery,
       status: statusFilter,
       template: templateFilter,
@@ -3676,6 +2734,7 @@ export function TranscriptionClient({
           return Array.from(merged.values());
         });
         setOverviewServerLoading(false);
+        setWorkspaceSwitching(false);
         return cachedItems;
       }
     }
@@ -3727,12 +2786,14 @@ export function TranscriptionClient({
         }
         return Array.from(merged.values());
       });
+      setWorkspaceSwitching(false);
       return nextItems;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         return null;
       }
       setError(err instanceof Error ? err.message : "Failed to load data");
+      setWorkspaceSwitching(false);
       return null;
     } finally {
       if (listRequestAbortRef.current === abortController) {
@@ -3742,7 +2803,7 @@ export function TranscriptionClient({
         setOverviewServerLoading(false);
       }
     }
-  }, [debouncedSearchQuery, statusFilter, templateFilter, projectFilter]);
+  }, [activeWorkspaceId, debouncedSearchQuery, statusFilter, templateFilter, projectFilter]);
 
   async function loadTranscriptionById(id: string) {
     try {
@@ -3767,9 +2828,10 @@ export function TranscriptionClient({
   }
 
   async function loadBilling(options?: { force?: boolean }) {
+    const cacheKey = buildScopedCacheKey(BILLING_CACHE_KEY, activeWorkspaceId);
     const cachedBilling = options?.force
       ? null
-      : readSessionCache<BillingInfo | null>(BILLING_CACHE_KEY);
+      : readSessionCache<BillingInfo | null>(cacheKey);
     if (cachedBilling !== null) {
       setBilling(cachedBilling);
       return;
@@ -3784,7 +2846,7 @@ export function TranscriptionClient({
 
       const nextBilling = payload.billing || null;
       setBilling(nextBilling);
-      writeSessionCache(BILLING_CACHE_KEY, nextBilling);
+      writeSessionCache(cacheKey, nextBilling);
     } catch (err) {
       setBilling(null);
       const message =
@@ -3797,7 +2859,8 @@ export function TranscriptionClient({
   }
 
   async function loadTemplates() {
-    const cachedTemplates = readSessionCache<SummaryTemplate[]>(TEMPLATES_CACHE_KEY);
+    const cacheKey = buildScopedCacheKey(TEMPLATES_CACHE_KEY, activeWorkspaceId);
+    const cachedTemplates = readSessionCache<SummaryTemplate[]>(cacheKey);
     if (cachedTemplates) {
       setCustomTemplates(cachedTemplates);
       setTemplatesLoading(false);
@@ -3814,7 +2877,7 @@ export function TranscriptionClient({
 
       const nextTemplates = payload.templates || [];
       setCustomTemplates(nextTemplates);
-      writeSessionCache(TEMPLATES_CACHE_KEY, nextTemplates);
+      writeSessionCache(cacheKey, nextTemplates);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load templates");
     } finally {
@@ -3823,9 +2886,10 @@ export function TranscriptionClient({
   }
 
   async function loadProjects(options?: { force?: boolean }) {
+    const cacheKey = buildScopedCacheKey(PROJECTS_CACHE_KEY, activeWorkspaceId);
     const cachedProjects = options?.force
       ? null
-      : readSessionCache<Project[]>(PROJECTS_CACHE_KEY);
+      : readSessionCache<Project[]>(cacheKey);
     if (cachedProjects) {
       setProjects(cachedProjects);
       setProjectsLoading(false);
@@ -3842,7 +2906,7 @@ export function TranscriptionClient({
 
       const nextProjects = payload.projects || [];
       setProjects(nextProjects);
-      writeSessionCache(PROJECTS_CACHE_KEY, nextProjects);
+      writeSessionCache(cacheKey, nextProjects);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load projects");
     } finally {
@@ -3851,14 +2915,6 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaces() {
-    const cachedPayload = readSessionCache<WorkspacesResponse>(WORKSPACES_CACHE_KEY);
-    if (cachedPayload) {
-      setActiveWorkspace(cachedPayload.activeWorkspace || null);
-      setCurrentUser(cachedPayload.currentUser || null);
-      setWorkspaceDraftName(cachedPayload.activeWorkspace?.name || "");
-      return;
-    }
-
     try {
       const res = await fetch("/api/workspaces");
       const payload = (await res.json()) as WorkspacesResponse;
@@ -3869,15 +2925,68 @@ export function TranscriptionClient({
       setActiveWorkspace(payload.activeWorkspace || null);
       setCurrentUser(payload.currentUser || null);
       setWorkspaceDraftName(payload.activeWorkspace?.name || "");
-      writeSessionCache(WORKSPACES_CACHE_KEY, payload);
+      if (!payload.activeWorkspace) {
+        setWorkspaceSwitching(false);
+        setOverviewServerLoading(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load workspaces");
+      setWorkspaceSwitching(false);
     }
   }
 
+  function resetWorkspaceScopedState() {
+    setWorkspaceSwitching(true);
+    listRequestAbortRef.current?.abort();
+    commentsRequestAbortControllersRef.current.forEach((controller) =>
+      controller.abort(),
+    );
+    tasksRequestAbortRef.current?.abort();
+    assistantRequestAbortRef.current?.abort();
+    listRequestAbortRef.current = null;
+    commentsRequestAbortControllersRef.current.clear();
+    tasksRequestAbortRef.current = null;
+    assistantRequestAbortRef.current = null;
+    setItems([]);
+    setAllItems([]);
+    setFocusedSummaryId(null);
+    setProjectFilter("all");
+    setUploadProjectId("none");
+    setProjects([]);
+    setCustomTemplates([]);
+    setBilling(null);
+    setActionTasksByTranscription({});
+    setWorkspaceTasks([]);
+    setWorkspaceMembers([]);
+    setWorkspaceInvites([]);
+    setWorkspaceActivity([]);
+    setSavedProjectInsights([]);
+    setSavedWorkspaceInsights([]);
+    setSelectedProjectInsightId(null);
+    setSelectedWorkspaceInsightId(null);
+    setIntelligenceProjectId("all");
+    setWorkspaceIntelligenceProjectIds([]);
+    setAssistantProjectId("all");
+    setAssistantWorkspaceProjectIds([]);
+    setAssistantSummary(null);
+    setAssistantMessages(defaultAssistantMessages);
+    setProcessingIds({});
+    setTaskCommentsById({});
+    setProjectInsightCommentsById({});
+    setWorkspaceInsightCommentsById({});
+    setError(null);
+    setProjectsLoading(true);
+    setTemplatesLoading(true);
+    setWorkspaceTasksLoading(true);
+    setWorkspacePeopleLoading(true);
+    setWorkspaceActivityLoading(true);
+    setOverviewServerLoading(true);
+  }
+
   async function loadWorkspaceDigestSettings() {
+    const cacheKey = buildScopedCacheKey(WORKSPACE_DIGEST_CACHE_KEY, activeWorkspaceId);
     const cachedSettings = readSessionCache<WorkspaceDigestSettings>(
-      WORKSPACE_DIGEST_CACHE_KEY,
+      cacheKey,
     );
     if (cachedSettings) {
       setWorkspaceDigestSettings(cachedSettings);
@@ -3914,7 +3023,7 @@ export function TranscriptionClient({
       setWorkspaceDigestSendEmail(payload.settings.sendEmail);
       setWorkspaceDigestSendSlack(payload.settings.sendSlack);
       setWorkspaceDigestSlackDestinationId(payload.settings.slackDestinationId || "default");
-      writeSessionCache(WORKSPACE_DIGEST_CACHE_KEY, payload.settings);
+      writeSessionCache(cacheKey, payload.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load digest settings");
     } finally {
@@ -3923,8 +3032,9 @@ export function TranscriptionClient({
   }
 
   async function loadReportTemplates() {
+    const cacheKey = buildScopedCacheKey(REPORT_TEMPLATES_CACHE_KEY, activeWorkspaceId);
     const cachedTemplates = readSessionCache<RecurringReportTemplate[]>(
-      REPORT_TEMPLATES_CACHE_KEY,
+      cacheKey,
     );
     if (cachedTemplates) {
       setReportTemplates(cachedTemplates);
@@ -3942,7 +3052,7 @@ export function TranscriptionClient({
 
       const nextTemplates = payload.templates || [];
       setReportTemplates(nextTemplates);
-      writeSessionCache(REPORT_TEMPLATES_CACHE_KEY, nextTemplates);
+      writeSessionCache(cacheKey, nextTemplates);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load report templates");
     } finally {
@@ -4102,8 +3212,9 @@ export function TranscriptionClient({
   }, []);
 
   async function loadWorkspaceSlackSettings() {
+    const cacheKey = buildScopedCacheKey(WORKSPACE_SLACK_CACHE_KEY, activeWorkspaceId);
     const cachedSettings = readSessionCache<WorkspaceSlackSettings>(
-      WORKSPACE_SLACK_CACHE_KEY,
+      cacheKey,
     );
     if (cachedSettings) {
       setWorkspaceSlackSettings(cachedSettings);
@@ -4126,7 +3237,7 @@ export function TranscriptionClient({
       setWorkspaceSlackEnabled(payload.settings.enabled);
       setWorkspaceSlackSendDigests(payload.settings.sendDigests);
       setWorkspaceSlackWebhookDraft("");
-      writeSessionCache(WORKSPACE_SLACK_CACHE_KEY, payload.settings);
+      writeSessionCache(cacheKey, payload.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Slack settings");
     } finally {
@@ -4135,8 +3246,12 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceSlackDestinations() {
-    const cachedDestinations = readSessionCache<WorkspaceSlackDestination[]>(
+    const cacheKey = buildScopedCacheKey(
       WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY,
+      activeWorkspaceId,
+    );
+    const cachedDestinations = readSessionCache<WorkspaceSlackDestination[]>(
+      cacheKey,
     );
     if (cachedDestinations) {
       setWorkspaceSlackDestinations(cachedDestinations);
@@ -4152,7 +3267,7 @@ export function TranscriptionClient({
 
       const nextDestinations = payload.destinations || [];
       setWorkspaceSlackDestinations(nextDestinations);
-      writeSessionCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, nextDestinations);
+      writeSessionCache(cacheKey, nextDestinations);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Slack destinations");
     }
@@ -4194,8 +3309,9 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceNotionSettings() {
+    const cacheKey = buildScopedCacheKey(WORKSPACE_NOTION_CACHE_KEY, activeWorkspaceId);
     const cachedSettings = readSessionCache<WorkspaceNotionSettings>(
-      WORKSPACE_NOTION_CACHE_KEY,
+      cacheKey,
     );
     if (cachedSettings) {
       setWorkspaceNotionSettings(cachedSettings);
@@ -4218,7 +3334,7 @@ export function TranscriptionClient({
       setWorkspaceNotionEnabled(payload.settings.enabled);
       setWorkspaceNotionTokenDraft("");
       setWorkspaceNotionParentPageDraft(payload.settings.parentPageId || "");
-      writeSessionCache(WORKSPACE_NOTION_CACHE_KEY, payload.settings);
+      writeSessionCache(cacheKey, payload.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Notion settings");
     } finally {
@@ -4227,10 +3343,11 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspacePeople() {
+    const cacheKey = buildScopedCacheKey(WORKSPACE_PEOPLE_CACHE_KEY, activeWorkspaceId);
     const cachedPeople = readSessionCache<{
       members: WorkspaceMemberEntry[];
       invites: WorkspaceInviteEntry[];
-    }>(WORKSPACE_PEOPLE_CACHE_KEY);
+    }>(cacheKey);
     if (cachedPeople) {
       setWorkspaceMembers(cachedPeople.members);
       setWorkspaceInvites(cachedPeople.invites);
@@ -4261,7 +3378,7 @@ export function TranscriptionClient({
       };
       setWorkspaceMembers(nextPeople.members);
       setWorkspaceInvites(nextPeople.invites);
-      writeSessionCache(WORKSPACE_PEOPLE_CACHE_KEY, nextPeople);
+      writeSessionCache(cacheKey, nextPeople);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load workspace people",
@@ -4272,8 +3389,9 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceActivity() {
+    const cacheKey = buildScopedCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
     const cachedActivity = readSessionCache<WorkspaceActivityEntry[]>(
-      WORKSPACE_ACTIVITY_CACHE_KEY,
+      cacheKey,
     );
     if (cachedActivity) {
       setWorkspaceActivity(cachedActivity);
@@ -4291,7 +3409,7 @@ export function TranscriptionClient({
 
       const nextActivity = payload.activity || [];
       setWorkspaceActivity(nextActivity);
-      writeSessionCache(WORKSPACE_ACTIVITY_CACHE_KEY, nextActivity);
+      writeSessionCache(cacheKey, nextActivity);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load workspace activity",
@@ -4302,7 +3420,8 @@ export function TranscriptionClient({
   }
 
   async function loadWorkspaceTasks() {
-    const cachedTasks = readSessionCache<ActionTask[]>(WORKSPACE_TASKS_CACHE_KEY);
+    const cacheKey = buildScopedCacheKey(WORKSPACE_TASKS_CACHE_KEY, activeWorkspaceId);
+    const cachedTasks = readSessionCache<ActionTask[]>(cacheKey);
     if (cachedTasks) {
       setWorkspaceTasks(cachedTasks);
       setWorkspaceTasksLoading(false);
@@ -4319,7 +3438,7 @@ export function TranscriptionClient({
 
       const nextTasks = payload.tasks || [];
       setWorkspaceTasks(nextTasks);
-      writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, nextTasks);
+      writeSessionCache(cacheKey, nextTasks);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load workspace tasks");
     } finally {
@@ -4389,8 +3508,39 @@ export function TranscriptionClient({
   }
 
   useEffect(() => {
+    function handleWorkspaceSwitched() {
+      resetWorkspaceScopedState();
+      void loadWorkspaces();
+    }
+
+    window.addEventListener("voxly:workspace-switched", handleWorkspaceSwitched);
+    return () => {
+      window.removeEventListener("voxly:workspace-switched", handleWorkspaceSwitched);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    if (
+      lastWorkspaceIdRef.current &&
+      lastWorkspaceIdRef.current !== activeWorkspaceId
+    ) {
+      resetWorkspaceScopedState();
+    }
+
+    lastWorkspaceIdRef.current = activeWorkspaceId;
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
     void loadItems();
-  }, [loadItems]);
+  }, [activeWorkspaceId, loadItems]);
 
   useEffect(() => {
     if (!projects.length) {
@@ -4444,14 +3594,23 @@ export function TranscriptionClient({
   }, [intelligenceProjectId, intelligenceScope, loadProjectDigestSettings]);
 
   useEffect(() => {
-    void loadBilling();
-    void loadTemplates();
-    void loadProjects();
     void loadWorkspaces();
   }, []);
 
   useEffect(() => {
-    if (!isSettingsSurface) {
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    void loadBilling();
+    void loadTemplates();
+    void loadProjects();
+    // Workspace-scoped loaders intentionally rerun only when the active workspace changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!isSettingsSurface || !activeWorkspaceId) {
       return;
     }
 
@@ -4479,7 +3638,10 @@ export function TranscriptionClient({
     if (settingsSection === "personal") {
       void loadNotificationPreferences();
     }
+    // Settings loaders intentionally rerun only for workspace/section changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    activeWorkspaceId,
     isSettingsSurface,
     settingsSection,
     loadReportRunSummary,
@@ -4709,15 +3871,26 @@ export function TranscriptionClient({
     }
   }
 
-  async function loadAssistantMessages(transcriptionId: string) {
+  const loadAssistantMessages = useCallback(async (transcriptionId: string) => {
+    const requestWorkspaceId = activeWorkspaceId;
+    assistantRequestAbortRef.current?.abort();
+    const abortController = new AbortController();
+    assistantRequestAbortRef.current = abortController;
     setAssistantHistoryLoading(true);
     setAssistantError(null);
 
     try {
       const res = await fetch(
         `/api/assistant/chat?transcriptionId=${encodeURIComponent(transcriptionId)}`,
+        { signal: abortController.signal },
       );
       const payload = await res.json().catch(() => ({}));
+      if (
+        assistantRequestAbortRef.current !== abortController ||
+        requestWorkspaceId !== activeWorkspaceId
+      ) {
+        return;
+      }
       if (!res.ok) {
         throw new Error(payload?.error || "Failed to load assistant history");
       }
@@ -4731,14 +3904,20 @@ export function TranscriptionClient({
           : defaultAssistantMessages,
       );
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
       setAssistantMessages(defaultAssistantMessages);
       setAssistantError(
         err instanceof Error ? err.message : "Failed to load assistant history.",
       );
     } finally {
-      setAssistantHistoryLoading(false);
+      if (assistantRequestAbortRef.current === abortController) {
+        assistantRequestAbortRef.current = null;
+        setAssistantHistoryLoading(false);
+      }
     }
-  }
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     setAssistantSummary(null);
@@ -4754,7 +3933,7 @@ export function TranscriptionClient({
     }
 
     void loadAssistantMessages(activeTranscriptionId);
-  }, [activeTranscriptionId, assistantScope]);
+  }, [activeTranscriptionId, assistantScope, loadAssistantMessages]);
 
   useEffect(() => {
     if (focusedSummary?.projectId && assistantProjectId === "all") {
@@ -4768,6 +3947,7 @@ export function TranscriptionClient({
     projectInsightId?: string;
     workspaceInsightId?: string;
   }) => {
+    const requestWorkspaceId = activeWorkspaceId;
     const params = new URLSearchParams();
     if (input.transcriptionId) {
       params.set("transcriptionId", input.transcriptionId);
@@ -4782,9 +3962,19 @@ export function TranscriptionClient({
       params.set("workspaceInsightId", input.workspaceInsightId);
     }
 
+    const abortController = new AbortController();
+    commentsRequestAbortControllersRef.current.add(abortController);
     try {
-      const res = await fetch(`/api/comments?${params.toString()}`);
+      const res = await fetch(`/api/comments?${params.toString()}`, {
+        signal: abortController.signal,
+      });
       const payload = (await res.json()) as CommentsResponse;
+      if (
+        !commentsRequestAbortControllersRef.current.has(abortController) ||
+        requestWorkspaceId !== activeWorkspaceId
+      ) {
+        return;
+      }
       if (!res.ok) {
         throw new Error(payload?.error || "Failed to load comments");
       }
@@ -4814,16 +4004,32 @@ export function TranscriptionClient({
         }));
       }
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to load comments");
+    } finally {
+      commentsRequestAbortControllersRef.current.delete(abortController);
     }
-  }, []);
+  }, [activeWorkspaceId]);
 
   const loadActionTasks = useCallback(async (transcriptionId: string) => {
+    const requestWorkspaceId = activeWorkspaceId;
     try {
+      tasksRequestAbortRef.current?.abort();
+      const abortController = new AbortController();
+      tasksRequestAbortRef.current = abortController;
       const res = await fetch(
         `/api/tasks?transcriptionId=${encodeURIComponent(transcriptionId)}`,
+        { signal: abortController.signal },
       );
       const payload = (await res.json().catch(() => ({}))) as TasksResponse;
+      if (
+        tasksRequestAbortRef.current !== abortController ||
+        requestWorkspaceId !== activeWorkspaceId
+      ) {
+        return;
+      }
       if (!res.ok) {
         throw new Error(payload?.error || "Failed to load tasks");
       }
@@ -4835,10 +4041,16 @@ export function TranscriptionClient({
       await Promise.all(
         (payload.tasks || []).map((task) => loadComments({ taskId: task.id })),
       );
+      if (tasksRequestAbortRef.current === abortController) {
+        tasksRequestAbortRef.current = null;
+      }
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to load tasks");
     }
-  }, [loadComments]);
+  }, [activeWorkspaceId, loadComments]);
 
   useEffect(() => {
     if (!activeTranscriptionId) {
@@ -4938,7 +4150,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Upload failed");
       }
       clearTranscriptionCaches();
-      clearSessionCacheKey(BILLING_CACHE_KEY);
+      clearScopedCache(BILLING_CACHE_KEY, activeWorkspaceId);
       const optimisticItem: Transcription | null = payload?.transcriptionId
         ? {
             id: payload.transcriptionId,
@@ -5074,7 +4286,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Processing failed");
       }
       clearTranscriptionCaches();
-      clearSessionCacheKey(BILLING_CACHE_KEY);
+      clearScopedCache(BILLING_CACHE_KEY, activeWorkspaceId);
       let currentItem = await loadTranscriptionById(id);
       await loadBilling({ force: true });
 
@@ -5394,7 +4606,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to create template");
       }
 
-      clearSessionCacheKey(TEMPLATES_CACHE_KEY);
+      clearScopedCache(TEMPLATES_CACHE_KEY, activeWorkspaceId);
       await loadTemplates();
       if (payload.template?.id) {
         setUploadTemplate(`custom:${payload.template.id}`);
@@ -5429,7 +4641,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to create project");
       }
 
-      clearSessionCacheKey(PROJECTS_CACHE_KEY);
+      clearScopedCache(PROJECTS_CACHE_KEY, activeWorkspaceId);
       clearSessionCacheKey(WORKSPACES_CACHE_KEY);
       await loadProjects({ force: true });
       if (payload.project?.id) {
@@ -5498,8 +4710,8 @@ export function TranscriptionClient({
       setInviteEmail("");
       setInviteRole("member");
       setWorkspaceInvites((prev) => [payload.invite!, ...prev]);
-      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_PEOPLE_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Invitation sent.");
     } catch (err) {
@@ -5533,7 +4745,7 @@ export function TranscriptionClient({
       setActiveWorkspace(payload.workspace);
       setWorkspaceDraftName(payload.workspace.name);
       clearSessionCacheKey(WORKSPACES_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Workspace updated.");
     } catch (err) {
@@ -5586,8 +4798,11 @@ export function TranscriptionClient({
       setWorkspaceDigestRecipientScope(payload.settings.recipientScope);
       setWorkspaceDigestSendEmail(payload.settings.sendEmail);
       setWorkspaceDigestSendSlack(payload.settings.sendSlack);
-      writeSessionCache(WORKSPACE_DIGEST_CACHE_KEY, payload.settings);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      writeSessionCache(
+        buildScopedCacheKey(WORKSPACE_DIGEST_CACHE_KEY, activeWorkspaceId),
+        payload.settings,
+      );
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Workspace digest settings updated.");
     } catch (err) {
@@ -5821,8 +5036,8 @@ export function TranscriptionClient({
       }
 
       setReportTemplates((prev) => [payload.template as RecurringReportTemplate, ...prev]);
-      clearSessionCacheKey(REPORT_TEMPLATES_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(REPORT_TEMPLATES_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       if (targetScope === "workspace") {
         setWorkspaceDigestTemplateName("");
       } else {
@@ -5851,8 +5066,8 @@ export function TranscriptionClient({
       }
 
       setReportTemplates((prev) => prev.filter((template) => template.id !== templateId));
-      clearSessionCacheKey(REPORT_TEMPLATES_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(REPORT_TEMPLATES_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Report template deleted.");
     } catch (err) {
@@ -5887,12 +5102,15 @@ export function TranscriptionClient({
 
       setWorkspaceSlackDestinations((prev) => {
         const next = [payload.destination as WorkspaceSlackDestination, ...prev];
-        writeSessionCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, next);
+        writeSessionCache(
+          buildScopedCacheKey(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, activeWorkspaceId),
+          next,
+        );
         return next;
       });
       setWorkspaceSlackDestinationName("");
       setWorkspaceSlackDestinationWebhook("");
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack destination saved.");
     } catch (err) {
@@ -5918,7 +5136,10 @@ export function TranscriptionClient({
 
       setWorkspaceSlackDestinations((prev) => {
         const next = prev.filter((destination) => destination.id !== destinationId);
-        writeSessionCache(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, next);
+        writeSessionCache(
+          buildScopedCacheKey(WORKSPACE_SLACK_DESTINATIONS_CACHE_KEY, activeWorkspaceId),
+          next,
+        );
         return next;
       });
       if (workspaceDigestSlackDestinationId === destinationId) {
@@ -5927,7 +5148,7 @@ export function TranscriptionClient({
       if (projectDigestSlackDestinationId === destinationId) {
         setProjectDigestSlackDestinationId("default");
       }
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack destination deleted.");
     } catch (err) {
@@ -5963,8 +5184,11 @@ export function TranscriptionClient({
       setWorkspaceSlackEnabled(payload.settings.enabled);
       setWorkspaceSlackSendDigests(payload.settings.sendDigests);
       setWorkspaceSlackWebhookDraft("");
-      writeSessionCache(WORKSPACE_SLACK_CACHE_KEY, payload.settings);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      writeSessionCache(
+        buildScopedCacheKey(WORKSPACE_SLACK_CACHE_KEY, activeWorkspaceId),
+        payload.settings,
+      );
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack integration updated.");
     } catch (err) {
@@ -5989,9 +5213,12 @@ export function TranscriptionClient({
 
       if (payload.settings) {
         setWorkspaceSlackSettings(payload.settings);
-        writeSessionCache(WORKSPACE_SLACK_CACHE_KEY, payload.settings);
+        writeSessionCache(
+          buildScopedCacheKey(WORKSPACE_SLACK_CACHE_KEY, activeWorkspaceId),
+          payload.settings,
+        );
       }
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Slack test message sent.");
     } catch (err) {
@@ -6064,8 +5291,11 @@ export function TranscriptionClient({
       setWorkspaceNotionEnabled(payload.settings.enabled);
       setWorkspaceNotionTokenDraft("");
       setWorkspaceNotionParentPageDraft(payload.settings.parentPageId || "");
-      writeSessionCache(WORKSPACE_NOTION_CACHE_KEY, payload.settings);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      writeSessionCache(
+        buildScopedCacheKey(WORKSPACE_NOTION_CACHE_KEY, activeWorkspaceId),
+        payload.settings,
+      );
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Notion integration updated.");
     } catch (err) {
@@ -6090,8 +5320,11 @@ export function TranscriptionClient({
 
       setWorkspaceNotionSettings(payload.settings);
       setWorkspaceNotionEnabled(payload.settings.enabled);
-      writeSessionCache(WORKSPACE_NOTION_CACHE_KEY, payload.settings);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      writeSessionCache(
+        buildScopedCacheKey(WORKSPACE_NOTION_CACHE_KEY, activeWorkspaceId),
+        payload.settings,
+      );
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Notion connection verified.");
     } catch (err) {
@@ -6167,8 +5400,8 @@ export function TranscriptionClient({
       }
 
       setWorkspaceInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
-      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_PEOPLE_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to revoke invite");
@@ -6193,8 +5426,8 @@ export function TranscriptionClient({
       setWorkspaceInvites((prev) =>
         prev.map((invite) => (invite.id === inviteId ? payload.invite! : invite)),
       );
-      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_PEOPLE_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Invitation resent.");
     } catch (err) {
@@ -6227,8 +5460,8 @@ export function TranscriptionClient({
           member.id === memberId ? { ...member, role } : member,
         ),
       );
-      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_PEOPLE_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Member role updated.");
     } catch (err) {
@@ -6252,8 +5485,8 @@ export function TranscriptionClient({
       }
 
       setWorkspaceMembers((prev) => prev.filter((member) => member.id !== memberId));
-      clearSessionCacheKey(WORKSPACE_PEOPLE_CACHE_KEY);
-      clearSessionCacheKey(WORKSPACE_ACTIVITY_CACHE_KEY);
+      clearScopedCache(WORKSPACE_PEOPLE_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
       await loadWorkspaceActivity();
       showUploadStatusNotice("Member removed from workspace.");
     } catch (err) {
@@ -6336,8 +5569,8 @@ export function TranscriptionClient({
       setSavedWorkspaceInsights([]);
       setSelectedWorkspaceInsightId(null);
       clearTranscriptionCaches();
-      clearSessionCacheKey(PROJECTS_CACHE_KEY);
-      clearSessionCacheKey(BILLING_CACHE_KEY);
+      clearScopedCache(PROJECTS_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(BILLING_CACHE_KEY, activeWorkspaceId);
       clearWorkspaceAdminCaches();
       await Promise.all([
         loadWorkspaces(),
@@ -6402,7 +5635,7 @@ export function TranscriptionClient({
       }));
       setWorkspaceTasks((prev) => {
         const next = upsertTaskCollection(prev, payload.task!);
-        writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, next);
+        writeSessionCache(buildScopedCacheKey(WORKSPACE_TASKS_CACHE_KEY, activeWorkspaceId), next);
         return next;
       });
       showCopyStatus("Task saved.");
@@ -6439,7 +5672,7 @@ export function TranscriptionClient({
       }));
       setWorkspaceTasks((prev) => {
         const next = upsertTaskCollection(prev, payload.task!);
-        writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, next);
+        writeSessionCache(buildScopedCacheKey(WORKSPACE_TASKS_CACHE_KEY, activeWorkspaceId), next);
         return next;
       });
     } catch (err) {
@@ -6478,7 +5711,7 @@ export function TranscriptionClient({
       }));
       setWorkspaceTasks((prev) => {
         const next = prev.filter((task) => task.id !== taskId);
-        writeSessionCache(WORKSPACE_TASKS_CACHE_KEY, next);
+        writeSessionCache(buildScopedCacheKey(WORKSPACE_TASKS_CACHE_KEY, activeWorkspaceId), next);
         return next;
       });
     } catch (err) {
@@ -7290,6 +6523,17 @@ export function TranscriptionClient({
     ? ["workspace", "delivery", "integrations", "access"]
     : ["personal"];
   const currentSettingsMeta = settingsSectionMeta[settingsSection];
+  const showPersonalSettings =
+    workspaceSurface === "settings" && settingsSection === "personal";
+  const showWorkspaceSettings =
+    workspaceSurface === "settings" && settingsSection === "workspace";
+  const showDeliverySettings =
+    workspaceSurface === "settings" && settingsSection === "delivery";
+  const showIntegrationSettings =
+    workspaceSurface === "settings" && settingsSection === "integrations";
+  const showAccessSettings =
+    workspaceSurface === "settings" && settingsSection === "access";
+  const showOperationsSurface = workspaceSurface === "operations";
 
   return (
     <div className="relative">
@@ -7420,8 +6664,7 @@ export function TranscriptionClient({
                       Current Workspace
                     </p>
                     <div className="mt-1.5 rounded-[16px] border border-slate-200 bg-[#f8f8f5] px-4 py-2.5 text-sm font-medium text-slate-900">
-                      {activeWorkspace?.name || "No workspace selected"}
-                      {activeWorkspace?.isPersonal ? " (Personal)" : ""}
+                      {activeWorkspaceLabel}
                     </div>
                   </div>
                 ) : null}
@@ -7522,7 +6765,7 @@ export function TranscriptionClient({
           <div
             id="report-history"
             className={`rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
-              workspaceSurface === "operations" ? "" : "hidden"
+              showOperationsSurface ? "" : "hidden"
             }`}
           >
             <div className="flex items-center justify-between gap-3">
@@ -7804,13 +7047,8 @@ export function TranscriptionClient({
             </div>
           </div>
 
-          <div
-            className={`border-t border-slate-200 pt-6 ${
-              workspaceSurface === "settings" && settingsSection === "personal"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showPersonalSettings ? (
+          <div className="border-t border-slate-200 pt-6">
             <div className="max-w-5xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Notification Preferences
@@ -7820,7 +7058,8 @@ export function TranscriptionClient({
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 Choose how Voxly reaches you for mentions and digest emails across
-                your workspaces.
+                your workspaces. These preferences follow your user account, not a
+                single workspace.
               </p>
               {notificationPreferences ? (
                 <p className="mt-3 text-xs text-slate-500">
@@ -7892,22 +7131,21 @@ export function TranscriptionClient({
               </div>
             </form>
           </div>
+          ) : null}
 
-          <div
-            id="settings"
-            className={`pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "workspace"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showWorkspaceSettings ? (
+          <div id="settings" className="pt-2">
             <div className="max-w-5xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Workspace Settings
               </p>
               <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                {activeWorkspace?.name || "Current workspace"}
+                {activeWorkspaceLabel}
               </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                These settings apply only to the current workspace. Switch
+                workspaces from the Spaces area in the left sidebar.
+              </p>
             </div>
             <form onSubmit={handleRenameWorkspace} className="mt-6 max-w-5xl">
               <div>
@@ -7978,14 +7216,10 @@ export function TranscriptionClient({
               </p>
             ) : null}
           </div>
+          ) : null}
 
-          <div
-            className={`pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "delivery"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showDeliverySettings ? (
+          <div className="pt-2">
             <div className="max-w-5xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Recurring Report
@@ -8330,14 +7564,10 @@ export function TranscriptionClient({
               </p>
             ) : null}
           </div>
+          ) : null}
 
-          <div
-            className={`pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "delivery"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showDeliverySettings ? (
+          <div className="pt-2">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-2xl">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -8461,14 +7691,10 @@ export function TranscriptionClient({
               })}
             </div>
           </div>
+          ) : null}
 
-          <div
-            className={`pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "integrations"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showIntegrationSettings ? (
+          <div className="pt-2">
             <div className="max-w-5xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Slack
@@ -8477,7 +7703,8 @@ export function TranscriptionClient({
                 Workspace delivery
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Connect Slack so reports and saved insights can be shared outside Voxly.
+                Connect Slack for {activeWorkspaceLabel} so reports and saved insights
+                can be shared outside Voxly.
               </p>
               {workspaceSlackSettings ? (
                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
@@ -8590,14 +7817,10 @@ export function TranscriptionClient({
               </p>
             ) : null}
           </div>
+          ) : null}
 
-          <div
-            className={`pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "integrations"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showIntegrationSettings ? (
+          <div className="pt-2">
             <div className="max-w-5xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Notion
@@ -8606,7 +7829,8 @@ export function TranscriptionClient({
                 Workspace knowledge sync
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Connect Notion so saved insights can be published as pages instead of just exported files.
+                Connect Notion for {activeWorkspaceLabel} so saved insights can be
+                published as pages instead of just exported files.
               </p>
               {workspaceNotionSettings ? (
                 <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
@@ -8714,14 +7938,10 @@ export function TranscriptionClient({
               </p>
             ) : null}
           </div>
+          ) : null}
 
-          <div
-            className={`pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "access"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showAccessSettings ? (
+          <div className="pt-2">
             <div className="max-w-5xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Workspace Access
@@ -8730,7 +7950,8 @@ export function TranscriptionClient({
                 Members and invites
               </h2>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                Manage who can access this workspace, what role they have, and how ownership is handled.
+                Manage who can access {activeWorkspaceLabel}, what role they have,
+                and how ownership is handled.
               </p>
             </div>
             <form onSubmit={handleInviteWorkspaceMember} className="mt-6 max-w-5xl">
@@ -8739,7 +7960,7 @@ export function TranscriptionClient({
                   <div>
                     <p className="text-sm font-semibold text-slate-900">Invite teammate</p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Send a workspace invite and choose the initial role.
+                      Send an invite to {activeWorkspaceLabel} and choose the initial role.
                     </p>
                   </div>
                   <div className="flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-end">
@@ -8749,14 +7970,16 @@ export function TranscriptionClient({
                         value={inviteEmail}
                         onChange={(event) => setInviteEmail(event.target.value)}
                         placeholder="teammate@company.com"
-                        className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                        disabled={!activeWorkspace?.canManage || inviteBusy}
+                        className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                     </label>
                     <label className="sm:w-44">
                       <select
                         value={inviteRole}
                         onChange={(event) => setInviteRole(event.target.value)}
-                        className="w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
+                        disabled={!activeWorkspace?.canManage || inviteBusy}
+                        className="w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <option value="admin">Admin</option>
                         <option value="member">Member</option>
@@ -8765,7 +7988,9 @@ export function TranscriptionClient({
                     </label>
                     <button
                       type="submit"
-                      disabled={inviteBusy || !inviteEmail.trim()}
+                      disabled={
+                        inviteBusy || !inviteEmail.trim() || !activeWorkspace?.canManage
+                      }
                       className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {inviteBusy ? "Sending..." : "Send Invite"}
@@ -8774,15 +7999,16 @@ export function TranscriptionClient({
                 </div>
               </div>
             </form>
+            {!activeWorkspace?.canManage ? (
+              <p className="mt-3 max-w-5xl text-sm text-slate-600">
+                Only owners and admins can invite teammates to {activeWorkspaceLabel}.
+              </p>
+            ) : null}
           </div>
+          ) : null}
 
-          <div
-            className={`mt-8 max-w-5xl ${
-              workspaceSurface === "settings" && settingsSection === "access"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          {showAccessSettings ? (
+          <div className="mt-8 max-w-5xl">
             <div className="pt-2">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold text-slate-900">Active members</h3>
@@ -8790,7 +8016,9 @@ export function TranscriptionClient({
               </div>
               <div className="mt-4 space-y-4">
                 {workspacePeopleLoading ? (
-                  <p className="text-sm text-slate-500">Loading members...</p>
+                  <p className="text-sm text-slate-500">
+                    Loading members for {activeWorkspaceLabel}...
+                  </p>
                 ) : workspaceMembers.length ? (
                   workspaceMembers.map((member) => (
                     <div key={member.id} className="border-t border-slate-200 pt-4">
@@ -8818,7 +8046,11 @@ export function TranscriptionClient({
                                 event.target.value,
                               )
                             }
-                            disabled={memberBusyId === member.id || member.role === "owner"}
+                            disabled={
+                              memberBusyId === member.id ||
+                              member.role === "owner" ||
+                              !activeWorkspace?.canManage
+                            }
                             className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <option value="owner">Owner</option>
@@ -8829,7 +8061,11 @@ export function TranscriptionClient({
                           <button
                             type="button"
                             onClick={() => void handleRemoveWorkspaceMember(member.id)}
-                            disabled={memberBusyId === member.id || member.role === "owner"}
+                            disabled={
+                              memberBusyId === member.id ||
+                              member.role === "owner" ||
+                              !activeWorkspace?.canManage
+                            }
                             className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             Remove
@@ -8840,7 +8076,7 @@ export function TranscriptionClient({
                   ))
                 ) : (
                   <p className="text-sm text-slate-500">
-                    No teammates yet. Send the first invite above.
+                    No teammates in {activeWorkspaceLabel} yet.
                   </p>
                 )}
               </div>
@@ -8853,7 +8089,9 @@ export function TranscriptionClient({
               </div>
               <div className="mt-4 space-y-4">
                 {workspacePeopleLoading ? (
-                  <p className="text-sm text-slate-500">Loading invites...</p>
+                  <p className="text-sm text-slate-500">
+                    Loading invites for {activeWorkspaceLabel}...
+                  </p>
                 ) : workspaceInvites.length ? (
                   workspaceInvites.map((invite) => {
                     const isExpired = new Date(invite.expiresAt).getTime() < Date.now();
@@ -8890,7 +8128,7 @@ export function TranscriptionClient({
                             <button
                               type="button"
                               onClick={() => void handleResendInvite(invite.id)}
-                              disabled={inviteBusy}
+                              disabled={inviteBusy || !activeWorkspace?.canManage}
                               className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Resend
@@ -8898,7 +8136,7 @@ export function TranscriptionClient({
                             <button
                               type="button"
                               onClick={() => void handleRevokeInvite(invite.id)}
-                              disabled={inviteBusy}
+                              disabled={inviteBusy || !activeWorkspace?.canManage}
                               className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Revoke
@@ -8910,23 +8148,20 @@ export function TranscriptionClient({
                   })
                 ) : (
                   <p className="text-sm text-slate-500">
-                    No pending invites right now.
+                    No pending invites for {activeWorkspaceLabel} right now.
                   </p>
                 )}
               </div>
             </div>
           </div>
-          <div
-            className={`mt-8 max-w-5xl ${
-              workspaceSurface === "settings" && settingsSection === "access"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          ) : null}
+          {showAccessSettings ? (
+          <div className="mt-8 max-w-5xl">
             <div className="pt-2">
               <h3 className="text-sm font-semibold text-slate-900">Ownership</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Transfer workspace ownership before an owner steps away. Personal workspaces cannot be transferred.
+                Transfer ownership of {activeWorkspaceLabel} before an owner steps
+                away. Personal workspaces cannot be transferred.
               </p>
               {ownershipTransferBlockedByBilling ? (
                 <p className="mt-3 text-sm text-amber-800">
@@ -8969,7 +8204,8 @@ export function TranscriptionClient({
             <div className="pt-2">
               <h3 className="text-sm font-semibold text-slate-900">Leave workspace</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Non-owners can leave a shared workspace at any time. Owners must transfer ownership first.
+                Non-owners can leave {activeWorkspaceLabel} at any time. Owners
+                must transfer ownership first.
               </p>
               <div className="mt-4">
                 <button
@@ -8983,25 +8219,23 @@ export function TranscriptionClient({
               </div>
             </div>
           </div>
-          <div
-            className={`mt-8 max-w-5xl pt-2 ${
-              workspaceSurface === "settings" && settingsSection === "access"
-                ? ""
-                : "hidden"
-            }`}
-          >
+          ) : null}
+          {showAccessSettings ? (
+          <div className="mt-8 max-w-5xl pt-2">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900">Recent activity</h3>
                 <p className="mt-1 text-sm text-slate-600">
-                  Workspace access changes are logged here for accountability.
+                  Access changes for {activeWorkspaceLabel} are logged here for accountability.
                 </p>
               </div>
               <span className="text-sm text-slate-500">{workspaceActivity.length}</span>
             </div>
             <div className="mt-4 space-y-4">
               {workspaceActivityLoading ? (
-                <p className="text-sm text-slate-500">Loading activity...</p>
+                <p className="text-sm text-slate-500">
+                  Loading activity for {activeWorkspaceLabel}...
+                </p>
               ) : workspaceActivity.length ? (
                 workspaceActivity.map((entry) => (
                   <div key={entry.id} className="border-t border-slate-200 pt-4">
@@ -9026,15 +8260,17 @@ export function TranscriptionClient({
                 ))
               ) : (
                 <p className="text-sm text-slate-500">
-                  Activity will appear here as invites and membership changes happen.
+                  Activity for {activeWorkspaceLabel} will appear here as invites
+                  and membership changes happen.
                 </p>
               )}
             </div>
           </div>
+          ) : null}
           <div
             id="workspace-tasks"
             className={`mt-5 rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
-              workspaceSurface === "operations" ? "" : "hidden"
+              showOperationsSurface ? "" : "hidden"
             }`}
           >
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -10618,129 +9854,162 @@ export function TranscriptionClient({
             </div>
           </div>
         </section>
+        {isOverviewSurface ? (
+          <OverviewSurface
+            resultAreaRef={resultAreaRef}
+            isResolving={isOverviewDataResolving}
+            workspaceSwitching={workspaceSwitching}
+            activeWorkspace={activeWorkspace}
+            focusedSummary={focusedSummary}
+            overviewUploadPanelVersion={overviewUploadPanelVersion}
+            overviewUploadPanelStartExpanded={overviewUploadPanelStartExpanded}
+            uploadBodyProps={{
+              activeWorkspace,
+              fileInputId,
+              file,
+              onFileChange: (nextFile) => {
+                setFile(nextFile);
+                setEstimatedDurationSeconds(null);
+                if (nextFile) {
+                  void readMediaDuration(nextFile);
+                }
+              },
+              estimatedDurationSeconds,
+              isDev,
+              testDataLoading,
+              testDataStatus,
+              onLoadTestData: handleLoadTestData,
+              uploadTemplate,
+              onUploadTemplateChange: setUploadTemplate,
+              templateOptions,
+              templatesStatusText: templatesLoading
+                ? "Loading templates..."
+                : customTemplates.length
+                  ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
+                  : "No custom templates yet.",
+              templateBusy,
+              onCreateTemplate: handleCreateTemplate,
+              uploadProjectId,
+              onUploadProjectIdChange: setUploadProjectId,
+              projects,
+              projectsStatusText: projectsLoading
+                ? "Loading projects..."
+                : projects.length
+                  ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
+                  : "No projects yet.",
+              projectBusy,
+              onCreateProject: handleCreateProject,
+              onUpload: handleUpload,
+              uploading,
+              durationLoading,
+              hasEnoughEstimatedCredits,
+              estimatedCredits,
+              billing,
+            }}
+            currentRecordingProps={{
+              activeWorkspace,
+              focusedSummary,
+              displaySummary,
+              selectedProjectName,
+              currentRecordingText,
+              currentRecordingSnippet,
+              hasExpandableCurrentRecordingText,
+              focusedSummaryHiddenByFilters,
+              isFocusedSummaryProcessing,
+              canProcessFocusedSummary,
+              currentActionTasks,
+              activeTranscriptionId,
+              actionTaskBusyKey,
+              taskCommentsById,
+              taskCommentDrafts,
+              commentBusyKey,
+              detailsAutoOpenToken: overviewDetailsAutoOpenToken,
+              onProcess: handleProcess,
+              onCopySummary: () =>
+                void handleCopyText(
+                  "Summary",
+                  buildSummaryText(displaySummary || focusedSummary),
+                ),
+              onStartUpload: () => scrollToSection("upload"),
+              onCreateActionTask: handleCreateActionTask,
+              onUpdateActionTask: handleUpdateActionTask,
+              onDeleteActionTask: handleDeleteActionTask,
+              onTaskCommentDraftChange: (taskId, value) =>
+                setTaskCommentDrafts((prev) => ({ ...prev, [taskId]: value })),
+              onCreateTaskComment: (input) =>
+                handleCreateComment({ taskId: input.taskId, content: input.content }),
+            }}
+          />
+        ) : null}
+
         <section
           id="upload"
-          className={`${
-            isOverviewSurface
-              ? "border-t border-slate-200/80 px-5 py-5 sm:px-6"
-              : "rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] sm:p-7"
-          } ${
-            isUploadSurfaceVisible ? "" : "hidden"
+          className={`rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] sm:p-7 ${
+            workspaceSurface === "upload" ? "" : "hidden"
           }`}
         >
-          {workspaceSurface === "overview" ? (
-            <OverviewUploadSection
-              key={`${focusedSummary?.id || "no-focus"}:${overviewUploadPanelVersion}`}
-              hasFocusedSummary={!!focusedSummary}
-              startExpanded={overviewUploadPanelStartExpanded}
-              bodyProps={{
-                fileInputId,
-                file,
-                onFileChange: (nextFile) => {
-                  setFile(nextFile);
-                  setEstimatedDurationSeconds(null);
-                  if (nextFile) {
-                    void readMediaDuration(nextFile);
-                  }
-                },
-                estimatedDurationSeconds,
-                isDev,
-                testDataLoading,
-                testDataStatus,
-                onLoadTestData: handleLoadTestData,
-                uploadTemplate,
-                onUploadTemplateChange: setUploadTemplate,
-                templateOptions,
-                templatesStatusText: templatesLoading
-                  ? "Loading templates..."
-                  : customTemplates.length
-                    ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
-                    : "No custom templates yet.",
-                templateBusy,
-                onCreateTemplate: handleCreateTemplate,
-                uploadProjectId,
-                onUploadProjectIdChange: setUploadProjectId,
-                projects,
-                projectsStatusText: projectsLoading
-                  ? "Loading projects..."
-                  : projects.length
-                    ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
-                    : "No projects yet.",
-                projectBusy,
-                onCreateProject: handleCreateProject,
-                onUpload: handleUpload,
-                uploading,
-                durationLoading,
-                hasEnoughEstimatedCredits,
-                estimatedCredits,
-                billing,
-              }}
-            />
-          ) : (
-            <>
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="max-w-3xl">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
-                    Upload
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-[2rem]">
-                    Drop in a recording and let Voxly shape it.
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Choose a notes template, upload your file, and Voxly will turn
-                    the recording into a transcript, summary, and action-ready
-                    output.
-                  </p>
-                </div>
-              </div>
-              <UploadPanelBody
-                fileInputId={fileInputId}
-                file={file}
-                onFileChange={(nextFile) => {
-                  setFile(nextFile);
-                  setEstimatedDurationSeconds(null);
-                  if (nextFile) {
-                    void readMediaDuration(nextFile);
-                  }
-                }}
-                estimatedDurationSeconds={estimatedDurationSeconds}
-                isDev={isDev}
-                testDataLoading={testDataLoading}
-                testDataStatus={testDataStatus}
-                onLoadTestData={handleLoadTestData}
-                uploadTemplate={uploadTemplate}
-                onUploadTemplateChange={setUploadTemplate}
-                templateOptions={templateOptions}
-                templatesStatusText={
-                  templatesLoading
-                    ? "Loading templates..."
-                    : customTemplates.length
-                      ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
-                      : "No custom templates yet."
-                }
-                templateBusy={templateBusy}
-                onCreateTemplate={handleCreateTemplate}
-                uploadProjectId={uploadProjectId}
-                onUploadProjectIdChange={setUploadProjectId}
-                projects={projects}
-                projectsStatusText={
-                  projectsLoading
-                    ? "Loading projects..."
-                    : projects.length
-                      ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
-                      : "No projects yet."
-                }
-                projectBusy={projectBusy}
-                onCreateProject={handleCreateProject}
-                onUpload={handleUpload}
-                uploading={uploading}
-                durationLoading={durationLoading}
-                hasEnoughEstimatedCredits={hasEnoughEstimatedCredits}
-                estimatedCredits={estimatedCredits}
-                billing={billing}
-              />
-            </>
-          )}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-3xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Upload
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-[2rem]">
+                Drop in a recording and let Voxly shape it.
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Choose a notes template, upload your file, and Voxly will turn
+                the recording into a transcript, summary, and action-ready
+                output.
+              </p>
+            </div>
+          </div>
+          <UploadPanelBody
+            activeWorkspace={activeWorkspace}
+            fileInputId={fileInputId}
+            file={file}
+            onFileChange={(nextFile) => {
+              setFile(nextFile);
+              setEstimatedDurationSeconds(null);
+              if (nextFile) {
+                void readMediaDuration(nextFile);
+              }
+            }}
+            estimatedDurationSeconds={estimatedDurationSeconds}
+            isDev={isDev}
+            testDataLoading={testDataLoading}
+            testDataStatus={testDataStatus}
+            onLoadTestData={handleLoadTestData}
+            uploadTemplate={uploadTemplate}
+            onUploadTemplateChange={setUploadTemplate}
+            templateOptions={templateOptions}
+            templatesStatusText={
+              templatesLoading
+                ? "Loading templates..."
+                : customTemplates.length
+                  ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
+                  : "No custom templates yet."
+            }
+            templateBusy={templateBusy}
+            onCreateTemplate={handleCreateTemplate}
+            uploadProjectId={uploadProjectId}
+            onUploadProjectIdChange={setUploadProjectId}
+            projects={projects}
+            projectsStatusText={
+              projectsLoading
+                ? "Loading projects..."
+                : projects.length
+                  ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
+                  : "No projects yet."
+            }
+            projectBusy={projectBusy}
+            onCreateProject={handleCreateProject}
+            onUpload={handleUpload}
+            uploading={uploading}
+            durationLoading={durationLoading}
+            hasEnoughEstimatedCredits={hasEnoughEstimatedCredits}
+            estimatedCredits={estimatedCredits}
+            billing={billing}
+          />
 
           {shouldShowGlobalError && (
             <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-800 shadow-sm">
@@ -10749,70 +10018,11 @@ export function TranscriptionClient({
           )}
         </section>
 
-        <section
-          ref={resultAreaRef}
-          className={`space-y-4 ${workspaceSurface === "overview" ? "" : "hidden"}`}
-        >
-          {overviewServerLoading && !focusedSummary ? (
-            <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.18)] sm:px-6">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
-                Current Workspace
-              </p>
-              <div className="mt-4 flex items-center gap-3">
-                <span className="h-3 w-3 animate-pulse rounded-full bg-orange-500" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    Loading overview...
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Fetching the latest recordings from the server.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <OverviewCurrentRecording
-              key={focusedSummary?.id || "no-recording"}
-              activeWorkspace={activeWorkspace}
-              focusedSummary={focusedSummary}
-              displaySummary={displaySummary}
-              selectedProjectName={selectedProjectName}
-              currentRecordingText={currentRecordingText}
-              currentRecordingSnippet={currentRecordingSnippet}
-              hasExpandableCurrentRecordingText={hasExpandableCurrentRecordingText}
-              focusedSummaryHiddenByFilters={focusedSummaryHiddenByFilters}
-              isFocusedSummaryProcessing={isFocusedSummaryProcessing}
-              canProcessFocusedSummary={canProcessFocusedSummary}
-              currentActionTasks={currentActionTasks}
-              activeTranscriptionId={activeTranscriptionId}
-              actionTaskBusyKey={actionTaskBusyKey}
-              taskCommentsById={taskCommentsById}
-              taskCommentDrafts={taskCommentDrafts}
-              commentBusyKey={commentBusyKey}
-              detailsAutoOpenToken={overviewDetailsAutoOpenToken}
-              onProcess={handleProcess}
-              onCopySummary={() =>
-                void handleCopyText(
-                  "Summary",
-                  buildSummaryText(displaySummary || focusedSummary),
-                )
-              }
-              onStartUpload={() => scrollToSection("upload")}
-              onCreateActionTask={handleCreateActionTask}
-              onUpdateActionTask={handleUpdateActionTask}
-              onDeleteActionTask={handleDeleteActionTask}
-              onTaskCommentDraftChange={(taskId, value) =>
-                setTaskCommentDrafts((prev) => ({ ...prev, [taskId]: value }))
-              }
-              onCreateTaskComment={(input) =>
-                handleCreateComment({ taskId: input.taskId, content: input.content })
-              }
-            />
-          )}
-        </section>
-
         <HistorySurface
+          key={activeWorkspaceId || "workspace-pending"}
           isActive={workspaceSurface === "transcriptions"}
+          activeWorkspaceId={activeWorkspaceId}
+          activeWorkspace={activeWorkspace}
           initialProjectFilter={initialProjectFilter}
           statusOptions={statusOptions}
           templateOptions={templateOptions}

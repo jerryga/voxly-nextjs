@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { projectCreateSchema } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
@@ -16,12 +19,7 @@ export async function GET() {
     }
 
     const projects = await prisma.project.findMany({
-      where: {
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
-      } as any,
+      where: activeWorkspaceResourceWhere(context) as any,
       orderBy: [{ createdAt: "desc" }],
     });
 

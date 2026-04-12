@@ -65,6 +65,11 @@ export function WorkspaceTree({
         throw new Error(payload?.error || "Failed to switch workspace");
       }
 
+      window.dispatchEvent(
+        new CustomEvent("voxly:workspace-switched", {
+          detail: { workspaceId },
+        }),
+      );
       router.push(href);
       router.refresh();
     } catch (error) {

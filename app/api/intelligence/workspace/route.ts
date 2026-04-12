@@ -5,7 +5,10 @@ import { answerProjectQuestion } from "@/lib/llm/agent";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { workspaceIntelligenceQuerySchema } from "@/lib/api/validation";
-import { requireWorkspaceContext } from "@/lib/workspaces";
+import {
+  activeWorkspaceResourceWhere,
+  requireWorkspaceContext,
+} from "@/lib/workspaces";
 import {
   buildProjectContextChunks,
   buildWorkspaceIntelligencePrompt,
@@ -67,10 +70,7 @@ export async function POST(request: Request) {
         status: "done",
         transcript: { not: null },
         ...(projectIds?.length ? { projectId: { in: projectIds } } : {}),
-        OR: [
-          { workspaceId: context.activeWorkspace.id },
-          { workspaceId: null, userId: context.user.id },
-        ],
+        ...activeWorkspaceResourceWhere(context),
       } as any,
       select: {
         id: true,
