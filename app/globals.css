@@ -53,3 +53,54 @@ button,
 a {
   transition: all 0.2s ease-in-out;
 }
+
+@keyframes voxly-section-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes voxly-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.voxly-section-reveal,
+.voxly-stagger-fade,
+.voxly-slide-up {
+  animation-duration: 0.2s;
+  animation-fill-mode: both;
+  animation-timing-function: ease-out;
+}
+
+.voxly-section-reveal,
+.voxly-stagger-fade {
+  animation-name: voxly-section-reveal;
+}
+
+.voxly-slide-up {
+  animation-name: voxly-slide-up;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voxly-section-reveal,
+  .voxly-stagger-fade,
+  .voxly-slide-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

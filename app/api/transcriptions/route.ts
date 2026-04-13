@@ -43,6 +43,7 @@ export async function GET(request: Request) {
     const dateFrom = searchParams.get("dateFrom")?.trim();
     const dateTo = searchParams.get("dateTo")?.trim();
     const limit = Math.min(parsePositiveInt(searchParams.get("limit"), 100), 100);
+    const allWorkspaces = searchParams.get("allWorkspaces") === "true";
 
     const createdAtFilter: Prisma.DateTimeFilter = {};
     if (dateFrom) {
@@ -58,8 +59,19 @@ export async function GET(request: Request) {
       }
     }
 
+    // When allWorkspaces=true, return records across every workspace the user belongs to.
+    const allWorkspaceIds = context.memberships.map((m) => m.workspaceId);
+    const baseWhere: Prisma.TranscriptionWhereInput = allWorkspaces
+      ? ({
+          OR: [
+            { workspaceId: { in: allWorkspaceIds } },
+            { workspaceId: null, userId: context.user.id },
+          ],
+        } as any)
+      : activeWorkspaceResourceWhere(context);
+
     const where: Prisma.TranscriptionWhereInput = {
-      ...activeWorkspaceResourceWhere(context),
+      ...baseWhere,
       ...(id ? { id } : {}),
       ...(status ? { status } : {}),
       ...(template ? { template } : {}),

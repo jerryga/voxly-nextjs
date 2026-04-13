@@ -1,4 +1,5 @@
 import { CreateWorkspaceButton } from "./CreateWorkspaceButton";
+import { GlobalSearch } from "./GlobalSearch";
 import { DashboardSidebarNav } from "./DashboardSidebarNav";
 import { SignOutButton } from "./SignOutButton";
 import { WorkspaceTree } from "./WorkspaceTree";
@@ -50,7 +51,6 @@ export async function DashboardShell({
   const initial = displayName.charAt(0).toUpperCase();
   const sidebarLinks = [
     { id: "overview", label: "Overview", href: "/dashboard" },
-    { id: "transcriptions", label: "History", href: "/dashboard/transcriptions" },
     { id: "settings", label: "Settings", href: "/dashboard/settings" },
     { id: "billing", label: "Billing", href: "/billing" },
     { id: "contact", label: "Contact", href: "/contact" },
@@ -62,6 +62,8 @@ export async function DashboardShell({
       <div className="flex min-h-screen">
         <aside className="hidden h-screen w-[272px] shrink-0 overflow-hidden border-r border-slate-200/80 bg-white/92 px-5 pb-3 pt-6 xl:sticky xl:top-0 xl:flex xl:flex-col">
           <BrandLink href="/dashboard" subtitle="Knowledge Workspace" />
+
+          <GlobalSearch />
 
           <div className="mt-8">
             <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">

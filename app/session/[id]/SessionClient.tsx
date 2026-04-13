@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Transcription } from "@/app/dashboard/TranscriptionClient";
 import type { AssistantMessage, AssistantScope, ActiveWorkspaceDetails, Project } from "./SessionAssistantRail";
 import { SessionSummaryPanel } from "./SessionSummaryPanel";
@@ -52,6 +52,7 @@ export function SessionClient({
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [showDigestUpsell, setShowDigestUpsell] = useState(!hasDigestConfigured);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const onboarding = useOnboarding();
 
@@ -225,9 +226,46 @@ export function SessionClient({
     setTranscription(updated);
   }, []);
 
+  // Close bottom sheet on lg+ (no orphaned open state when resizing)
+  useEffect(() => {
+    function handleResize() {
+      if (window.innerWidth >= 1024) setAssistantOpen(false);
+    }
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Scroll-lock body when bottom sheet is open
+  useEffect(() => {
+    if (assistantOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [assistantOpen]);
+
+  const assistantPanel = (
+    <SessionAssistantPanel
+      transcription={transcription}
+      projects={projects}
+      activeWorkspace={activeWorkspace}
+      assistantMessages={assistantMessages}
+      assistantBusy={assistantBusy}
+      assistantError={assistantError}
+      onSubmit={handleAssistantSubmit}
+      onRefresh={handleRefresh}
+      onboardingHighlight={
+        onboarding.isNew &&
+        !onboarding.completedSteps.has("firstAIPrompt")
+      }
+      wasAlreadyDone={wasAlreadyDone}
+    />
+  );
+
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6">
-      <div className="lg:grid lg:grid-cols-[1fr_400px] lg:gap-6 lg:items-start">
+      <div className="lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:items-start">
         {/* Left: summary + content */}
         <div>
           {onboarding.isNew && !onboarding.dismissed && (
@@ -245,23 +283,60 @@ export function SessionClient({
           />
         </div>
 
-        {/* Right: assistant (sticky on large screens) */}
-        <div id="session-assistant" className="lg:sticky lg:top-8">
-          <SessionAssistantPanel
-            transcription={transcription}
-            projects={projects}
-            activeWorkspace={activeWorkspace}
-            assistantMessages={assistantMessages}
-            assistantBusy={assistantBusy}
-            assistantError={assistantError}
-            onSubmit={handleAssistantSubmit}
-            onRefresh={handleRefresh}
-            onboardingHighlight={
-              onboarding.isNew &&
-              !onboarding.completedSteps.has("firstAIPrompt")
-            }
-            wasAlreadyDone={wasAlreadyDone}
-          />
+        {/* Right: assistant — desktop sticky column */}
+        <div id="session-assistant" className="hidden lg:block lg:sticky lg:top-8">
+          {assistantPanel}
+        </div>
+      </div>
+
+      {/* ── Mobile / tablet assistant ─────────────────────────────────── */}
+
+      {/* FAB — visible below lg */}
+      <button
+        type="button"
+        onClick={() => setAssistantOpen(true)}
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-[#f97316] px-5 py-3 text-sm font-bold text-white shadow-[0_8px_32px_-8px_rgba(249,115,22,0.7)] transition hover:bg-[#ea580c] active:scale-95 lg:hidden"
+        aria-label="Open AI assistant"
+      >
+        <span>Ask AI</span>
+        <span className="text-base leading-none">✦</span>
+      </button>
+
+      {/* Bottom sheet backdrop */}
+      {assistantOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+          onClick={() => setAssistantOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Bottom sheet drawer */}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-[28px] bg-white shadow-[0_-20px_60px_-16px_rgba(15,23,42,0.3)] transition-transform duration-300 ease-out lg:hidden ${
+          assistantOpen ? "translate-y-0" : "translate-y-full"
+        }`}
+        style={{ maxHeight: "88dvh" }}
+        aria-modal="true"
+        role="dialog"
+        aria-label="AI Assistant"
+      >
+        {/* Drag handle + close */}
+        <div className="flex items-center justify-between px-5 pt-3 pb-2">
+          <div className="mx-auto h-1 w-10 rounded-full bg-slate-300" />
+        </div>
+        <div className="flex items-center justify-between px-5 pb-2">
+          <p className="text-sm font-bold text-slate-900">AI Assistant</p>
+          <button
+            type="button"
+            onClick={() => setAssistantOpen(false)}
+            className="cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+          >
+            Close
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pb-6" id="session-assistant">
+          {assistantPanel}
         </div>
       </div>
     </div>

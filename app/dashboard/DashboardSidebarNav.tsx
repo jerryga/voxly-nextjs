@@ -49,6 +49,14 @@ export function DashboardSidebarNav({
     }
   }, [links, router]);
 
+  useEffect(() => {
+    function handleWorkspaceSwitched() {
+      setClientActivePath(activePath);
+    }
+    window.addEventListener("voxly:workspace-switched", handleWorkspaceSwitched);
+    return () => window.removeEventListener("voxly:workspace-switched", handleWorkspaceSwitched);
+  }, [activePath]);
+
   return (
     <nav className="mt-3 space-y-1">
       {links.map((item) => {

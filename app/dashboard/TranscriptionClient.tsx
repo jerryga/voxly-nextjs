@@ -1643,6 +1643,12 @@ export function TranscriptionClient({
         return;
       }
 
+      // Overview is now owned by DashboardClient at /dashboard — navigate there.
+      if (detail.surface === "overview") {
+        router.push("/dashboard");
+        return;
+      }
+
       setWorkspaceSurface(detail.surface);
       if (detail.settingsSection) {
         setSettingsSection(detail.settingsSection);
@@ -3486,38 +3492,10 @@ export function TranscriptionClient({
       }
       await loadBilling({ force: true });
       setUploading(false);
-      showUploadStatusNotice(
-        payload?.queued
-          ? "Your file is uploaded. Voxly is processing it in the background."
-          : "Your file is uploaded.",
-      );
 
-      if (
-        payload?.queued ||
-        initialItem?.status === "processing" ||
-        initialItem?.status === "uploaded"
-      ) {
-        void (async () => {
-          const currentItem = await pollForProcessedResult(payload.transcriptionId);
-          if (currentItem?.status === "done") {
-            shouldScrollToSummaryRef.current = true;
-            setFocusedSummaryId(currentItem.id);
-            setOverviewDetailsAutoOpenToken((prev) => prev + 1);
-            showCompletionTip(
-              "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
-            );
-          }
-        })();
+      if (payload?.transcriptionId) {
+        router.push(`/session/${payload.transcriptionId}`);
         return;
-      }
-
-      if (initialItem?.status === "done") {
-        shouldScrollToSummaryRef.current = true;
-        setFocusedSummaryId(initialItem.id);
-        setOverviewDetailsAutoOpenToken((prev) => prev + 1);
-        showCompletionTip(
-          "Voxly is ready. Try a prompt below to summarize, assign owners, or draft a follow-up.",
-        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
