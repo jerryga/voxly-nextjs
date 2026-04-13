@@ -6,6 +6,8 @@ import { enforceSameOrigin } from "@/lib/api/security";
 import { projectCreateSchema } from "@/lib/api/validation";
 import {
   activeWorkspaceResourceWhere,
+  DEFAULT_PROJECT_NAME,
+  ensureDefaultProjectForWorkspace,
   requireWorkspaceContext,
 } from "@/lib/workspaces";
 
@@ -18,12 +20,23 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    await ensureDefaultProjectForWorkspace(
+      context.activeWorkspace.id,
+      context.user.id,
+    );
+
     const projects = await prisma.project.findMany({
       where: activeWorkspaceResourceWhere(context) as any,
       orderBy: [{ createdAt: "desc" }],
     });
 
-    return NextResponse.json({ ok: true, projects });
+    const sortedProjects = projects.sort((first, second) => {
+      if (first.name === DEFAULT_PROJECT_NAME) return -1;
+      if (second.name === DEFAULT_PROJECT_NAME) return 1;
+      return second.createdAt.getTime() - first.createdAt.getTime();
+    });
+
+    return NextResponse.json({ ok: true, projects: sortedProjects });
   } catch (err) {
     return NextResponse.json(
       { error: getApiErrorMessage(err) },

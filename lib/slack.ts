@@ -31,6 +31,7 @@ const slackDelegate = (prisma as typeof prisma & {
   workspaceSlackSettings: {
     findUnique: (...args: any[]) => Promise<any>;
     upsert: (...args: any[]) => Promise<any>;
+    deleteMany: (...args: any[]) => Promise<any>;
   };
 }).workspaceSlackSettings;
 
@@ -59,13 +60,13 @@ export function maskSlackWebhook(webhookUrl: string | null | undefined) {
 
 function serializeSlackSettings(settings: WorkspaceSlackSettingsRecord | null) {
   if (!settings) {
-    return {
-      configured: false,
-      enabled: false,
-      sendDigests: true,
-      maskedWebhook: null,
-      updatedAt: null,
-    };
+  return {
+    configured: false,
+    enabled: false,
+    sendDigests: false,
+    maskedWebhook: null,
+    updatedAt: null,
+  };
   }
 
   return {
@@ -179,6 +180,14 @@ export async function updateWorkspaceSlackSettings(
   })) as WorkspaceSlackSettingsRecord;
 
   return serializeSlackSettings(settings);
+}
+
+export async function deleteWorkspaceSlackSettings(workspaceId: string) {
+  await slackDelegate.deleteMany({
+    where: { workspaceId },
+  });
+
+  return serializeSlackSettings(null);
 }
 
 async function postSlackWebhook(webhookUrl: string, payload: Record<string, unknown>) {

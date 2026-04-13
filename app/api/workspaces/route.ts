@@ -6,7 +6,10 @@ import { enforceSameOrigin } from "@/lib/api/security";
 import { workspaceCreateSchema, workspaceUpdateSchema } from "@/lib/api/validation";
 import {
   ACTIVE_WORKSPACE_COOKIE,
+  activeWorkspaceResourceWhere,
+  canDeleteWorkspace,
   canManageWorkspace,
+  ensureDefaultProjectForWorkspace,
   requireWorkspaceContext,
   uniqueWorkspaceSlug,
 } from "@/lib/workspaces";
@@ -70,6 +73,8 @@ export async function POST(request: Request) {
         },
       },
     });
+
+    await ensureDefaultProjectForWorkspace(workspace.id, context.user.id);
 
     const cookieStore = await cookies();
     cookieStore.set(ACTIVE_WORKSPACE_COOKIE, workspace.id, {
@@ -270,6 +275,140 @@ export async function PATCH(request: Request) {
         role: context.role,
         canManage: true,
       },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: getApiErrorMessage(err) },
+      { status: getApiErrorStatus(err) },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const originError = enforceSameOrigin(request);
+    if (originError) {
+      return originError;
+    }
+
+    const context = await requireWorkspaceContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!canDeleteWorkspace(context.role)) {
+      return NextResponse.json({ error: "Only the workspace owner can delete this workspace." }, { status: 403 });
+    }
+    if (context.activeWorkspace.isPersonal) {
+      return NextResponse.json(
+        { error: "Personal workspaces cannot be deleted." },
+        { status: 409 },
+      );
+    }
+
+    const workspaceId = context.activeWorkspace.id;
+    const transcriptionWhere = activeWorkspaceResourceWhere(context) as any;
+    const projectWhere = activeWorkspaceResourceWhere(context) as any;
+    const templateWhere = activeWorkspaceResourceWhere(context) as any;
+
+    const [transcriptions, projects] = await Promise.all([
+      prisma.transcription.findMany({
+        where: transcriptionWhere,
+        select: { id: true, status: true },
+      }),
+      prisma.project.findMany({
+        where: projectWhere,
+        select: { id: true },
+      }),
+    ]);
+
+    const transcriptionIds = transcriptions.map((transcription) => transcription.id);
+    const processingTranscriptionIds = transcriptions
+      .filter((transcription) =>
+        ["uploading", "uploaded", "processing"].includes(transcription.status),
+      )
+      .map((transcription) => transcription.id);
+    const projectIds = projects.map((project) => project.id);
+
+    await prisma.$transaction(async (tx) => {
+      if (transcriptionIds.length) {
+        await tx.creditTransaction.deleteMany({
+          where: { transcriptionId: { in: transcriptionIds } } as any,
+        });
+        await tx.assistantMessage.deleteMany({
+          where: { transcriptionId: { in: transcriptionIds } } as any,
+        });
+        await tx.actionTask.deleteMany({
+          where: { transcriptionId: { in: transcriptionIds } } as any,
+        });
+      }
+
+      await tx.workspaceComment.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.workspaceNotification.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.projectInsight.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.workspaceInsight.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.recurringReportRun.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.recurringReportTemplate.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.workspaceDigestSettings.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.workspaceSlackSettings.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.workspaceNotionSettings.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.summaryTemplate.deleteMany({
+        where: templateWhere,
+      });
+
+      if (projectIds.length) {
+        await tx.projectDigestSettings.deleteMany({
+          where: { projectId: { in: projectIds } } as any,
+        });
+      }
+
+      if (transcriptionIds.length) {
+        await tx.transcription.deleteMany({
+          where: { id: { in: transcriptionIds } } as any,
+        });
+      }
+
+      if (projectIds.length) {
+        await tx.project.deleteMany({
+          where: { id: { in: projectIds } } as any,
+        });
+      }
+
+      await tx.workspaceSlackDestination.deleteMany({
+        where: { workspaceId } as any,
+      });
+      await tx.workspace.delete({
+        where: { id: workspaceId },
+      });
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.delete(ACTIVE_WORKSPACE_COOKIE);
+
+    return NextResponse.json({
+      ok: true,
+      deletedWorkspaceId: workspaceId,
+      activeWorkspaceId: null,
+      deletedTranscriptionCount: transcriptionIds.length,
+      cancelledProcessingCount: processingTranscriptionIds.length,
+      deletedProjectCount: projectIds.length,
     });
   } catch (err) {
     return NextResponse.json(

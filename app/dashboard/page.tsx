@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
-import { TranscriptionClient } from "./TranscriptionClient";
+import { DashboardClient } from "./DashboardClient";
 import { DashboardShell } from "./DashboardShell";
 
 export default async function DashboardPage() {
@@ -20,7 +20,7 @@ export default async function DashboardPage() {
       email={session.user.email}
       activePath="overview"
     >
-      <TranscriptionClient initialSurface="overview" />
+      <DashboardClient />
     </DashboardShell>
   );
 }

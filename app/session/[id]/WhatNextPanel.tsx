@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Project } from "./SessionAssistantRail";
 
 type WhatNextPanelProps = {
@@ -11,7 +11,13 @@ type WhatNextPanelProps = {
 
 export function WhatNextPanel({ projects, onProjectAssign, onShareCopied }: WhatNextPanelProps) {
   const [showProjectSelect, setShowProjectSelect] = useState(false);
+  const [showProjectPrompt, setShowProjectPrompt] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Share");
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setShowProjectPrompt(true), 2000);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   function handleAskAI() {
     document.getElementById("session-assistant")?.scrollIntoView({ behavior: "smooth" });
@@ -46,32 +52,40 @@ export function WhatNextPanel({ projects, onProjectAssign, onShareCopied }: What
           Ask the AI
         </button>
 
-        {showProjectSelect ? (
-          <select
-            autoFocus
-            onChange={handleProjectChange}
-            onBlur={() => setShowProjectSelect(false)}
-            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none"
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Choose a project…
-            </option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
+        <span
+          className={
+            showProjectPrompt
+              ? "voxly-slide-up inline-flex"
+              : "inline-flex translate-y-2 opacity-0"
+          }
+        >
+          {showProjectSelect ? (
+            <select
+              autoFocus
+              onChange={handleProjectChange}
+              onBlur={() => setShowProjectSelect(false)}
+              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none"
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Choose a project…
               </option>
-            ))}
-          </select>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowProjectSelect(true)}
-            className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-          >
-            Add to project
-          </button>
-        )}
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowProjectSelect(true)}
+              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Add to project
+            </button>
+          )}
+        </span>
 
         <button
           type="button"

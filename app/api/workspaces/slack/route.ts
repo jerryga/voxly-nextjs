@@ -3,6 +3,7 @@ import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { workspaceSlackUpdateSchema } from "@/lib/api/validation";
 import {
+  deleteWorkspaceSlackSettings,
   getWorkspaceSlackSettings,
   sendWorkspaceSlackTest,
   updateWorkspaceSlackSettings,
@@ -104,6 +105,43 @@ export async function POST(request: Request) {
     });
 
     const settings = await getWorkspaceSlackSettings(context.activeWorkspace.id);
+
+    return NextResponse.json({ ok: true, settings });
+  } catch (err) {
+    return NextResponse.json(
+      { error: getApiErrorMessage(err) },
+      { status: getApiErrorStatus(err) },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const originError = enforceSameOrigin(request);
+    if (originError) {
+      return originError;
+    }
+
+    const context = await requireWorkspaceContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!canManageWorkspace(context.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const settings = await deleteWorkspaceSlackSettings(context.activeWorkspace.id);
+
+    await createWorkspaceAuditLog({
+      workspaceId: context.activeWorkspace.id,
+      actorUserId: context.user.id,
+      action: "workspace.slack.deleted",
+      targetType: "workspace_slack",
+      summary: `${context.user.name?.trim() || context.user.email} disconnected Slack integration settings.`,
+      metadata: {
+        configured: settings.configured,
+      },
+    });
 
     return NextResponse.json({ ok: true, settings });
   } catch (err) {

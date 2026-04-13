@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import type { ActiveWorkspaceDetails, Project, Transcription } from "./TranscriptionClient";
 
 const DASHBOARD_CACHE_TTL_MS = 60_000;
@@ -315,11 +316,6 @@ type HistoryRowProps = {
   item: Transcription;
   projects: Project[];
   onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
-  onProcess: (
-    transcriptionId: string,
-    template?: string | null,
-    trackInParent?: boolean,
-  ) => Promise<void>;
   onDelete: (transcriptionId: string) => Promise<void>;
 };
 
@@ -327,13 +323,11 @@ const HistoryRow = memo(function HistoryRow({
   item,
   projects,
   onAssignProject,
-  onProcess,
   onDelete,
 }: HistoryRowProps) {
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
   const [localProjectId, setLocalProjectId] = useState(item.projectId || "none");
   const [isAssigning, setIsAssigning] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const transcriptPreview = item.transcript
     ? item.transcript.length > 1800
@@ -343,8 +337,6 @@ const HistoryRow = memo(function HistoryRow({
   const isTranscriptTruncated = Boolean(
     item.transcript && item.transcript.length > transcriptPreview.length,
   );
-  const canProcess =
-    !isProcessing && (item.status === "uploaded" || item.status === "done");
 
   useEffect(() => {
     setLocalProjectId(item.projectId || "none");
@@ -357,9 +349,13 @@ const HistoryRow = memo(function HistoryRow({
     >
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold text-slate-900">
+          <Link
+            href={`/session/${item.id}`}
+            prefetch={true}
+            className="block truncate text-[15px] font-semibold text-slate-900 hover:text-orange-700 transition-colors"
+          >
             {item.fileName}
-          </p>
+          </Link>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <p className="text-xs text-slate-500">
               {new Date(item.createdAt).toLocaleString()}
@@ -422,26 +418,6 @@ const HistoryRow = memo(function HistoryRow({
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={async () => {
-              setIsProcessing(true);
-              try {
-                await onProcess(item.id, item.template, false);
-              } finally {
-                setIsProcessing(false);
-              }
-            }}
-            disabled={!canProcess}
-            className={`cursor-pointer rounded-full border px-3.5 py-2 text-[11px] font-semibold active:scale-95 ${
-              isProcessing
-                ? "border-sky-200 bg-sky-50 text-sky-700 shadow-[0_10px_24px_-20px_rgba(14,165,233,0.9)]"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700"
-            } disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            {isProcessing ? "Processing..." : "Process"}
-          </button>
-
           {item.transcript ? (
             <button
               type="button"
@@ -517,11 +493,6 @@ export type HistorySurfaceProps = {
   templateOptions: Array<{ id: string; label: string }>;
   projects: Project[];
   onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
-  onProcess: (
-    transcriptionId: string,
-    template?: string | null,
-    trackInParent?: boolean,
-  ) => Promise<void>;
   onDelete: (transcriptionId: string) => Promise<void>;
 };
 
@@ -593,7 +564,7 @@ export const HistorySurface = memo(function HistorySurface({
 
     const trimmedQuery = historySearchQuery.trim();
     const cacheKey = buildHistoryCacheKey({
-      workspaceId: activeWorkspaceId,
+      workspaceId: "all",
       query: trimmedQuery,
       status: historyStatusFilter,
       template: historyTemplateFilter,
@@ -622,6 +593,7 @@ export const HistorySurface = memo(function HistorySurface({
     try {
       const params = new URLSearchParams();
       params.set("limit", "24");
+      params.set("allWorkspaces", "true");
       if (trimmedQuery) {
         params.set("q", trimmedQuery);
         params.set("searchScope", "name");
@@ -761,7 +733,7 @@ export const HistorySurface = memo(function HistorySurface({
       <div className="border-b border-slate-200 pb-4" style={{ contain: "layout paint" }}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">History</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Your Recordings</h2>
             <p className="mt-1 text-sm text-slate-500">
               Search recordings and narrow the list with quick filters.
             </p>
@@ -835,7 +807,7 @@ export const HistorySurface = memo(function HistorySurface({
           <p className="mt-2 text-sm text-slate-500">
             {hasActiveFilters
               ? "Try clearing a filter or searching with a broader phrase."
-              : `Upload a recording from Overview to start building history in ${activeWorkspaceLabel}.`}
+              : `Upload a recording above to get started in ${activeWorkspaceLabel}.`}
           </p>
           {hasActiveFilters ? (
             <div className="mt-5 flex justify-center">

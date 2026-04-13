@@ -257,7 +257,7 @@ export async function processUploadedAudio({
   });
 
   if (!transcription) {
-    throw new Error(`Transcription not found: ${transcriptionId}`);
+    return { transcriptionId, reusedExisting: true, cancelled: true };
   }
 
   const effectiveTemplate = template || transcription.template || "default";
@@ -283,10 +283,13 @@ export async function processUploadedAudio({
     throw new Error(`Transcription is not ready for processing: ${transcription.status}`);
   }
 
-  await prisma.transcription.update({
+  const processingUpdate = await prisma.transcription.updateMany({
     where: { id: transcriptionId },
     data: { status: "processing" },
   });
+  if (processingUpdate.count === 0) {
+    return { transcriptionId, reusedExisting: true, cancelled: true };
+  }
 
   try {
     const signedUrl = await getSignedFileUrl({
@@ -332,7 +335,7 @@ export async function processUploadedAudio({
       durationSeconds,
     });
 
-    await prisma.transcription.update({
+    const completedUpdate = await prisma.transcription.updateMany({
       where: { id: transcriptionId },
       data: {
         rawTranscript: rawTranscriptText,
@@ -356,6 +359,14 @@ export async function processUploadedAudio({
         status: "done",
       },
     });
+    if (completedUpdate.count === 0) {
+      await refundUsageCredits({
+        userId: transcription.userId,
+        transcriptionId,
+        reason: "Credits restored after processing was cancelled",
+      });
+      return { transcriptionId, reusedExisting: true, cancelled: true };
+    }
 
     return { transcriptionId };
   } catch (err) {

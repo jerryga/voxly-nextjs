@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type SidebarWorkspace = {
   id: string;
@@ -31,6 +31,12 @@ type WorkspaceTreeProps = {
   activeProjectId?: string | null;
 };
 
+const DELETED_WORKSPACE_TOMBSTONE_KEY = "voxly:dashboard:deleted-workspace";
+
+function clearDeletedWorkspaceTombstone() {
+  window.sessionStorage.removeItem(DELETED_WORKSPACE_TOMBSTONE_KEY);
+}
+
 export function WorkspaceTree({
   workspaces,
   projects,
@@ -42,6 +48,25 @@ export function WorkspaceTree({
   const [switchingWorkspaceId, setSwitchingWorkspaceId] = useState<string | null>(
     null,
   );
+  const [deletedWorkspaceIds, setDeletedWorkspaceIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    function handleWorkspaceDeleted(event: Event) {
+      const workspaceId = (event as CustomEvent<{ workspaceId?: string }>).detail
+        ?.workspaceId;
+      if (!workspaceId) {
+        return;
+      }
+
+      setDeletedWorkspaceIds((prev) =>
+        prev.includes(workspaceId) ? prev : [...prev, workspaceId],
+      );
+    }
+
+    window.addEventListener("voxly:workspace-deleted", handleWorkspaceDeleted);
+    return () =>
+      window.removeEventListener("voxly:workspace-deleted", handleWorkspaceDeleted);
+  }, []);
 
   async function switchWorkspace(workspaceId: string, href: string) {
     if (!workspaceId) {
@@ -49,7 +74,14 @@ export function WorkspaceTree({
     }
 
     if (workspaceId === activeWorkspaceId) {
+      clearDeletedWorkspaceTombstone();
+      window.dispatchEvent(
+        new CustomEvent("voxly:workspace-switched", {
+          detail: { workspaceId },
+        }),
+      );
       router.push(href);
+      router.refresh();
       return;
     }
 
@@ -65,6 +97,7 @@ export function WorkspaceTree({
         throw new Error(payload?.error || "Failed to switch workspace");
       }
 
+      clearDeletedWorkspaceTombstone();
       window.dispatchEvent(
         new CustomEvent("voxly:workspace-switched", {
           detail: { workspaceId },
@@ -81,7 +114,15 @@ export function WorkspaceTree({
     }
   }
 
-  if (!workspaces.length) {
+  const visibleWorkspaces = workspaces.filter(
+    (workspace) => !deletedWorkspaceIds.includes(workspace.id),
+  );
+  const visibleProjects = projects.filter(
+    (project) =>
+      !project.workspaceId || !deletedWorkspaceIds.includes(project.workspaceId),
+  );
+
+  if (!visibleWorkspaces.length) {
     return (
       <p className="mt-3 rounded-2xl bg-[#f4f4f1] px-3 py-3 text-sm text-slate-500">
         No workspaces yet
@@ -91,8 +132,8 @@ export function WorkspaceTree({
 
   return (
     <div className="mt-3 space-y-2">
-      {workspaces.map((workspace) => {
-        const workspaceProjects = projects.filter(
+      {visibleWorkspaces.map((workspace) => {
+        const workspaceProjects = visibleProjects.filter(
           (project) => project.workspaceId === workspace.id,
         );
         const isActiveWorkspace = workspace.id === activeWorkspaceId;
@@ -211,7 +252,7 @@ export function WorkspaceTree({
                     />
                   </svg>
                 </span>
-                Workspace settings
+                Workspace Settings
               </button>
             </div>
           </details>

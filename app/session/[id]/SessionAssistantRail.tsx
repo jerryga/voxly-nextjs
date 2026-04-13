@@ -278,12 +278,13 @@ export const SessionAssistantRail = memo(function SessionAssistantRail({
 
             {(localScope !== "transcript" || hasProcessedSummary) ? (
               <div className="mt-4 space-y-2">
-                {suggestions[localScope].map((text) => (
+                {suggestions[localScope].map((text, index) => (
                   <button
                     key={text}
                     type="button"
                     onClick={() => handleSuggestion(text)}
-                    className="cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                    className="voxly-stagger-fade cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
                   >
                     {text}
                   </button>
