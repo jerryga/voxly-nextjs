@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"enforceSameOrigin\\\\|enforceRateLimit\" /Users/chason/Documents/GitHub/voxly-nextjs/app/api/**/*.ts)",
+      "Bash(wc -l /Users/chason/Documents/GitHub/voxly-nextjs/app/dashboard/*.tsx)",
+      "Bash(grep -n \"React.memo\\\\|const.*=.*memo\" /Users/chason/Documents/GitHub/voxly-nextjs/app/dashboard/*.tsx)",
+      "Bash(grep:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(xargs ls:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

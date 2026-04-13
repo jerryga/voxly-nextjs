@@ -1,10 +1,14 @@
 "use client";
 
 import {
+  lazy,
   memo,
+  Suspense,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useState,
   useId,
   useRef,
@@ -15,10 +19,13 @@ import ReactMarkdown from "react-markdown";
 import type { BillingInfo, BillingResponse } from "@/lib/billing-types";
 import { HistorySurface } from "./HistorySurface";
 import type { HistorySurfaceProps } from "./HistorySurface";
-import {
-  OperationsActivitySurface,
-  WorkspaceTasksSurface,
-} from "./OperationsSurface";
+// OperationsSurface — lazy-loaded (only needed when user visits operations/tasks)
+const OperationsActivitySurface = lazy(() =>
+  import("./OperationsSurface").then((m) => ({ default: m.OperationsActivitySurface })),
+);
+const WorkspaceTasksSurface = lazy(() =>
+  import("./OperationsSurface").then((m) => ({ default: m.WorkspaceTasksSurface })),
+);
 import type {
   OperationsActivitySurfaceProps,
   WorkspaceTasksSurfaceProps,
@@ -28,15 +35,32 @@ import type {
   OverviewCurrentRecordingProps,
   UploadPanelBodyProps,
 } from "./OverviewSurface";
-import { ProjectDigestPanel, SavedInsightsPanel } from "./IntelligenceSurface";
+// IntelligenceSurface — lazy-loaded (large module, only needed on intelligence surface)
+const ProjectDigestPanel = lazy(() =>
+  import("./IntelligenceSurface").then((m) => ({ default: m.ProjectDigestPanel })),
+);
+const SavedInsightsPanel = lazy(() =>
+  import("./IntelligenceSurface").then((m) => ({ default: m.SavedInsightsPanel })),
+);
 import type { SavedInsightsPanelProps } from "./IntelligenceSurface";
+// SettingsSurface sections — lazy-loaded (rarely visited, large forms)
+const AccessSettingsSection = lazy(() =>
+  import("./SettingsSurface").then((m) => ({ default: m.AccessSettingsSection })),
+);
+const DeliverySettingsSection = lazy(() =>
+  import("./SettingsSurface").then((m) => ({ default: m.DeliverySettingsSection })),
+);
+const IntegrationSettingsSection = lazy(() =>
+  import("./SettingsSurface").then((m) => ({ default: m.IntegrationSettingsSection })),
+);
+const PersonalSettingsSection = lazy(() =>
+  import("./SettingsSurface").then((m) => ({ default: m.PersonalSettingsSection })),
+);
+const WorkspaceSettingsSection = lazy(() =>
+  import("./SettingsSurface").then((m) => ({ default: m.WorkspaceSettingsSection })),
+);
 import {
-  AccessSettingsSection,
-  DeliverySettingsSection,
-  IntegrationSettingsSection,
-  PersonalSettingsSection,
   SettingsSurfaceNav,
-  WorkspaceSettingsSection,
 } from "./SettingsSurface";
 import type { SettingsSection, SettingsSectionMeta } from "./SettingsSurface";
 
@@ -1145,6 +1169,65 @@ const AssistantRail = memo(function AssistantRail({
   );
 });
 
+// ─── Comments state reducer ──────────────────────────────────────────────────
+// Consolidates the four per-entity-type comment maps into a single keyed map.
+// All entity IDs (transcription, task, project insight, workspace insight) are
+// globally unique, so one map keyed by entityId covers all cases.
+
+type CommentsAction =
+  | { type: "SET"; entityId: string; comments: WorkspaceComment[] }
+  | { type: "UPDATE"; commentId: string; next: WorkspaceComment }
+  | { type: "DELETE"; commentId: string }
+  | { type: "ADD"; entityId: string; comment: WorkspaceComment }
+  | { type: "CLEAR" }
+  | { type: "CLEAR_ENTITY"; entityId: string };
+
+function commentsReducer(
+  state: Record<string, WorkspaceComment[]>,
+  action: CommentsAction,
+): Record<string, WorkspaceComment[]> {
+  switch (action.type) {
+    case "SET":
+      return { ...state, [action.entityId]: action.comments };
+    case "ADD":
+      return {
+        ...state,
+        [action.entityId]: [...(state[action.entityId] ?? []), action.comment],
+      };
+    case "UPDATE": {
+      const next = { ...state };
+      for (const key of Object.keys(next)) {
+        const idx = next[key].findIndex((c) => c.id === action.commentId);
+        if (idx !== -1) {
+          const updated = [...next[key]];
+          updated[idx] = action.next;
+          next[key] = updated;
+          break;
+        }
+      }
+      return next;
+    }
+    case "DELETE": {
+      const next = { ...state };
+      for (const key of Object.keys(next)) {
+        const filtered = next[key].filter((c) => c.id !== action.commentId);
+        if (filtered.length !== next[key].length) {
+          next[key] = filtered;
+          break;
+        }
+      }
+      return next;
+    }
+    case "CLEAR":
+      return {};
+    case "CLEAR_ENTITY": {
+      const next = { ...state };
+      delete next[action.entityId];
+      return next;
+    }
+  }
+}
+
 export function TranscriptionClient({
   initialSurface = "overview",
   initialSettingsSection = "workspace",
@@ -1363,18 +1446,7 @@ export function TranscriptionClient({
     "all",
   );
   const [actionTaskBusyKey, setActionTaskBusyKey] = useState<string | null>(null);
-  const [, setTranscriptionCommentsById] = useState<Record<string, WorkspaceComment[]>>(
-    {},
-  );
-  const [taskCommentsById, setTaskCommentsById] = useState<
-    Record<string, WorkspaceComment[]>
-  >({});
-  const [projectInsightCommentsById, setProjectInsightCommentsById] = useState<
-    Record<string, WorkspaceComment[]>
-  >({});
-  const [workspaceInsightCommentsById, setWorkspaceInsightCommentsById] = useState<
-    Record<string, WorkspaceComment[]>
-  >({});
+  const [commentsById, dispatchComments] = useReducer(commentsReducer, {});
   const [commentBusyKey, setCommentBusyKey] = useState<string | null>(null);
   const [, setTranscriptionCommentDraft] = useState("");
   const [taskCommentDrafts, setTaskCommentDrafts] = useState<Record<string, string>>({});
@@ -1635,16 +1707,16 @@ export function TranscriptionClient({
   const currentProjectInsightComments = useMemo(
     () =>
       selectedProjectInsightId
-        ? projectInsightCommentsById[selectedProjectInsightId] || []
+        ? commentsById[selectedProjectInsightId] || []
         : [],
-    [projectInsightCommentsById, selectedProjectInsightId],
+    [commentsById, selectedProjectInsightId],
   );
   const currentWorkspaceInsightComments = useMemo(
     () =>
       selectedWorkspaceInsightId
-        ? workspaceInsightCommentsById[selectedWorkspaceInsightId] || []
+        ? commentsById[selectedWorkspaceInsightId] || []
         : [],
-    [selectedWorkspaceInsightId, workspaceInsightCommentsById],
+    [commentsById, selectedWorkspaceInsightId],
   );
   const focusedSummaryHiddenByFilters =
     !!focusedSummaryId && !sortedItems.some((item) => item.id === focusedSummaryId);
@@ -2183,9 +2255,7 @@ export function TranscriptionClient({
     setAssistantSummary(null);
     setAssistantMessages(defaultAssistantMessages);
     setProcessingIds({});
-    setTaskCommentsById({});
-    setProjectInsightCommentsById({});
-    setWorkspaceInsightCommentsById({});
+    dispatchComments({ type: "CLEAR" });
     setError(null);
     setProjectsLoading(true);
     setTemplatesLoading(true);
@@ -3191,29 +3261,13 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to load comments");
       }
 
-      if (input.transcriptionId) {
-        setTranscriptionCommentsById((prev) => ({
-          ...prev,
-          [input.transcriptionId!]: payload.comments || [],
-        }));
-      }
-      if (input.taskId) {
-        setTaskCommentsById((prev) => ({
-          ...prev,
-          [input.taskId!]: payload.comments || [],
-        }));
-      }
-      if (input.projectInsightId) {
-        setProjectInsightCommentsById((prev) => ({
-          ...prev,
-          [input.projectInsightId!]: payload.comments || [],
-        }));
-      }
-      if (input.workspaceInsightId) {
-        setWorkspaceInsightCommentsById((prev) => ({
-          ...prev,
-          [input.workspaceInsightId!]: payload.comments || [],
-        }));
+      const entityId =
+        input.transcriptionId ??
+        input.taskId ??
+        input.projectInsightId ??
+        input.workspaceInsightId;
+      if (entityId) {
+        dispatchComments({ type: "SET", entityId, comments: payload.comments || [] });
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -3310,24 +3364,49 @@ export function TranscriptionClient({
     window.sessionStorage.removeItem("voxly:overview-focus");
   }, [workspaceSurface]);
 
-  async function pollForProcessedResult(id: string) {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      const currentItem = await loadTranscriptionById(id);
-      if (!currentItem) {
-        continue;
+  function pollForProcessedResult(id: string): Promise<Awaited<ReturnType<typeof loadTranscriptionById>>> {
+    return new Promise((resolve) => {
+      let attempt = 0;
+      let lastSeenId: string | null = null;
+
+      async function tick() {
+        const item = await loadTranscriptionById(id);
+
+        if (!item) {
+          scheduleNext();
+          return;
+        }
+
+        // Only call setState when the focused item actually changes
+        if (item.id !== lastSeenId) {
+          lastSeenId = item.id;
+          setFocusedSummaryId(item.id);
+        }
+
+        if (item.status === "done" || item.status === "error") {
+          clearTranscriptionCaches();
+          void loadBilling({ force: true });
+          resolve(item);
+          return;
+        }
+
+        attempt += 1;
+        if (attempt >= 30) {
+          resolve(null);
+          return;
+        }
+
+        scheduleNext();
       }
 
-      setFocusedSummaryId(currentItem.id);
-
-      if (currentItem.status === "done" || currentItem.status === "error") {
-        clearTranscriptionCaches();
-        await loadBilling({ force: true });
-        return currentItem;
+      function scheduleNext() {
+        // Gradual backoff: 2s → 2.2s → 2.4s … capped at 8s
+        const delay = Math.min(2000 + attempt * 200, 8000);
+        window.setTimeout(() => void tick(), delay);
       }
-    }
 
-    return null;
+      void tick();
+    });
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -4774,7 +4853,7 @@ export function TranscriptionClient({
       setAssistantMessages(defaultAssistantMessages);
       setActionTasksByTranscription({});
       setWorkspaceTasks([]);
-      setProjectInsightCommentsById({});
+      dispatchComments({ type: "CLEAR" });
       setIntelligenceResult(null);
       setIntelligenceQuestion("");
       setWorkspaceIntelligenceProjectIds([]);
@@ -5441,50 +5520,23 @@ export function TranscriptionClient({
       }
 
       if (input.transcriptionId) {
-        setTranscriptionCommentsById((prev) => ({
-          ...prev,
-          [input.transcriptionId!]: [...(prev[input.transcriptionId!] || []), payload.comment!],
-        }));
+        dispatchComments({ type: "ADD", entityId: input.transcriptionId, comment: payload.comment! });
         setTranscriptionCommentDraft("");
       }
 
       if (input.taskId) {
-        setTaskCommentsById((prev) => ({
-          ...prev,
-          [input.taskId!]: [...(prev[input.taskId!] || []), payload.comment!],
-        }));
-        setTaskCommentDrafts((prev) => ({
-          ...prev,
-          [input.taskId!]: "",
-        }));
+        dispatchComments({ type: "ADD", entityId: input.taskId, comment: payload.comment! });
+        setTaskCommentDrafts((prev) => ({ ...prev, [input.taskId!]: "" }));
       }
 
       if (input.projectInsightId) {
-        setProjectInsightCommentsById((prev) => ({
-          ...prev,
-          [input.projectInsightId!]: [
-            ...(prev[input.projectInsightId!] || []),
-            payload.comment!,
-          ],
-        }));
-        setProjectInsightCommentDrafts((prev) => ({
-          ...prev,
-          [input.projectInsightId!]: "",
-        }));
+        dispatchComments({ type: "ADD", entityId: input.projectInsightId, comment: payload.comment! });
+        setProjectInsightCommentDrafts((prev) => ({ ...prev, [input.projectInsightId!]: "" }));
       }
 
       if (input.workspaceInsightId) {
-        setWorkspaceInsightCommentsById((prev) => ({
-          ...prev,
-          [input.workspaceInsightId!]: [
-            ...(prev[input.workspaceInsightId!] || []),
-            payload.comment!,
-          ],
-        }));
-        setWorkspaceInsightCommentDrafts((prev) => ({
-          ...prev,
-          [input.workspaceInsightId!]: "",
-        }));
+        dispatchComments({ type: "ADD", entityId: input.workspaceInsightId, comment: payload.comment! });
+        setWorkspaceInsightCommentDrafts((prev) => ({ ...prev, [input.workspaceInsightId!]: "" }));
       }
 
       showUploadStatusNotice("Comment added.");
@@ -5516,38 +5568,7 @@ export function TranscriptionClient({
       }
 
       const nextComment = payload.comment;
-      setTranscriptionCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.map((comment) => (comment.id === commentId ? nextComment : comment)),
-          ]),
-        ),
-      );
-      setTaskCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.map((comment) => (comment.id === commentId ? nextComment : comment)),
-          ]),
-        ),
-      );
-      setProjectInsightCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.map((comment) => (comment.id === commentId ? nextComment : comment)),
-          ]),
-        ),
-      );
-      setWorkspaceInsightCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.map((comment) => (comment.id === commentId ? nextComment : comment)),
-          ]),
-        ),
-      );
+      dispatchComments({ type: "UPDATE", commentId, next: nextComment });
       setEditingCommentId(null);
       showUploadStatusNotice("Comment updated.");
     } catch (err) {
@@ -5570,38 +5591,7 @@ export function TranscriptionClient({
         throw new Error(payload?.error || "Failed to delete comment");
       }
 
-      setTranscriptionCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.filter((comment) => comment.id !== commentId),
-          ]),
-        ),
-      );
-      setTaskCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.filter((comment) => comment.id !== commentId),
-          ]),
-        ),
-      );
-      setProjectInsightCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.filter((comment) => comment.id !== commentId),
-          ]),
-        ),
-      );
-      setWorkspaceInsightCommentsById((prev) =>
-        Object.fromEntries(
-          Object.entries(prev).map(([key, comments]) => [
-            key,
-            comments.filter((comment) => comment.id !== commentId),
-          ]),
-        ),
-      );
+      dispatchComments({ type: "DELETE", commentId });
       if (editingCommentId === commentId) {
         setEditingCommentId(null);
       }
@@ -5823,6 +5813,22 @@ export function TranscriptionClient({
   const stableHandleUpdateComment = useStableCallback(handleUpdateComment);
   const stableHandleDeleteComment = useStableCallback(handleDeleteComment);
   const stableHandleCreateComment = useStableCallback(handleCreateComment);
+  const stableHandleRefreshNotes = useStableCallback(() => void handleRefreshNotes());
+  const stableHandleAssistantSubmit = useStableCallback(
+    (input: { text: string; scope: AssistantScope; projectId: string; workspaceProjectIds: string[] }) =>
+      void handleAssistantSubmitWithContext(input),
+  );
+  const stableHandleIntelligenceProjectChange = useStableCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      setIntelligenceProjectId(value);
+      startTransition(() => {
+        setSelectedProjectInsightId(null);
+        setIntelligenceResult(null);
+        setIntelligenceTitleDraft("");
+      });
+    },
+  );
   const sharedUploadBodyProps = useMemo<UploadPanelBodyProps>(
     () => ({
       activeWorkspace,
@@ -5905,7 +5911,7 @@ export function TranscriptionClient({
       currentActionTasks,
       activeTranscriptionId,
       actionTaskBusyKey,
-      taskCommentsById,
+      taskCommentsById: commentsById,
       taskCommentDrafts,
       commentBusyKey,
       detailsAutoOpenToken: overviewDetailsAutoOpenToken,
@@ -5943,7 +5949,7 @@ export function TranscriptionClient({
       stableHandleProcess,
       stableHandleUpdateActionTask,
       taskCommentDrafts,
-      taskCommentsById,
+      commentsById,
     ],
   );
   const historySurfaceProps = useMemo<HistorySurfaceProps>(
@@ -6352,35 +6358,42 @@ export function TranscriptionClient({
                 : "rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.28)]"
           }`}
         >
-          <OperationsActivitySurface {...operationsActivitySurfaceProps} />
+          <Suspense fallback={null}>
+            <OperationsActivitySurface {...operationsActivitySurfaceProps} />
+          </Suspense>
 
           {showPersonalSettings ? (
-          <PersonalSettingsSection
-            notificationPreferences={notificationPreferences}
-            notificationPreferencesLoading={notificationPreferencesLoading}
-            notificationPreferencesBusy={notificationPreferencesBusy}
-            mentionEmailEnabled={mentionEmailEnabled}
-            mentionInAppEnabled={mentionInAppEnabled}
-            digestEmailEnabled={digestEmailEnabled}
-            onMentionEmailChange={setMentionEmailEnabled}
-            onMentionInAppChange={setMentionInAppEnabled}
-            onDigestEmailChange={setDigestEmailEnabled}
-            onSubmit={handleSaveNotificationPreferences}
-          />
+          <Suspense fallback={null}>
+            <PersonalSettingsSection
+              notificationPreferences={notificationPreferences}
+              notificationPreferencesLoading={notificationPreferencesLoading}
+              notificationPreferencesBusy={notificationPreferencesBusy}
+              mentionEmailEnabled={mentionEmailEnabled}
+              mentionInAppEnabled={mentionInAppEnabled}
+              digestEmailEnabled={digestEmailEnabled}
+              onMentionEmailChange={setMentionEmailEnabled}
+              onMentionInAppChange={setMentionInAppEnabled}
+              onDigestEmailChange={setDigestEmailEnabled}
+              onSubmit={handleSaveNotificationPreferences}
+            />
+          </Suspense>
           ) : null}
 
           {showWorkspaceSettings ? (
-          <WorkspaceSettingsSection
-            activeWorkspace={activeWorkspace}
-            activeWorkspaceLabel={activeWorkspaceLabel}
-            workspaceDraftName={workspaceDraftName}
-            workspaceSettingsBusy={workspaceSettingsBusy}
-            onWorkspaceDraftNameChange={setWorkspaceDraftName}
-            onSubmit={handleRenameWorkspace}
-          />
+          <Suspense fallback={null}>
+            <WorkspaceSettingsSection
+              activeWorkspace={activeWorkspace}
+              activeWorkspaceLabel={activeWorkspaceLabel}
+              workspaceDraftName={workspaceDraftName}
+              workspaceSettingsBusy={workspaceSettingsBusy}
+              onWorkspaceDraftNameChange={setWorkspaceDraftName}
+              onSubmit={handleRenameWorkspace}
+            />
+          </Suspense>
           ) : null}
 
           {showDeliverySettings ? (
+          <Suspense fallback={null}>
           <DeliverySettingsSection
             activeWorkspace={activeWorkspace}
             workspaceDigestSettings={workspaceDigestSettings}
@@ -6425,9 +6438,11 @@ export function TranscriptionClient({
             onApplyReportTemplate={applyReportTemplate}
             onDeleteReportTemplate={handleDeleteReportTemplate}
           />
+          </Suspense>
           ) : null}
 
           {showIntegrationSettings ? (
+          <Suspense fallback={null}>
           <IntegrationSettingsSection
             activeWorkspace={activeWorkspace}
             activeWorkspaceLabel={activeWorkspaceLabel}
@@ -6454,9 +6469,11 @@ export function TranscriptionClient({
             onNotionSubmit={handleSaveWorkspaceNotionSettings}
             onValidateNotion={handleValidateWorkspaceNotion}
           />
+          </Suspense>
           ) : null}
 
           {showAccessSettings ? (
+          <Suspense fallback={null}>
           <AccessSettingsSection
             activeWorkspace={activeWorkspace}
             activeWorkspaceLabel={activeWorkspaceLabel}
@@ -6484,8 +6501,11 @@ export function TranscriptionClient({
             onTransferOwnership={handleTransferWorkspaceOwnership}
             onLeaveWorkspace={handleLeaveWorkspace}
           />
+          </Suspense>
           ) : null}
-          <WorkspaceTasksSurface {...workspaceTasksSurfaceProps} />
+          <Suspense fallback={null}>
+            <WorkspaceTasksSurface {...workspaceTasksSurfaceProps} />
+          </Suspense>
           <div
             id="intelligence"
             className={`mt-5 rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
@@ -6536,12 +6556,7 @@ export function TranscriptionClient({
                 </span>
                 <select
                   value={intelligenceProjectId}
-                  onChange={(event) => {
-                    setIntelligenceProjectId(event.target.value);
-                    setSelectedProjectInsightId(null);
-                    setIntelligenceResult(null);
-                    setIntelligenceTitleDraft("");
-                  }}
+                  onChange={stableHandleIntelligenceProjectChange}
                   disabled={intelligenceScope === "workspace"}
                   className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
                 >
@@ -6632,6 +6647,7 @@ export function TranscriptionClient({
                 </div>
               </div>
             ) : null}
+            <Suspense fallback={null}>
             <ProjectDigestPanel
               intelligenceScope={intelligenceScope}
               intelligenceProjectId={intelligenceProjectId}
@@ -6678,6 +6694,7 @@ export function TranscriptionClient({
               handleCreateSlackDestination={handleCreateSlackDestination}
               handleDeleteSlackDestination={handleDeleteSlackDestination}
             />
+            </Suspense>
             <div className="mt-4 flex flex-wrap gap-2">
               {[
                 "Summarize this project in five bullets.",
@@ -6832,7 +6849,9 @@ export function TranscriptionClient({
                 transcripts with source citations.
               </div>
             )}
-            <SavedInsightsPanel {...savedInsightsPanelProps} />
+            <Suspense fallback={null}>
+              <SavedInsightsPanel {...savedInsightsPanelProps} />
+            </Suspense>
           </div>
         </section>
         {isOverviewSurface ? (
@@ -6904,8 +6923,8 @@ export function TranscriptionClient({
           initialProjectId={assistantProjectId}
           initialWorkspaceProjectIds={assistantWorkspaceProjectIds}
           suggestions={assistantScopeSuggestions}
-          onRefresh={() => void handleRefreshNotes()}
-          onSubmit={(input) => void handleAssistantSubmitWithContext(input)}
+          onRefresh={stableHandleRefreshNotes}
+          onSubmit={stableHandleAssistantSubmit}
         />
       </aside>
       </div>
