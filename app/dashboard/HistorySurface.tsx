@@ -493,6 +493,7 @@ export type HistorySurfaceProps = {
   templateOptions: Array<{ id: string; label: string }>;
   projects: Project[];
   onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
+  onProcess: (transcriptionId: string, template?: string | null) => void;
   onDelete: (transcriptionId: string) => Promise<void>;
 };
 
