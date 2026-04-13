@@ -312,12 +312,55 @@ export async function sendWorkspaceDigestToSlack(input: {
   projectInsightTitles: string[];
   trigger: "manual" | "scheduled";
 }) {
+  // If a named destination is provided, use it directly without requiring workspace-level
+  // Slack settings. If falling back to the workspace webhook, require it to be enabled + set.
+  if (input.destinationId) {
+    const destination = await resolveSlackWebhook(input.workspaceId, input.destinationId);
+    await postSlackWebhook(destination.webhookUrl, {
+      text: `${input.workspaceName} weekly digest`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: `${input.workspaceName} weekly digest`,
+            emoji: true,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Schedule:* ${input.scheduleLabel}\n*Open tasks:* ${input.openTasks}\n*Trigger:* ${input.trigger}`,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text:
+              `*Recent workspace insights*\n${input.workspaceInsightTitles.length ? input.workspaceInsightTitles.map((title) => `• ${title}`).join("\n") : "• No new workspace insights"}`,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text:
+              `*Recent project insights*\n${input.projectInsightTitles.length ? input.projectInsightTitles.map((title) => `• ${title}`).join("\n") : "• No new project insights"}`,
+          },
+        },
+      ],
+    });
+    return { delivered: true as const, destinationName: destination.destinationName };
+  }
+
   const settings = await getWorkspaceSlackSettingsRecord(input.workspaceId);
-  if (!settings || !settings.enabled || !settings.sendDigests || !settings.webhookUrl.trim()) {
+  if (!settings || !settings.enabled || !settings.webhookUrl.trim()) {
     return { delivered: false as const };
   }
 
-  const destination = await resolveSlackWebhook(input.workspaceId, input.destinationId);
+  const destination = await resolveSlackWebhook(input.workspaceId, null);
 
   await postSlackWebhook(destination.webhookUrl, {
     text: `${input.workspaceName} weekly digest`,
@@ -369,39 +412,49 @@ export async function sendProjectDigestToSlack(input: {
   insightTitles: string[];
   trigger: "manual" | "scheduled";
 }) {
+  const projectBlocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `${input.projectName} weekly digest`,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Schedule:* ${input.scheduleLabel}\n*Processed transcripts:* ${input.transcriptCount}\n*Open tasks:* ${input.openTasks}\n*Trigger:* ${input.trigger}`,
+      },
+    },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*Recent project insights*\n${input.insightTitles.length ? input.insightTitles.map((title) => `• ${title}`).join("\n") : "• No new project insights"}`,
+      },
+    },
+  ];
+
+  if (input.destinationId) {
+    const destination = await resolveSlackWebhook(input.workspaceId, input.destinationId);
+    await postSlackWebhook(destination.webhookUrl, {
+      text: `${input.projectName} weekly digest`,
+      blocks: projectBlocks,
+    });
+    return { delivered: true as const, destinationName: destination.destinationName };
+  }
+
   const settings = await getWorkspaceSlackSettingsRecord(input.workspaceId);
-  if (!settings || !settings.enabled || !settings.sendDigests || !settings.webhookUrl.trim()) {
+  if (!settings || !settings.enabled || !settings.webhookUrl.trim()) {
     return { delivered: false as const };
   }
 
-  const destination = await resolveSlackWebhook(input.workspaceId, input.destinationId);
-
+  const destination = await resolveSlackWebhook(input.workspaceId, null);
   await postSlackWebhook(destination.webhookUrl, {
     text: `${input.projectName} weekly digest`,
-    blocks: [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `${input.projectName} weekly digest`,
-          emoji: true,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Schedule:* ${input.scheduleLabel}\n*Processed transcripts:* ${input.transcriptCount}\n*Open tasks:* ${input.openTasks}\n*Trigger:* ${input.trigger}`,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Recent project insights*\n${input.insightTitles.length ? input.insightTitles.map((title) => `• ${title}`).join("\n") : "• No new project insights"}`,
-        },
-      },
-    ],
+    blocks: projectBlocks,
   });
 
   return { delivered: true as const, destinationName: destination.destinationName };

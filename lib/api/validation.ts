@@ -172,6 +172,7 @@ export const transcriptionUpdateSchema = z.object({
   id: idSchema,
   template: templateSchema.optional(),
   projectId: z.union([idSchema, z.null()]).optional(),
+  actionItems: z.array(actionItemSchema.extend({ completed: z.boolean().optional() })).optional(),
 });
 
 export const transcriptionDeleteSchema = z.object({

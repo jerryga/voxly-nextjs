@@ -4288,9 +4288,10 @@ export function TranscriptionClient({
           : null,
         payload.result.slackDelivered ? "posted to Slack" : null,
       ].filter(Boolean);
+      const slackSkipped = workspaceDigestSendSlack && !payload.result.slackDelivered;
       showUploadStatusNotice(
         deliveryParts.length
-          ? `Workspace report ${deliveryParts.join(" and ")}.`
+          ? `Workspace report ${deliveryParts.join(" and ")}.${slackSkipped ? " Slack delivery was skipped — check your Slack integration in Settings." : ""}`
           : "Workspace report sent.",
       );
     } catch (err) {
@@ -6135,7 +6136,6 @@ export function TranscriptionClient({
       templateOptions,
       projects,
       onAssignProject: stableHandleAssignProject,
-      onProcess: stableHandleProcess,
       onDelete: stableHandleDelete,
     }),
     [
@@ -6145,7 +6145,6 @@ export function TranscriptionClient({
       projects,
       stableHandleAssignProject,
       stableHandleDelete,
-      stableHandleProcess,
       statusOptions,
       templateOptions,
       workspaceSurface,
@@ -6609,6 +6608,11 @@ export function TranscriptionClient({
             reportTemplatesLoading={reportTemplatesLoading}
             reportTemplateBusyKey={reportTemplateBusyKey}
             workspaceSlackDestinations={workspaceSlackDestinations}
+            slackIntegrationConfigured={
+              (workspaceSlackSettings?.configured === true && workspaceSlackSettings?.enabled === true) ||
+              workspaceSlackDestinations.length > 0
+            }
+            onNavigateToSlackIntegration={() => setSettingsSection("integrations")}
             browserTimeZone={browserTimeZone}
             digestWeekdayOptions={digestWeekdayOptions}
             digestCadenceOptions={digestCadenceOptions}

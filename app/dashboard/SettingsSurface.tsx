@@ -303,6 +303,8 @@ type DeliverySettingsSectionProps = {
   reportTemplatesLoading: boolean;
   reportTemplateBusyKey: string | null;
   workspaceSlackDestinations: WorkspaceSlackDestination[];
+  slackIntegrationConfigured: boolean;
+  onNavigateToSlackIntegration: () => void;
   browserTimeZone: string;
   digestWeekdayOptions: Array<{ id: string; label: string }>;
   digestCadenceOptions: Array<{ id: string; label: string }>;
@@ -365,6 +367,8 @@ export const DeliverySettingsSection = memo(function DeliverySettingsSection({
   reportTemplatesLoading,
   reportTemplateBusyKey,
   workspaceSlackDestinations,
+  slackIntegrationConfigured,
+  onNavigateToSlackIntegration,
   browserTimeZone,
   digestWeekdayOptions,
   digestCadenceOptions,
@@ -623,21 +627,43 @@ export const DeliverySettingsSection = memo(function DeliverySettingsSection({
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                   />
                 </label>
-                <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
+                <label className={`flex items-start justify-between gap-4 rounded-[16px] border px-4 py-4 ${slackIntegrationConfigured ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50 opacity-60"}`}>
                   <div>
                     <p className="text-sm font-semibold text-slate-900">Slack</p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Requires a workspace Slack destination to be configured.
+                      {slackIntegrationConfigured
+                        ? "Send this report to a Slack channel."
+                        : "Connect Slack in Integrations to enable this channel."}
                     </p>
                   </div>
                   <DeferredCheckbox
                     checked={workspaceDigestSendSlack}
                     onCheckedChange={onWorkspaceDigestSendSlackChange}
-                    disabled={workspaceDigestLoading || !canManageWorkspace}
+                    disabled={workspaceDigestLoading || !canManageWorkspace || !slackIntegrationConfigured}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
                   />
                 </label>
-                {workspaceDigestSendSlack ? (
+                {!slackIntegrationConfigured && (
+                  <div className="flex items-start gap-3 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3">
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500">
+                      <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-amber-800">Slack not connected</p>
+                      <p className="mt-0.5 text-xs text-amber-700">
+                        Set up the Slack integration before enabling this delivery channel.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={onNavigateToSlackIntegration}
+                        className="mt-2 cursor-pointer text-xs font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-900"
+                      >
+                        Go to Integrations →
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {workspaceDigestSendSlack && slackIntegrationConfigured ? (
                   <label className="block max-w-md">
                     <span className="text-xs font-medium text-slate-600">
                       Slack route
@@ -695,7 +721,20 @@ export const DeliverySettingsSection = memo(function DeliverySettingsSection({
                 <button
                   type="button"
                   onClick={onSendNow}
-                  disabled={workspaceDigestBusy !== null || !canManageWorkspace}
+                  disabled={
+                    workspaceDigestBusy !== null ||
+                    !canManageWorkspace ||
+                    (!workspaceDigestSendEmail &&
+                      workspaceDigestSendSlack &&
+                      !slackIntegrationConfigured)
+                  }
+                  title={
+                    !workspaceDigestSendEmail &&
+                    workspaceDigestSendSlack &&
+                    !slackIntegrationConfigured
+                      ? "Connect Slack in Integrations before sending"
+                      : undefined
+                  }
                   className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {workspaceDigestBusy === "send" ? "Sending..." : "Send Now"}

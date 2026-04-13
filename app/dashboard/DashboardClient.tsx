@@ -274,11 +274,6 @@ export function DashboardClient({ initialProjectFilter = "all" }: { initialProje
     return res.ok;
   });
 
-  const handleProcess = useStableCallback(async (txId: string) => {
-    // Navigate to session page; processing is managed there
-    router.push(`/session/${txId}`);
-  });
-
   const handleDelete = useStableCallback(async (txId: string) => {
     await fetch("/api/transcriptions", {
       method: "DELETE",
@@ -388,7 +383,6 @@ export function DashboardClient({ initialProjectFilter = "all" }: { initialProje
         templateOptions={templateOptions}
         projects={projects}
         onAssignProject={handleAssignProject}
-        onProcess={handleProcess}
         onDelete={handleDelete}
       />
     </div>
