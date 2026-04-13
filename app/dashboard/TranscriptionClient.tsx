@@ -2,7 +2,6 @@
 
 import {
   memo,
-  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -14,7 +13,32 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import type { BillingInfo, BillingResponse } from "@/lib/billing-types";
+import { HistorySurface } from "./HistorySurface";
+import type { HistorySurfaceProps } from "./HistorySurface";
+import {
+  OperationsActivitySurface,
+  WorkspaceTasksSurface,
+} from "./OperationsSurface";
+import type {
+  OperationsActivitySurfaceProps,
+  WorkspaceTasksSurfaceProps,
+} from "./OperationsSurface";
 import { OverviewSurface, UploadPanelBody } from "./OverviewSurface";
+import type {
+  OverviewCurrentRecordingProps,
+  UploadPanelBodyProps,
+} from "./OverviewSurface";
+import { ProjectDigestPanel, SavedInsightsPanel } from "./IntelligenceSurface";
+import type { SavedInsightsPanelProps } from "./IntelligenceSurface";
+import {
+  AccessSettingsSection,
+  DeliverySettingsSection,
+  IntegrationSettingsSection,
+  PersonalSettingsSection,
+  SettingsSurfaceNav,
+  WorkspaceSettingsSection,
+} from "./SettingsSurface";
+import type { SettingsSection, SettingsSectionMeta } from "./SettingsSurface";
 
 export type ActionItem = {
   text: string;
@@ -143,6 +167,20 @@ function writeSessionCache<T>(key: string, value: T) {
   }
 }
 
+function useStableCallback<T extends (...args: never[]) => unknown>(callback: T): T {
+  const callbackRef = useRef(callback);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  const stableCallback = useCallback((...args: Parameters<T>) => {
+    return callbackRef.current(...args);
+  }, []);
+
+  return stableCallback as T;
+}
+
 function clearSessionCacheKey(key: string) {
   dashboardMemoryCache.delete(key);
   if (typeof window === "undefined") {
@@ -209,16 +247,6 @@ function buildTranscriptionsCacheKey(input: {
   projectId: string;
 }) {
   return `${TRANSCRIPTIONS_CACHE_PREFIX}${encodeURIComponent(JSON.stringify(input))}`;
-}
-
-function buildHistoryCacheKey(input: {
-  workspaceId?: string | null;
-  query: string;
-  status: string;
-  template: string;
-  projectId: string;
-}) {
-  return `${HISTORY_CACHE_PREFIX}${encodeURIComponent(JSON.stringify(input))}`;
 }
 
 type SummaryTemplate = {
@@ -292,7 +320,7 @@ type WorkspacesResponse = {
   error?: string;
 };
 
-type WorkspaceMemberEntry = {
+export type WorkspaceMemberEntry = {
   id: string;
   role: string;
   status: string;
@@ -304,7 +332,7 @@ type WorkspaceMemberEntry = {
   };
 };
 
-type WorkspaceInviteEntry = {
+export type WorkspaceInviteEntry = {
   id: string;
   email: string;
   role: string;
@@ -327,7 +355,7 @@ type WorkspaceInvitesResponse = {
   error?: string;
 };
 
-type WorkspaceActivityEntry = {
+export type WorkspaceActivityEntry = {
   id: string;
   action: string;
   targetType?: string | null;
@@ -382,7 +410,7 @@ type CommentsResponse = {
   error?: string;
 };
 
-type WorkspaceNotification = {
+export type WorkspaceNotification = {
   id: string;
   type: string;
   title: string;
@@ -399,7 +427,7 @@ type NotificationsResponse = {
   error?: string;
 };
 
-type ProjectIntelligenceSource = {
+export type ProjectIntelligenceSource = {
   sourceId: string;
   transcriptionId: string;
   fileName: string;
@@ -419,7 +447,7 @@ type ProjectIntelligenceResponse = {
   error?: string;
 };
 
-type SavedProjectInsight = {
+export type SavedProjectInsight = {
   id: string;
   title: string;
   question: string;
@@ -444,7 +472,7 @@ type ProjectInsightsResponse = {
   error?: string;
 };
 
-type SavedWorkspaceInsight = {
+export type SavedWorkspaceInsight = {
   id: string;
   title: string;
   question: string;
@@ -470,7 +498,7 @@ type WorkspaceInsightsResponse = {
   error?: string;
 };
 
-type RecurringReportTemplate = {
+export type RecurringReportTemplate = {
   id: string;
   name: string;
   targetScope: "workspace" | "project";
@@ -500,7 +528,7 @@ type ReportTemplatesResponse = {
   error?: string;
 };
 
-type WorkspaceDigestSettings = {
+export type WorkspaceDigestSettings = {
   id: string;
   workspaceId: string;
   enabled: boolean;
@@ -535,7 +563,7 @@ type WorkspaceDigestResponse = {
   error?: string;
 };
 
-type ProjectDigestSettings = {
+export type ProjectDigestSettings = {
   id: string;
   projectId: string;
   enabled: boolean;
@@ -570,7 +598,7 @@ type ProjectDigestResponse = {
   error?: string;
 };
 
-type WorkspaceSlackSettings = {
+export type WorkspaceSlackSettings = {
   configured: boolean;
   enabled: boolean;
   sendDigests: boolean;
@@ -584,7 +612,7 @@ type WorkspaceSlackResponse = {
   error?: string;
 };
 
-type WorkspaceSlackDestination = {
+export type WorkspaceSlackDestination = {
   id: string;
   workspaceId: string;
   name: string;
@@ -600,7 +628,7 @@ type WorkspaceSlackDestinationsResponse = {
   error?: string;
 };
 
-type RecurringReportRun = {
+export type RecurringReportRun = {
   id: string;
   scope: "workspace" | "project";
   trigger: string;
@@ -634,7 +662,7 @@ type ReportRunsResponse = {
   error?: string;
 };
 
-type ReportRunSummary = {
+export type ReportRunSummary = {
   days: number;
   totalRuns: number;
   successCount: number;
@@ -657,7 +685,7 @@ type ReportRunSummaryResponse = {
   error?: string;
 };
 
-type UserNotificationPreferences = {
+export type UserNotificationPreferences = {
   id: string;
   userId: string;
   mentionEmailEnabled: boolean;
@@ -673,7 +701,7 @@ type UserNotificationPreferencesResponse = {
   error?: string;
 };
 
-type WorkspaceNotionSettings = {
+export type WorkspaceNotionSettings = {
   configured: boolean;
   enabled: boolean;
   maskedToken?: string | null;
@@ -699,7 +727,6 @@ type AssistantMessage = {
 
 type AssistantScope = "transcript" | "project" | "workspace";
 type DashboardSurface = "overview" | "upload" | "transcriptions" | "intelligence" | "operations" | "settings";
-type SettingsSection = "workspace" | "delivery" | "integrations" | "access" | "personal";
 
 const defaultAssistantMessages: AssistantMessage[] = [
   {
@@ -740,798 +767,6 @@ const builtInTemplates = [
   { id: "lecture", label: "Lecture Notes" },
   { id: "voice-memo", label: "Voice Memo Notes" },
 ];
-
-type HistoryFiltersProps = {
-  initialSearchQuery: string;
-  statusFilter: string;
-  templateFilter: string;
-  projectFilter: string;
-  statusOptions: Array<{ id: string; label: string }>;
-  templateOptions: Array<{ id: string; label: string }>;
-  projects: Project[];
-  searchDisabled: boolean;
-  onSearchCommit: (value: string) => void;
-  onSearchInputStart: () => void;
-  onStatusChange: (value: string) => void;
-  onTemplateChange: (value: string) => void;
-  onProjectChange: (value: string) => void;
-};
-
-const HistoryFilters = memo(function HistoryFilters({
-  initialSearchQuery,
-  statusFilter,
-  templateFilter,
-  projectFilter,
-  statusOptions,
-  templateOptions,
-  projects,
-  searchDisabled,
-  onSearchCommit,
-  onSearchInputStart,
-  onStatusChange,
-  onTemplateChange,
-  onProjectChange,
-}: HistoryFiltersProps) {
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const committedSearchRef = useRef(initialSearchQuery.trim());
-  const onSearchCommitRef = useRef(onSearchCommit);
-  const onSearchInputStartRef = useRef(onSearchInputStart);
-  const [localStatusFilter, setLocalStatusFilter] = useState(statusFilter);
-  const [localTemplateFilter, setLocalTemplateFilter] = useState(templateFilter);
-  const [localProjectFilter, setLocalProjectFilter] = useState(projectFilter);
-
-  useEffect(() => {
-    onSearchCommitRef.current = onSearchCommit;
-  }, [onSearchCommit]);
-
-  useEffect(() => {
-    onSearchInputStartRef.current = onSearchInputStart;
-  }, [onSearchInputStart]);
-
-  useEffect(() => {
-    committedSearchRef.current = initialSearchQuery.trim();
-    if (searchInputRef.current && searchInputRef.current.value !== initialSearchQuery) {
-      searchInputRef.current.value = initialSearchQuery;
-    }
-  }, [initialSearchQuery]);
-
-  useEffect(() => {
-    setLocalStatusFilter(statusFilter);
-  }, [statusFilter]);
-
-  useEffect(() => {
-    setLocalTemplateFilter(templateFilter);
-  }, [templateFilter]);
-
-  useEffect(() => {
-    setLocalProjectFilter(projectFilter);
-  }, [projectFilter]);
-
-  useEffect(() => {
-    return () => {
-      if (searchCommitTimeoutRef.current) {
-        clearTimeout(searchCommitTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      startTransition(() => {
-        onStatusChange(localStatusFilter);
-        onTemplateChange(localTemplateFilter);
-        onProjectChange(localProjectFilter);
-      });
-    }, 120);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [
-    localProjectFilter,
-    localStatusFilter,
-    localTemplateFilter,
-    onProjectChange,
-    onStatusChange,
-    onTemplateChange,
-  ]);
-
-  function commitSearch(nextSearchValue?: string) {
-    const nextValue = (nextSearchValue ?? searchInputRef.current?.value ?? "").trim();
-    if (nextValue === committedSearchRef.current) {
-      return;
-    }
-    committedSearchRef.current = nextValue;
-    startTransition(() => {
-      onSearchCommitRef.current(nextValue);
-    });
-  }
-
-  useEffect(() => {
-    const input = searchInputRef.current;
-    if (!input) {
-      return;
-    }
-    const activeInput = input;
-
-    function handleInput() {
-      if (activeInput.disabled) {
-        return;
-      }
-
-      const nextValue = activeInput.value;
-      onSearchInputStartRef.current();
-      if (searchCommitTimeoutRef.current) {
-        clearTimeout(searchCommitTimeoutRef.current);
-      }
-      searchCommitTimeoutRef.current = setTimeout(() => {
-        commitSearch(nextValue);
-      }, 700);
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Enter") {
-        return;
-      }
-
-      event.preventDefault();
-      if (searchCommitTimeoutRef.current) {
-        clearTimeout(searchCommitTimeoutRef.current);
-      }
-      commitSearch(activeInput.value);
-    }
-
-    activeInput.addEventListener("input", handleInput);
-    activeInput.addEventListener("keydown", handleKeyDown);
-    return () => {
-      activeInput.removeEventListener("input", handleInput);
-      activeInput.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  return (
-    <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_180px_180px_180px]">
-      <label className="block">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Search
-        </span>
-        <input
-          type="search"
-          ref={searchInputRef}
-          defaultValue={initialSearchQuery}
-          disabled={searchDisabled}
-          placeholder={
-            searchDisabled ? "Loading history before search..." : "Search recording names"
-          }
-          className="mt-2 w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-        />
-      </label>
-
-      <label className="block">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Status
-        </span>
-        <select
-          value={localStatusFilter}
-          onChange={(event) => setLocalStatusFilter(event.target.value)}
-          className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-        >
-          {statusOptions.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="block">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Template
-        </span>
-        <select
-          value={localTemplateFilter}
-          onChange={(event) => setLocalTemplateFilter(event.target.value)}
-          className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-        >
-          <option value="all">All templates</option>
-          {templateOptions.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="block">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Project
-        </span>
-        <select
-          value={localProjectFilter}
-          onChange={(event) => setLocalProjectFilter(event.target.value)}
-          className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-        >
-          <option value="all">All projects</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
-  );
-});
-
-type HistoryRowProps = {
-  item: Transcription;
-  projects: Project[];
-  onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
-  onProcess: (
-    transcriptionId: string,
-    template?: string | null,
-    trackInParent?: boolean,
-  ) => Promise<void>;
-  onDelete: (transcriptionId: string) => Promise<void>;
-};
-
-const HistoryRow = memo(function HistoryRow({
-  item,
-  projects,
-  onAssignProject,
-  onProcess,
-  onDelete,
-}: HistoryRowProps) {
-  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
-  const [localProjectId, setLocalProjectId] = useState(item.projectId || "none");
-  const [isAssigning, setIsAssigning] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const transcriptPreview = item.transcript
-    ? item.transcript.length > 1800
-      ? `${item.transcript.slice(0, 1800).trim()}...`
-      : item.transcript
-    : "";
-  const isTranscriptTruncated = Boolean(
-    item.transcript && item.transcript.length > transcriptPreview.length,
-  );
-  const canProcess =
-    !isProcessing && (item.status === "uploaded" || item.status === "done");
-
-  useEffect(() => {
-    setLocalProjectId(item.projectId || "none");
-  }, [item.projectId]);
-
-  return (
-    <div
-      className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 hover:border-slate-300"
-      style={{ contain: "content" }}
-    >
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold text-slate-900">
-            {item.fileName}
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <p className="text-xs text-slate-500">
-              {new Date(item.createdAt).toLocaleString()}
-            </p>
-            <span className="text-slate-300">•</span>
-            <span
-              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                item.status === "done"
-                  ? "bg-green-100 text-green-700"
-                  : item.status === "uploaded"
-                    ? "bg-amber-100 text-amber-700"
-                    : item.status === "uploading"
-                      ? "bg-orange-100 text-orange-700"
-                      : item.status === "processing"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-slate-100 text-slate-700"
-              }`}
-            >
-              {item.status}
-            </span>
-            {item.duration ? (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="text-xs text-slate-500">
-                  {Math.max(1, Math.ceil(item.duration / 60))} credits
-                </span>
-              </>
-            ) : null}
-            {item.projectId ? (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="text-xs text-slate-500">
-                  {projects.find((project) => project.id === item.projectId)?.name || "Project"}
-                </span>
-              </>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 xl:max-w-[28rem] xl:justify-end">
-          <select
-            value={localProjectId}
-            onChange={async (event) => {
-              const nextProjectId = event.target.value;
-              const previousProjectId = localProjectId;
-              setLocalProjectId(nextProjectId);
-              setIsAssigning(true);
-              const saved = await onAssignProject(item.id, nextProjectId);
-              if (!saved) {
-                setLocalProjectId(previousProjectId);
-              }
-              setIsAssigning(false);
-            }}
-            disabled={isAssigning}
-            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="none">No project</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={async () => {
-              setIsProcessing(true);
-              try {
-                await onProcess(item.id, item.template, false);
-              } finally {
-                setIsProcessing(false);
-              }
-            }}
-            disabled={!canProcess}
-            className={`cursor-pointer rounded-full border px-3.5 py-2 text-[11px] font-semibold active:scale-95 ${
-              isProcessing
-                ? "border-sky-200 bg-sky-50 text-sky-700 shadow-[0_10px_24px_-20px_rgba(14,165,233,0.9)]"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-[#fff4ec] hover:text-orange-700"
-            } disabled:cursor-not-allowed disabled:opacity-50`}
-          >
-            {isProcessing ? "Processing..." : "Process"}
-          </button>
-
-          {item.transcript ? (
-            <button
-              type="button"
-              onClick={() => setIsTranscriptOpen((prev) => !prev)}
-              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
-            >
-              {isTranscriptOpen ? "Hide Transcript" : "View Transcript"}
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={async () => {
-              setIsDeleting(true);
-              try {
-                await onDelete(item.id);
-              } finally {
-                setIsDeleting(false);
-              }
-            }}
-            disabled={isDeleting}
-            className="cursor-pointer rounded-full border border-red-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
-          >
-            {isDeleting ? "Deleting..." : "Delete"}
-          </button>
-        </div>
-      </div>
-
-      {item.transcript && isTranscriptOpen ? (
-        <div
-          className="mt-4 max-h-[28rem] overflow-hidden rounded-[16px] border border-slate-200 bg-[#fcfbf8] p-4"
-          style={{ contain: "content" }}
-        >
-          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Transcript
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">
-                {item.transcript.length.toLocaleString()} chars
-              </span>
-              <button
-                type="button"
-                onClick={() => void navigator.clipboard.writeText(item.transcript || "")}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
-              >
-                Copy full
-              </button>
-            </div>
-          </div>
-          <div className="mt-3 max-h-[20rem] overflow-auto rounded-[14px] bg-white px-4 py-3">
-            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
-              {transcriptPreview}
-            </p>
-          </div>
-          {isTranscriptTruncated ? (
-            <p className="mt-3 text-xs text-slate-500">
-              Showing a preview to keep History fast. Use Copy full to grab the complete transcript.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-type HistorySurfaceProps = {
-  isActive: boolean;
-  activeWorkspaceId: string | null;
-  activeWorkspace: ActiveWorkspaceDetails | null;
-  initialProjectFilter: string;
-  statusOptions: Array<{ id: string; label: string }>;
-  templateOptions: Array<{ id: string; label: string }>;
-  projects: Project[];
-  onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
-  onProcess: (
-    transcriptionId: string,
-    template?: string | null,
-    trackInParent?: boolean,
-  ) => Promise<void>;
-  onDelete: (transcriptionId: string) => Promise<void>;
-};
-
-const HistorySurface = memo(function HistorySurface({
-  isActive,
-  activeWorkspaceId,
-  activeWorkspace,
-  initialProjectFilter,
-  statusOptions,
-  templateOptions,
-  projects,
-  onAssignProject,
-  onProcess,
-  onDelete,
-}: HistorySurfaceProps) {
-  const historyRequestAbortRef = useRef<AbortController | null>(null);
-  const historyInputActiveRef = useRef(false);
-  const initialHistoryLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [historyItems, setHistoryItems] = useState<Transcription[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
-  const [visibleHistoryLimit, setVisibleHistoryLimit] = useState(12);
-  const [historySearchQuery, setHistorySearchQuery] = useState("");
-  const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
-  const [historyTemplateFilter, setHistoryTemplateFilter] = useState("all");
-  const [historyProjectFilter, setHistoryProjectFilter] = useState(initialProjectFilter);
-
-  useEffect(() => {
-    setHistoryProjectFilter(initialProjectFilter || "all");
-  }, [initialProjectFilter]);
-
-  const pinnedProjectFilter = initialProjectFilter !== "all" ? initialProjectFilter : "all";
-  const activeWorkspaceLabel = activeWorkspace
-    ? `${activeWorkspace.name}${activeWorkspace.isPersonal ? " (Personal)" : ""}`
-    : "this workspace";
-  const hasActiveFilters =
-    historySearchQuery.trim().length > 0 ||
-    historyStatusFilter !== "all" ||
-    historyTemplateFilter !== "all" ||
-    historyProjectFilter !== pinnedProjectFilter;
-
-  const visibleHistoryItems = useMemo(
-    () => historyItems.slice(0, visibleHistoryLimit),
-    [historyItems, visibleHistoryLimit],
-  );
-  const hasMoreHistoryItems = historyItems.length > visibleHistoryLimit;
-  const isRefreshingHistory = historyLoading && historyItems.length > 0;
-  const searchDisabled = isActive && !initialHistoryLoaded;
-
-  const cancelHistoryLoadForInput = useCallback(() => {
-    historyInputActiveRef.current = true;
-    if (initialHistoryLoadTimeoutRef.current) {
-      clearTimeout(initialHistoryLoadTimeoutRef.current);
-      initialHistoryLoadTimeoutRef.current = null;
-    }
-    if (historyRequestAbortRef.current) {
-      historyRequestAbortRef.current.abort();
-      historyRequestAbortRef.current = null;
-    }
-    startTransition(() => {
-      setHistoryLoading(false);
-    });
-  }, []);
-
-  const loadHistoryItems = useCallback(async () => {
-    if (!isActive || !activeWorkspaceId) {
-      return;
-    }
-
-    const trimmedQuery = historySearchQuery.trim();
-    const cacheKey = buildHistoryCacheKey({
-      workspaceId: activeWorkspaceId,
-      query: trimmedQuery,
-      status: historyStatusFilter,
-      template: historyTemplateFilter,
-      projectId: historyProjectFilter,
-    });
-    const cachedItems = readSessionCache<Transcription[]>(cacheKey);
-    if (cachedItems) {
-      startTransition(() => {
-        setHistoryItems(cachedItems);
-        setVisibleHistoryLimit(12);
-        setInitialHistoryLoaded(true);
-        setHistoryLoading(false);
-      });
-      return;
-    }
-
-    if (historyRequestAbortRef.current) {
-      historyRequestAbortRef.current.abort();
-    }
-    const abortController = new AbortController();
-    historyRequestAbortRef.current = abortController;
-    startTransition(() => {
-      setHistoryLoading(true);
-    });
-
-    try {
-      const params = new URLSearchParams();
-      params.set("limit", "24");
-      if (trimmedQuery) {
-        params.set("q", trimmedQuery);
-        params.set("searchScope", "name");
-      }
-      if (historyStatusFilter !== "all") {
-        params.set("status", historyStatusFilter);
-      }
-      if (historyTemplateFilter !== "all") {
-        params.set("template", historyTemplateFilter);
-      }
-      if (historyProjectFilter !== "all") {
-        params.set("projectId", historyProjectFilter);
-      }
-
-      const queryString = params.toString();
-      const response = await fetch(
-        queryString ? `/api/transcriptions?${queryString}` : "/api/transcriptions",
-        { signal: abortController.signal },
-      );
-      const payload = (await response.json().catch(() => ({}))) as ApiResponse;
-      if (!response.ok) {
-        throw new Error(payload?.error || "Failed to load history");
-      }
-
-      if (historyRequestAbortRef.current !== abortController) {
-        return;
-      }
-      if (historyInputActiveRef.current && !historySearchQuery.trim()) {
-        return;
-      }
-
-      const nextItems = [...(payload.items || [])].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-      writeSessionCache(cacheKey, nextItems);
-      startTransition(() => {
-        setHistoryItems(nextItems);
-        setVisibleHistoryLimit(12);
-        setInitialHistoryLoaded(true);
-      });
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        return;
-      }
-      startTransition(() => {
-        setHistoryItems([]);
-        setVisibleHistoryLimit(12);
-        setInitialHistoryLoaded(true);
-      });
-    } finally {
-      if (historyRequestAbortRef.current === abortController) {
-        historyRequestAbortRef.current = null;
-      }
-      startTransition(() => {
-        setHistoryLoading(false);
-      });
-    }
-  }, [
-    historySearchQuery,
-    historyProjectFilter,
-    historyStatusFilter,
-    historyTemplateFilter,
-    activeWorkspaceId,
-    isActive,
-  ]);
-
-  useEffect(() => {
-    if (!isActive) {
-      return;
-    }
-
-    if (initialHistoryLoadTimeoutRef.current) {
-      clearTimeout(initialHistoryLoadTimeoutRef.current);
-    }
-
-    initialHistoryLoadTimeoutRef.current = setTimeout(() => {
-      historyInputActiveRef.current = false;
-      void loadHistoryItems();
-    }, historySearchQuery.trim() ? 0 : 350);
-
-    return () => {
-      if (initialHistoryLoadTimeoutRef.current) {
-        clearTimeout(initialHistoryLoadTimeoutRef.current);
-        initialHistoryLoadTimeoutRef.current = null;
-      }
-    };
-  }, [historySearchQuery, isActive, loadHistoryItems]);
-
-  useEffect(() => {
-    return () => {
-      if (historyRequestAbortRef.current) {
-        historyRequestAbortRef.current.abort();
-      }
-      if (initialHistoryLoadTimeoutRef.current) {
-        clearTimeout(initialHistoryLoadTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  function clearHistoryFilters() {
-    startTransition(() => {
-      setHistorySearchQuery("");
-      setHistoryStatusFilter("all");
-      setHistoryTemplateFilter("all");
-      setHistoryProjectFilter(pinnedProjectFilter);
-      setVisibleHistoryLimit(12);
-    });
-  }
-
-  async function handleHistoryAssignProject(transcriptionId: string, projectId: string) {
-    const saved = await onAssignProject(transcriptionId, projectId);
-    if (saved) {
-      const nextProjectId = projectId === "none" ? null : projectId;
-      setHistoryItems((prev) =>
-        prev.map((item) =>
-          item.id === transcriptionId ? { ...item, projectId: nextProjectId } : item,
-        ),
-      );
-    }
-    return saved;
-  }
-
-  async function handleHistoryDelete(transcriptionId: string) {
-    await onDelete(transcriptionId);
-    setHistoryItems((prev) => prev.filter((item) => item.id !== transcriptionId));
-  }
-
-  return (
-    <section
-      id="transcriptions"
-      className={`rounded-[30px] border border-white/80 bg-white/88 p-8 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] ${
-        isActive ? "" : "hidden"
-      }`}
-      style={{ contain: "layout paint style" }}
-    >
-      <div className="border-b border-slate-200 pb-4" style={{ contain: "layout paint" }}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">History</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Search recordings and narrow the list with quick filters.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {hasActiveFilters ? (
-              <button
-                type="button"
-                onClick={clearHistoryFilters}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] active:scale-95"
-              >
-                Clear Filters
-              </button>
-            ) : null}
-            {isRefreshingHistory ? (
-              <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-500">
-                Updating...
-              </span>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void loadHistoryItems()}
-              className="cursor-pointer rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-[#f5f1ea] active:scale-95"
-            >
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        <HistoryFilters
-          initialSearchQuery={historySearchQuery}
-          statusFilter={historyStatusFilter}
-          templateFilter={historyTemplateFilter}
-          projectFilter={historyProjectFilter}
-          statusOptions={statusOptions}
-          templateOptions={templateOptions}
-          projects={projects}
-          searchDisabled={searchDisabled}
-          onSearchCommit={setHistorySearchQuery}
-          onSearchInputStart={cancelHistoryLoadForInput}
-          onStatusChange={setHistoryStatusFilter}
-          onTemplateChange={setHistoryTemplateFilter}
-          onProjectChange={setHistoryProjectFilter}
-        />
-      </div>
-
-      {!initialHistoryLoaded || (historyLoading && historyItems.length === 0) ? (
-        <p className="mt-6 text-center text-sm text-slate-400">
-          Loading history for {activeWorkspaceLabel}...
-        </p>
-      ) : historyItems.length === 0 ? (
-        <div className="mt-6 rounded-[22px] border border-dashed border-slate-200 bg-[#fcfbf8] px-6 py-10 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
-            <svg
-              className="h-7 w-7 text-slate-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-          </div>
-          <p className="mt-4 text-base font-semibold text-slate-700">
-            {hasActiveFilters ? "No matching history" : "No history yet"}
-          </p>
-          <p className="mt-2 text-sm text-slate-500">
-            {hasActiveFilters
-              ? "Try clearing a filter or searching with a broader phrase."
-              : `Upload a recording from Overview to start building history in ${activeWorkspaceLabel}.`}
-          </p>
-          {hasActiveFilters ? (
-            <div className="mt-5 flex justify-center">
-              <button
-                type="button"
-                onClick={clearHistoryFilters}
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-              >
-                Clear Filters
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mt-6 space-y-4" style={{ contentVisibility: "auto" }}>
-          {visibleHistoryItems.map((item) => (
-            <HistoryRow
-              key={item.id}
-              item={item}
-              projects={projects}
-              onAssignProject={handleHistoryAssignProject}
-              onProcess={onProcess}
-              onDelete={handleHistoryDelete}
-            />
-          ))}
-          {hasMoreHistoryItems ? (
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={() =>
-                  startTransition(() => {
-                    setVisibleHistoryLimit((prev) => prev + 24);
-                  })
-                }
-                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef] active:scale-95"
-              >
-                Show more history
-              </button>
-            </div>
-          ) : null}
-        </div>
-      )}
-    </section>
-  );
-});
 
 type AssistantRailProps = {
   projects: Project[];
@@ -1910,56 +1145,6 @@ const AssistantRail = memo(function AssistantRail({
   );
 });
 
-type DeferredCheckboxProps = {
-  checked: boolean;
-  disabled?: boolean;
-  className?: string;
-  onCheckedChange: (checked: boolean) => void;
-};
-
-const DeferredCheckbox = memo(function DeferredCheckbox({
-  checked,
-  disabled,
-  className,
-  onCheckedChange,
-}: DeferredCheckboxProps) {
-  const [localChecked, setLocalChecked] = useState(checked);
-  const commitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setLocalChecked(checked);
-  }, [checked]);
-
-  useEffect(() => {
-    return () => {
-      if (commitTimeoutRef.current) {
-        clearTimeout(commitTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  return (
-    <input
-      type="checkbox"
-      checked={localChecked}
-      onChange={(event) => {
-        const nextChecked = event.target.checked;
-        setLocalChecked(nextChecked);
-        if (commitTimeoutRef.current) {
-          clearTimeout(commitTimeoutRef.current);
-        }
-        commitTimeoutRef.current = setTimeout(() => {
-          startTransition(() => {
-            onCheckedChange(nextChecked);
-          });
-        }, 80);
-      }}
-      disabled={disabled}
-      className={className}
-    />
-  );
-});
-
 export function TranscriptionClient({
   initialSurface = "overview",
   initialSettingsSection = "workspace",
@@ -2247,38 +1432,53 @@ export function TranscriptionClient({
     useState<SettingsSection>(initialSettingsSection);
   const lastWorkspaceIdRef = useRef<string | null>(null);
 
-  const templateOptions = [
-    ...builtInTemplates,
-    ...customTemplates.map((template) => ({
-      id: `custom:${template.id}`,
-      label: `${template.name} (Custom)`,
-    })),
-  ];
-  const statusOptions = [
-    { id: "all", label: "All statuses" },
-    { id: "uploading", label: "Uploading" },
-    { id: "uploaded", label: "Uploaded" },
-    { id: "processing", label: "Processing" },
-    { id: "done", label: "Done" },
-    { id: "error", label: "Error" },
-  ];
-  const taskStatusOptions = [
-    { id: "all", label: "All tasks" },
-    { id: "open", label: "Open" },
-    { id: "in_progress", label: "In Progress" },
-    { id: "done", label: "Done" },
-  ];
-  const taskAssignmentOptions = [
-    { id: "all", label: "Everyone" },
-    { id: "mine", label: "Assigned to me" },
-    { id: "unassigned", label: "Unassigned" },
-  ];
-  const projectInsightFilterOptions = [
-    { id: "active", label: "Active" },
-    { id: "pinned", label: "Pinned" },
-    { id: "archived", label: "Archived" },
-    { id: "all", label: "All" },
-  ];
+  const templateOptions = useMemo(
+    () => [
+      ...builtInTemplates,
+      ...customTemplates.map((template) => ({
+        id: `custom:${template.id}`,
+        label: `${template.name} (Custom)`,
+      })),
+    ],
+    [customTemplates],
+  );
+  const statusOptions = useMemo(
+    () => [
+      { id: "all", label: "All statuses" },
+      { id: "uploading", label: "Uploading" },
+      { id: "uploaded", label: "Uploaded" },
+      { id: "processing", label: "Processing" },
+      { id: "done", label: "Done" },
+      { id: "error", label: "Error" },
+    ],
+    [],
+  );
+  const taskStatusOptions = useMemo(
+    () => [
+      { id: "all", label: "All tasks" },
+      { id: "open", label: "Open" },
+      { id: "in_progress", label: "In Progress" },
+      { id: "done", label: "Done" },
+    ],
+    [],
+  );
+  const taskAssignmentOptions = useMemo(
+    () => [
+      { id: "all", label: "Everyone" },
+      { id: "mine", label: "Assigned to me" },
+      { id: "unassigned", label: "Unassigned" },
+    ],
+    [],
+  );
+  const projectInsightFilterOptions = useMemo(
+    () => [
+      { id: "active", label: "Active" },
+      { id: "pinned", label: "Pinned" },
+      { id: "archived", label: "Archived" },
+      { id: "all", label: "All" },
+    ],
+    [],
+  );
   const digestWeekdayOptions = [
     { id: "0", label: "Sunday" },
     { id: "1", label: "Monday" },
@@ -2425,15 +1625,27 @@ export function TranscriptionClient({
     workspaceSurface === "overview" ||
     workspaceSurface === "transcriptions" ||
     workspaceSurface === "settings";
-  const currentActionTasks = activeTranscriptionId
-    ? actionTasksByTranscription[activeTranscriptionId] || []
-    : [];
-  const currentProjectInsightComments = selectedProjectInsightId
-    ? projectInsightCommentsById[selectedProjectInsightId] || []
-    : [];
-  const currentWorkspaceInsightComments = selectedWorkspaceInsightId
-    ? workspaceInsightCommentsById[selectedWorkspaceInsightId] || []
-    : [];
+  const currentActionTasks = useMemo(
+    () =>
+      activeTranscriptionId
+        ? actionTasksByTranscription[activeTranscriptionId] || []
+        : [],
+    [activeTranscriptionId, actionTasksByTranscription],
+  );
+  const currentProjectInsightComments = useMemo(
+    () =>
+      selectedProjectInsightId
+        ? projectInsightCommentsById[selectedProjectInsightId] || []
+        : [],
+    [projectInsightCommentsById, selectedProjectInsightId],
+  );
+  const currentWorkspaceInsightComments = useMemo(
+    () =>
+      selectedWorkspaceInsightId
+        ? workspaceInsightCommentsById[selectedWorkspaceInsightId] || []
+        : [],
+    [selectedWorkspaceInsightId, workspaceInsightCommentsById],
+  );
   const focusedSummaryHiddenByFilters =
     !!focusedSummaryId && !sortedItems.some((item) => item.id === focusedSummaryId);
   const isFocusedSummaryProcessing = !!(
@@ -6492,10 +5704,7 @@ export function TranscriptionClient({
 
   const activeSurfaceMeta = surfaceMeta[workspaceSurface];
   const isOverviewSurface = workspaceSurface === "overview";
-  const settingsSectionMeta: Record<
-    "workspace" | "delivery" | "integrations" | "access" | "personal",
-    { label: string; description: string }
-  > = {
+  const settingsSectionMeta: SettingsSectionMeta = {
     workspace: {
       label: "Workspace",
       description: "Name, owner, role, and core workspace identity",
@@ -6517,9 +5726,7 @@ export function TranscriptionClient({
       description: "Your mention and digest preferences",
     },
   };
-  const visibleSettingsSections: Array<
-    "workspace" | "delivery" | "integrations" | "access" | "personal"
-  > = isWorkspaceSettingsMode
+  const visibleSettingsSections: SettingsSection[] = isWorkspaceSettingsMode
     ? ["workspace", "delivery", "integrations", "access"]
     : ["personal"];
   const currentSettingsMeta = settingsSectionMeta[settingsSection];
@@ -6534,6 +5741,410 @@ export function TranscriptionClient({
   const showAccessSettings =
     workspaceSurface === "settings" && settingsSection === "access";
   const showOperationsSurface = workspaceSurface === "operations";
+  const handleUploadFileChange = useStableCallback((nextFile: File | null) => {
+    setFile(nextFile);
+    setEstimatedDurationSeconds(null);
+    if (nextFile) {
+      void readMediaDuration(nextFile);
+    }
+  });
+  const handleOverviewCopySummary = useStableCallback(() => {
+    void handleCopyText(
+      "Summary",
+      buildSummaryText(displaySummary || focusedSummary),
+    );
+  });
+  const handleOverviewStartUpload = useStableCallback(() => {
+    scrollToSection("upload");
+  });
+  const handleOverviewTaskCommentDraftChange = useStableCallback(
+    (taskId: string, value: string) => {
+      setTaskCommentDrafts((prev) => ({ ...prev, [taskId]: value }));
+    },
+  );
+  const handleCreateOverviewTaskComment = useStableCallback(
+    (input: { taskId: string; content: string }) =>
+      handleCreateComment({ taskId: input.taskId, content: input.content }),
+  );
+  const stableHandleLoadTestData = useStableCallback(handleLoadTestData);
+  const stableHandleCreateTemplate = useStableCallback(handleCreateTemplate);
+  const stableHandleCreateProject = useStableCallback(handleCreateProject);
+  const stableHandleUpload = useStableCallback(handleUpload);
+  const stableHandleProcess = useStableCallback(handleProcess);
+  const stableHandleCreateActionTask = useStableCallback(handleCreateActionTask);
+  const stableHandleUpdateActionTask = useStableCallback(handleUpdateActionTask);
+  const stableHandleDeleteActionTask = useStableCallback(handleDeleteActionTask);
+  const stableHandleOpenTaskTranscript = useStableCallback(handleOpenTaskTranscript);
+  const stableHandleMarkNotificationRead = useStableCallback(handleMarkNotificationRead);
+  const stableHandleExportReportRuns = useStableCallback(handleExportReportRuns);
+  const stableHandleRetryReportRun = useStableCallback(handleRetryReportRun);
+  const stableHandleAssignProject = useStableCallback(handleAssignProject);
+  const stableHandleDelete = useStableCallback(handleDelete);
+  const stableHandleToggleProjectInsightPinned = useStableCallback(
+    handleToggleProjectInsightPinned,
+  );
+  const stableHandleToggleProjectInsightArchived = useStableCallback(
+    handleToggleProjectInsightArchived,
+  );
+  const stableHandleOpenSavedProjectInsight = useStableCallback(
+    handleOpenSavedProjectInsight,
+  );
+  const stableHandleToggleWorkspaceInsightPinned = useStableCallback(
+    handleToggleWorkspaceInsightPinned,
+  );
+  const stableHandleToggleWorkspaceInsightArchived = useStableCallback(
+    handleToggleWorkspaceInsightArchived,
+  );
+  const stableHandleOpenSavedWorkspaceInsight = useStableCallback(
+    handleOpenSavedWorkspaceInsight,
+  );
+  const stableHandleCopyInsightForNotion = useStableCallback(
+    handleCopyInsightForNotion,
+  );
+  const stableHandleExportInsightMarkdown = useStableCallback(
+    handleExportInsightMarkdown,
+  );
+  const stableHandlePublishProjectInsightToNotion = useStableCallback(
+    handlePublishProjectInsightToNotion,
+  );
+  const stableHandlePublishWorkspaceInsightToNotion = useStableCallback(
+    handlePublishWorkspaceInsightToNotion,
+  );
+  const stableHandleShareProjectInsightToSlack = useStableCallback(
+    handleShareProjectInsightToSlack,
+  );
+  const stableHandleShareWorkspaceInsightToSlack = useStableCallback(
+    handleShareWorkspaceInsightToSlack,
+  );
+  const stableHandleDeleteProjectInsight = useStableCallback(handleDeleteProjectInsight);
+  const stableHandleDeleteWorkspaceInsight = useStableCallback(
+    handleDeleteWorkspaceInsight,
+  );
+  const stableHandleUpdateComment = useStableCallback(handleUpdateComment);
+  const stableHandleDeleteComment = useStableCallback(handleDeleteComment);
+  const stableHandleCreateComment = useStableCallback(handleCreateComment);
+  const sharedUploadBodyProps = useMemo<UploadPanelBodyProps>(
+    () => ({
+      activeWorkspace,
+      fileInputId,
+      file,
+      onFileChange: handleUploadFileChange,
+      estimatedDurationSeconds,
+      isDev,
+      testDataLoading,
+      testDataStatus,
+      onLoadTestData: stableHandleLoadTestData,
+      uploadTemplate,
+      onUploadTemplateChange: setUploadTemplate,
+      templateOptions,
+      templatesStatusText: templatesLoading
+        ? "Loading templates..."
+        : customTemplates.length
+          ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
+          : "No custom templates yet.",
+      templateBusy,
+      onCreateTemplate: stableHandleCreateTemplate,
+      uploadProjectId,
+      onUploadProjectIdChange: setUploadProjectId,
+      projects,
+      projectsStatusText: projectsLoading
+        ? "Loading projects..."
+        : projects.length
+          ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
+          : "No projects yet.",
+      projectBusy,
+      onCreateProject: stableHandleCreateProject,
+      onUpload: stableHandleUpload,
+      uploading,
+      durationLoading,
+      hasEnoughEstimatedCredits,
+      estimatedCredits,
+      billing,
+    }),
+    [
+      activeWorkspace,
+      billing,
+      customTemplates.length,
+      durationLoading,
+      estimatedCredits,
+      estimatedDurationSeconds,
+      file,
+      fileInputId,
+      handleUploadFileChange,
+      hasEnoughEstimatedCredits,
+      isDev,
+      projectBusy,
+      projects,
+      projectsLoading,
+      stableHandleCreateProject,
+      stableHandleCreateTemplate,
+      stableHandleLoadTestData,
+      stableHandleUpload,
+      templateBusy,
+      templateOptions,
+      templatesLoading,
+      testDataLoading,
+      testDataStatus,
+      uploadProjectId,
+      uploadTemplate,
+      uploading,
+    ],
+  );
+  const overviewCurrentRecordingProps = useMemo<OverviewCurrentRecordingProps>(
+    () => ({
+      activeWorkspace,
+      focusedSummary,
+      displaySummary,
+      selectedProjectName,
+      currentRecordingText,
+      currentRecordingSnippet,
+      hasExpandableCurrentRecordingText,
+      focusedSummaryHiddenByFilters,
+      isFocusedSummaryProcessing,
+      canProcessFocusedSummary,
+      currentActionTasks,
+      activeTranscriptionId,
+      actionTaskBusyKey,
+      taskCommentsById,
+      taskCommentDrafts,
+      commentBusyKey,
+      detailsAutoOpenToken: overviewDetailsAutoOpenToken,
+      onProcess: stableHandleProcess,
+      onCopySummary: handleOverviewCopySummary,
+      onStartUpload: handleOverviewStartUpload,
+      onCreateActionTask: stableHandleCreateActionTask,
+      onUpdateActionTask: stableHandleUpdateActionTask,
+      onDeleteActionTask: stableHandleDeleteActionTask,
+      onTaskCommentDraftChange: handleOverviewTaskCommentDraftChange,
+      onCreateTaskComment: handleCreateOverviewTaskComment,
+    }),
+    [
+      activeTranscriptionId,
+      activeWorkspace,
+      actionTaskBusyKey,
+      canProcessFocusedSummary,
+      commentBusyKey,
+      currentActionTasks,
+      currentRecordingSnippet,
+      currentRecordingText,
+      displaySummary,
+      focusedSummary,
+      focusedSummaryHiddenByFilters,
+      handleCreateOverviewTaskComment,
+      handleOverviewCopySummary,
+      handleOverviewStartUpload,
+      handleOverviewTaskCommentDraftChange,
+      hasExpandableCurrentRecordingText,
+      isFocusedSummaryProcessing,
+      overviewDetailsAutoOpenToken,
+      selectedProjectName,
+      stableHandleCreateActionTask,
+      stableHandleDeleteActionTask,
+      stableHandleProcess,
+      stableHandleUpdateActionTask,
+      taskCommentDrafts,
+      taskCommentsById,
+    ],
+  );
+  const historySurfaceProps = useMemo<HistorySurfaceProps>(
+    () => ({
+      isActive: workspaceSurface === "transcriptions",
+      activeWorkspaceId,
+      activeWorkspace,
+      initialProjectFilter,
+      statusOptions,
+      templateOptions,
+      projects,
+      onAssignProject: stableHandleAssignProject,
+      onProcess: stableHandleProcess,
+      onDelete: stableHandleDelete,
+    }),
+    [
+      activeWorkspace,
+      activeWorkspaceId,
+      initialProjectFilter,
+      projects,
+      stableHandleAssignProject,
+      stableHandleDelete,
+      stableHandleProcess,
+      statusOptions,
+      templateOptions,
+      workspaceSurface,
+    ],
+  );
+  const workspaceTasksSurfaceProps = useMemo<WorkspaceTasksSurfaceProps>(
+    () => ({
+      isActive: showOperationsSurface,
+      workspaceTaskCounts,
+      workspaceTaskStatusFilter,
+      workspaceTaskAssignmentFilter,
+      taskStatusOptions,
+      taskAssignmentOptions,
+      workspaceTasksLoading,
+      filteredWorkspaceTasks,
+      actionTaskBusyKey,
+      onWorkspaceTaskStatusFilterChange: setWorkspaceTaskStatusFilter,
+      onWorkspaceTaskAssignmentFilterChange: setWorkspaceTaskAssignmentFilter,
+      onUpdateActionTask: stableHandleUpdateActionTask,
+      onDeleteActionTask: stableHandleDeleteActionTask,
+      onOpenTaskTranscript: stableHandleOpenTaskTranscript,
+    }),
+    [
+      actionTaskBusyKey,
+      filteredWorkspaceTasks,
+      showOperationsSurface,
+      stableHandleDeleteActionTask,
+      stableHandleOpenTaskTranscript,
+      stableHandleUpdateActionTask,
+      taskAssignmentOptions,
+      taskStatusOptions,
+      workspaceTaskAssignmentFilter,
+      workspaceTaskCounts,
+      workspaceTaskStatusFilter,
+      workspaceTasksLoading,
+    ],
+  );
+  const operationsActivitySurfaceProps = useMemo<OperationsActivitySurfaceProps>(
+    () => ({
+      isActive: showOperationsSurface,
+      unreadNotificationsCount,
+      notificationBusyId,
+      reportRunSummaryLoading,
+      reportRunSummary,
+      notificationsLoading,
+      notifications,
+      reportRunScopeFilter,
+      reportRunStatusFilter,
+      reportRunExportBusy,
+      reportRunsLoading,
+      reportRuns,
+      reportRunBusyId,
+      canManageWorkspace: Boolean(activeWorkspace?.canManage),
+      onMarkNotificationRead: stableHandleMarkNotificationRead,
+      onReportRunScopeFilterChange: setReportRunScopeFilter,
+      onReportRunStatusFilterChange: setReportRunStatusFilter,
+      onExportReportRuns: stableHandleExportReportRuns,
+      onRetryReportRun: stableHandleRetryReportRun,
+    }),
+    [
+      activeWorkspace?.canManage,
+      notificationBusyId,
+      notifications,
+      notificationsLoading,
+      reportRunBusyId,
+      reportRunExportBusy,
+      reportRunScopeFilter,
+      reportRunStatusFilter,
+      reportRunSummary,
+      reportRunSummaryLoading,
+      reportRuns,
+      reportRunsLoading,
+      showOperationsSurface,
+      stableHandleExportReportRuns,
+      stableHandleMarkNotificationRead,
+      stableHandleRetryReportRun,
+      unreadNotificationsCount,
+    ],
+  );
+  const savedInsightsPanelProps = useMemo<SavedInsightsPanelProps>(
+    () => ({
+      intelligenceScope,
+      activeWorkspace,
+      currentUser,
+      projectInsightFilterOptions,
+      projectInsightFilter,
+      workspaceInsightFilter,
+      filteredProjectInsights,
+      filteredWorkspaceInsights,
+      projectInsightsLoading,
+      workspaceInsightsLoading,
+      selectedProjectInsightId,
+      selectedWorkspaceInsightId,
+      projectInsightBusyKey,
+      workspaceInsightBusyKey,
+      exportBusy,
+      notionShareBusyKey,
+      slackShareBusyKey,
+      workspaceNotionSettings,
+      workspaceSlackSettings,
+      currentProjectInsightComments,
+      currentWorkspaceInsightComments,
+      editingCommentId,
+      commentEditDrafts,
+      commentBusyKey,
+      projectInsightCommentDrafts,
+      workspaceInsightCommentDrafts,
+      setProjectInsightFilter,
+      setWorkspaceInsightFilter,
+      setEditingCommentId,
+      setCommentEditDrafts,
+      setProjectInsightCommentDrafts,
+      setWorkspaceInsightCommentDrafts,
+      handleToggleProjectInsightPinned: stableHandleToggleProjectInsightPinned,
+      handleToggleProjectInsightArchived: stableHandleToggleProjectInsightArchived,
+      handleOpenSavedProjectInsight: stableHandleOpenSavedProjectInsight,
+      handleToggleWorkspaceInsightPinned: stableHandleToggleWorkspaceInsightPinned,
+      handleToggleWorkspaceInsightArchived: stableHandleToggleWorkspaceInsightArchived,
+      handleOpenSavedWorkspaceInsight: stableHandleOpenSavedWorkspaceInsight,
+      handleCopyInsightForNotion: stableHandleCopyInsightForNotion,
+      handleExportInsightMarkdown: stableHandleExportInsightMarkdown,
+      handlePublishProjectInsightToNotion: stableHandlePublishProjectInsightToNotion,
+      handlePublishWorkspaceInsightToNotion:
+        stableHandlePublishWorkspaceInsightToNotion,
+      handleShareProjectInsightToSlack: stableHandleShareProjectInsightToSlack,
+      handleShareWorkspaceInsightToSlack: stableHandleShareWorkspaceInsightToSlack,
+      handleDeleteProjectInsight: stableHandleDeleteProjectInsight,
+      handleDeleteWorkspaceInsight: stableHandleDeleteWorkspaceInsight,
+      handleUpdateComment: stableHandleUpdateComment,
+      handleDeleteComment: stableHandleDeleteComment,
+      handleCreateComment: stableHandleCreateComment,
+    }),
+    [
+      activeWorkspace,
+      commentBusyKey,
+      commentEditDrafts,
+      currentProjectInsightComments,
+      currentUser,
+      currentWorkspaceInsightComments,
+      editingCommentId,
+      exportBusy,
+      filteredProjectInsights,
+      filteredWorkspaceInsights,
+      intelligenceScope,
+      notionShareBusyKey,
+      projectInsightBusyKey,
+      projectInsightCommentDrafts,
+      projectInsightFilter,
+      projectInsightFilterOptions,
+      projectInsightsLoading,
+      selectedProjectInsightId,
+      selectedWorkspaceInsightId,
+      slackShareBusyKey,
+      stableHandleCopyInsightForNotion,
+      stableHandleCreateComment,
+      stableHandleDeleteComment,
+      stableHandleDeleteProjectInsight,
+      stableHandleDeleteWorkspaceInsight,
+      stableHandleExportInsightMarkdown,
+      stableHandleOpenSavedProjectInsight,
+      stableHandleOpenSavedWorkspaceInsight,
+      stableHandlePublishProjectInsightToNotion,
+      stableHandlePublishWorkspaceInsightToNotion,
+      stableHandleShareProjectInsightToSlack,
+      stableHandleShareWorkspaceInsightToSlack,
+      stableHandleToggleProjectInsightArchived,
+      stableHandleToggleProjectInsightPinned,
+      stableHandleToggleWorkspaceInsightArchived,
+      stableHandleToggleWorkspaceInsightPinned,
+      stableHandleUpdateComment,
+      workspaceInsightBusyKey,
+      workspaceInsightCommentDrafts,
+      workspaceInsightFilter,
+      workspaceInsightsLoading,
+      workspaceNotionSettings,
+      workspaceSlackSettings,
+    ],
+  );
 
   return (
     <div className="relative">
@@ -6680,33 +6291,12 @@ export function TranscriptionClient({
           </div>
 
           {workspaceSurface === "settings" ? (
-            <div className="px-5 py-4 sm:px-6 sm:py-5">
-              {visibleSettingsSections.length > 1 ? (
-                <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-slate-200 pb-3">
-                  {visibleSettingsSections.map((section) => (
-                    <button
-                      key={section}
-                      type="button"
-                      onClick={() => setSettingsSection(section)}
-                      className={`cursor-pointer border-b-2 px-0 pb-2 text-sm font-medium transition ${
-                        settingsSection === section
-                          ? "border-slate-950 text-slate-950"
-                          : "border-transparent text-slate-500 hover:text-slate-700"
-                      }`}
-                    >
-                      {settingsSectionMeta[section].label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <p
-                className={`text-sm text-slate-500 ${
-                  visibleSettingsSections.length > 1 ? "mt-3" : ""
-                }`}
-              >
-                {currentSettingsMeta.description}
-              </p>
-            </div>
+            <SettingsSurfaceNav
+              activeSection={settingsSection}
+              visibleSections={visibleSettingsSections}
+              sectionMeta={settingsSectionMeta}
+              onSectionChange={setSettingsSection}
+            />
           ) : isOverviewSurface ? (
             <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
               <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
@@ -6762,1718 +6352,140 @@ export function TranscriptionClient({
                 : "rounded-[24px] border border-white/80 bg-white/88 p-5 shadow-[0_16px_40px_-34px_rgba(15,23,42,0.28)]"
           }`}
         >
-          <div
-            id="report-history"
-            className={`rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
-              showOperationsSurface ? "" : "hidden"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Notifications
-                </p>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                  Team mentions and updates
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Keep up with comments that mention you inside this workspace.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                  {unreadNotificationsCount} unread
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void handleMarkNotificationRead()}
-                  disabled={!unreadNotificationsCount || notificationBusyId === "all"}
-                  className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {notificationBusyId === "all" ? "Updating..." : "Mark all read"}
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {reportRunSummaryLoading ? (
-                <p className="rounded-[16px] border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 sm:col-span-2 xl:col-span-4">
-                  Loading report analytics...
-                </p>
-              ) : reportRunSummary ? (
-                <>
-                  <div className="rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Last {reportRunSummary.days} Days
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">
-                      {reportRunSummary.totalRuns}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {reportRunSummary.workspaceRuns} workspace, {reportRunSummary.projectRuns} project
-                    </p>
-                  </div>
-                  <div className="rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Success Rate
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">
-                      {reportRunSummary.successRate}%
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {reportRunSummary.successCount} success, {reportRunSummary.failedCount} failed
-                    </p>
-                  </div>
-                  <div className="rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Delivery Mix
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">
-                      {reportRunSummary.slackDeliveredCount}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Slack deliveries, {reportRunSummary.emailRecipientCount} email recipients
-                    </p>
-                  </div>
-                  <div className="rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Top Report Type
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold capitalize text-slate-950">
-                      {(reportRunSummary.topReportType || "n/a").replaceAll("_", " ")}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {reportRunSummary.scheduledRuns} scheduled, {reportRunSummary.manualRuns} manual
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <p className="rounded-[16px] border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 sm:col-span-2 xl:col-span-4">
-                  No analytics available yet.
-                </p>
-              )}
-            </div>
-            <div className="mt-4 space-y-3">
-              {notificationsLoading ? (
-                <p className="text-sm text-slate-500">Loading notifications...</p>
-              ) : notifications.length ? (
-                notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={`rounded-[18px] border px-4 py-3 ${
-                      notification.readAt
-                        ? "border-slate-200 bg-white"
-                        : "border-sky-200 bg-sky-50"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {notification.title}
-                        </p>
-                        <p className="mt-1 text-sm leading-6 text-slate-600">
-                          {notification.body}
-                        </p>
-                        <p className="mt-2 text-xs text-slate-500">
-                          {new Date(notification.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {notification.link ? (
-                          <Link
-                            href={notification.link}
-                            className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700"
-                          >
-                            Open
-                          </Link>
-                        ) : null}
-                        {!notification.readAt ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleMarkNotificationRead(notification.id)}
-                            disabled={notificationBusyId === notification.id}
-                            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {notificationBusyId === notification.id ? "Saving..." : "Mark read"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500">
-                  No notifications yet. Mentions will show up here.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div
-            id="workspace-settings"
-            className={`rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
-              workspaceSurface === "operations" ? "" : "hidden"
-            }`}
-          >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Report History
-                </p>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                  Recent recurring report runs
-                </h2>
-                <p className="mt-3 text-sm leading-6 text-slate-600">
-                  Review the latest workspace and project report deliveries, including
-                  trigger type, channel usage, and where each run was scoped.
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[180px,180px,auto,auto]">
-                <label className="rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Scope
-                  </span>
-                  <select
-                    value={reportRunScopeFilter}
-                    onChange={(event) =>
-                      setReportRunScopeFilter(
-                        event.target.value as "all" | "workspace" | "project",
-                      )
-                    }
-                    className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                  >
-                    <option value="all">All scopes</option>
-                    <option value="workspace">Workspace</option>
-                    <option value="project">Project</option>
-                  </select>
-                </label>
-                <label className="rounded-[16px] border border-slate-200 bg-white px-4 py-3">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Status
-                  </span>
-                  <select
-                    value={reportRunStatusFilter}
-                    onChange={(event) =>
-                      setReportRunStatusFilter(
-                        event.target.value as "all" | "success" | "failed",
-                      )
-                    }
-                    className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                  >
-                    <option value="all">All statuses</option>
-                    <option value="success">Success</option>
-                    <option value="failed">Failed</option>
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void handleExportReportRuns("csv")}
-                  disabled={reportRunExportBusy !== null}
-                  className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 lg:self-end"
-                >
-                  {reportRunExportBusy === "csv" ? "Exporting..." : "Export CSV"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleExportReportRuns("md")}
-                  disabled={reportRunExportBusy !== null}
-                  className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 lg:self-end"
-                >
-                  {reportRunExportBusy === "md" ? "Exporting..." : "Export Markdown"}
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 space-y-3">
-              {reportRunsLoading ? (
-                <p className="rounded-[16px] border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                  Loading report history...
-                </p>
-              ) : reportRuns.length ? (
-                reportRuns.map((run) => (
-                  <div
-                    key={run.id}
-                    className="rounded-[16px] border border-slate-200 bg-white p-4"
-                  >
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                      <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 font-semibold text-slate-700">
-                        {run.scope === "workspace" ? "Workspace" : "Project"}
-                      </span>
-                      <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 font-semibold text-slate-700">
-                        {run.reportType.replaceAll("_", " ")}
-                      </span>
-                      <span>{new Date(run.createdAt).toLocaleString()}</span>
-                      <span>{run.trigger}</span>
-                    </div>
-                    <p className="mt-3 text-sm font-semibold text-slate-900">
-                      {run.summary}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      {run.project?.name ? `${run.project.name} · ` : ""}
-                      {run.cadence} ·{" "}
-                      {[
-                        run.sendEmail
-                          ? `Email${run.emailRecipientCount ? ` (${run.emailRecipientCount})` : ""}`
-                          : null,
-                        run.sendSlack
-                          ? `Slack${run.slackDelivered ? " (delivered)" : ""}`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" + ")}
-                    </p>
-                    {run.metadata?.error ? (
-                      <p className="mt-2 rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        {run.metadata.error}
-                      </p>
-                    ) : null}
-                    {run.status === "failed" ? (
-                      <div className="mt-3">
-                        <button
-                          type="button"
-                          onClick={() => void handleRetryReportRun(run.id)}
-                          disabled={reportRunBusyId !== null || !activeWorkspace?.canManage}
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {reportRunBusyId === run.id ? "Retrying..." : "Retry"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))
-              ) : (
-                <p className="rounded-[16px] border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                  No recurring reports have run yet.
-                </p>
-              )}
-            </div>
-          </div>
+          <OperationsActivitySurface {...operationsActivitySurfaceProps} />
 
           {showPersonalSettings ? (
-          <div className="border-t border-slate-200 pt-6">
-            <div className="max-w-5xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Notification Preferences
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                Personal delivery controls
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Choose how Voxly reaches you for mentions and digest emails across
-                your workspaces. These preferences follow your user account, not a
-                single workspace.
-              </p>
-              {notificationPreferences ? (
-                <p className="mt-3 text-xs text-slate-500">
-                  Updated {new Date(notificationPreferences.updatedAt).toLocaleString()}
-                </p>
-              ) : null}
-            </div>
-            <form onSubmit={handleSaveNotificationPreferences} className="mt-6 max-w-5xl">
-              <div>
-                {[
-                  {
-                    key: "mention-email",
-                    title: "Mention emails",
-                    body: "Email me when I'm mentioned",
-                    note: "Applies to transcript, task, and insight mentions.",
-                    checked: mentionEmailEnabled,
-                    setChecked: setMentionEmailEnabled,
-                  },
-                  {
-                    key: "mention-app",
-                    title: "In-app mentions",
-                    body: "Show mention notifications in Voxly",
-                    note: "Controls the in-app notification center.",
-                    checked: mentionInAppEnabled,
-                    setChecked: setMentionInAppEnabled,
-                  },
-                  {
-                    key: "digest-email",
-                    title: "Digest emails",
-                    body: "Receive workspace digest emails",
-                    note: "Slack digests and in-app activity are not affected.",
-                    checked: digestEmailEnabled,
-                    setChecked: setDigestEmailEnabled,
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.key}
-                    className="grid gap-4 border-b border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                    </div>
-                    <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{item.body}</p>
-                        <p className="mt-1 text-sm text-slate-500">{item.note}</p>
-                      </div>
-                      <DeferredCheckbox
-                        checked={item.checked}
-                        onCheckedChange={item.setChecked}
-                        disabled={notificationPreferencesLoading || notificationPreferencesBusy}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                      />
-                    </label>
-                  </div>
-                ))}
-                <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div />
-                  <div>
-                    <button
-                      type="submit"
-                      disabled={notificationPreferencesLoading || notificationPreferencesBusy}
-                      className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {notificationPreferencesBusy ? "Saving..." : "Save Preferences"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
-          </div>
+          <PersonalSettingsSection
+            notificationPreferences={notificationPreferences}
+            notificationPreferencesLoading={notificationPreferencesLoading}
+            notificationPreferencesBusy={notificationPreferencesBusy}
+            mentionEmailEnabled={mentionEmailEnabled}
+            mentionInAppEnabled={mentionInAppEnabled}
+            digestEmailEnabled={digestEmailEnabled}
+            onMentionEmailChange={setMentionEmailEnabled}
+            onMentionInAppChange={setMentionInAppEnabled}
+            onDigestEmailChange={setDigestEmailEnabled}
+            onSubmit={handleSaveNotificationPreferences}
+          />
           ) : null}
 
           {showWorkspaceSettings ? (
-          <div id="settings" className="pt-2">
-            <div className="max-w-5xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Workspace Settings
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                {activeWorkspaceLabel}
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                These settings apply only to the current workspace. Switch
-                workspaces from the Spaces area in the left sidebar.
-              </p>
-            </div>
-            <form onSubmit={handleRenameWorkspace} className="mt-6 max-w-5xl">
-              <div>
-                <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Workspace type</p>
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    {activeWorkspace?.isPersonal ? "Personal workspace" : "Shared workspace"}
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Your role</p>
-                  </div>
-                  <div className="text-sm text-slate-600 capitalize">
-                    {activeWorkspace?.role || "member"}
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Owner</p>
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    <span className="font-semibold text-slate-900">
-                      {activeWorkspace?.owner.name?.trim() ||
-                        activeWorkspace?.owner.email ||
-                        "Unknown"}
-                    </span>
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Workspace name</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Update the name used throughout Voxly.
-                    </p>
-                  </div>
-                  <div className="flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-end">
-                    <label className="flex-1">
-                      <input
-                        type="text"
-                        value={workspaceDraftName}
-                        onChange={(event) => setWorkspaceDraftName(event.target.value)}
-                        disabled={workspaceSettingsBusy || !activeWorkspace?.canManage}
-                        className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      disabled={
-                        workspaceSettingsBusy ||
-                        !activeWorkspace?.canManage ||
-                        !workspaceDraftName.trim() ||
-                        workspaceDraftName.trim() === activeWorkspace?.name
-                      }
-                      className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceSettingsBusy ? "Saving..." : "Save Name"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            {!activeWorkspace?.canManage ? (
-              <p className="mt-4 max-w-5xl text-sm text-slate-600">
-                You can view workspace details, but only owners and admins can update settings.
-              </p>
-            ) : null}
-          </div>
+          <WorkspaceSettingsSection
+            activeWorkspace={activeWorkspace}
+            activeWorkspaceLabel={activeWorkspaceLabel}
+            workspaceDraftName={workspaceDraftName}
+            workspaceSettingsBusy={workspaceSettingsBusy}
+            onWorkspaceDraftNameChange={setWorkspaceDraftName}
+            onSubmit={handleRenameWorkspace}
+          />
           ) : null}
 
           {showDeliverySettings ? (
-          <div className="pt-2">
-            <div className="max-w-5xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Recurring Report
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                Scheduled insight report
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Configure a recurring workspace report, choose what it covers, and decide
-                how it should be delivered.
-              </p>
-              {workspaceDigestSettings ? (
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-                  <span>{workspaceDigestSettings.enabled ? "Enabled" : "Paused"}</span>
-                  <span>
-                    {digestReportTypeOptions.find(
-                      (option) => option.id === workspaceDigestSettings.reportType,
-                    )?.label || "Summary report"}
-                  </span>
-                  <span>{workspaceDigestSettings.scheduleLabel}</span>
-                  <span>
-                    {workspaceDigestSettings.lastSentAt
-                      ? `Last sent ${new Date(workspaceDigestSettings.lastSentAt).toLocaleString()}`
-                      : "Not sent yet"}
-                  </span>
-                  {workspaceDigestSettings.nextRunAt ? (
-                    <span>
-                      {`Next run ${new Date(workspaceDigestSettings.nextRunAt).toLocaleString()}`}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            <form onSubmit={handleSaveWorkspaceDigestSettings} className="mt-6 max-w-5xl">
-              <div>
-                <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Digest status</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Turn the recurring workspace report on or leave it paused.
-                    </p>
-                  </div>
-                  <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        Recurring workspace report
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        When enabled, Voxly will run this report on the saved schedule.
-                      </p>
-                    </div>
-                    <DeferredCheckbox
-                      checked={workspaceDigestEnabled}
-                      onCheckedChange={setWorkspaceDigestEnabled}
-                      disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                      className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                    />
-                  </label>
-                </div>
-
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Cadence</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Choose how often the report should run.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label>
-                      <span className="text-xs font-medium text-slate-600">Frequency</span>
-                      <select
-                        value={workspaceDigestCadence}
-                        onChange={(event) =>
-                          setWorkspaceDigestCadence(event.target.value as "weekly" | "monthly")
-                        }
-                        disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {digestCadenceOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {workspaceDigestCadence === "weekly" ? (
-                      <label>
-                        <span className="text-xs font-medium text-slate-600">Day</span>
-                        <select
-                          value={workspaceDigestWeekday}
-                          onChange={(event) => setWorkspaceDigestWeekday(event.target.value)}
-                          disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                          className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {digestWeekdayOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : (
-                      <label>
-                        <span className="text-xs font-medium text-slate-600">Day of month</span>
-                        <select
-                          value={workspaceDigestDayOfMonth}
-                          onChange={(event) => setWorkspaceDigestDayOfMonth(event.target.value)}
-                          disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                          className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {Array.from({ length: 28 }, (_, index) => {
-                            const day = index + 1;
-                            return (
-                              <option key={day} value={String(day)}>
-                                Day {day}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </label>
-                    )}
-                    <label className="sm:col-span-2">
-                      <span className="text-xs font-medium text-slate-600">Local hour</span>
-                      <select
-                        value={workspaceDigestHour}
-                        onChange={(event) => setWorkspaceDigestHour(event.target.value)}
-                        disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-2 w-full max-w-xs cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {Array.from({ length: 24 }, (_, hour) => (
-                          <option key={hour} value={String(hour)}>
-                            {hour === 0
-                              ? "12:00 AM"
-                              : hour < 12
-                                ? `${hour}:00 AM`
-                                : hour === 12
-                                  ? "12:00 PM"
-                                  : `${hour - 12}:00 PM`}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Report content</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Choose what the report covers and who should receive it.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label>
-                      <span className="text-xs font-medium text-slate-600">Report type</span>
-                      <select
-                        value={workspaceDigestReportType}
-                        onChange={(event) =>
-                          setWorkspaceDigestReportType(
-                            event.target.value as
-                              | "summary"
-                              | "new_insights"
-                              | "open_tasks"
-                              | "risk_watch",
-                          )
-                        }
-                        disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {digestReportTypeOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {
-                          digestReportTypeOptions.find(
-                            (option) => option.id === workspaceDigestReportType,
-                          )?.description
-                        }
-                      </p>
-                    </label>
-                    <label>
-                      <span className="text-xs font-medium text-slate-600">Recipient scope</span>
-                      <select
-                        value={workspaceDigestRecipientScope}
-                        onChange={(event) => setWorkspaceDigestRecipientScope(event.target.value)}
-                        disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {digestRecipientOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Delivery channels</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Choose where the recurring report should be sent.
-                    </p>
-                  </div>
-                  <div className="space-y-4">
-                    <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Email</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Respect each member&apos;s personal digest email preference.
-                        </p>
-                      </div>
-                      <DeferredCheckbox
-                        checked={workspaceDigestSendEmail}
-                        onCheckedChange={setWorkspaceDigestSendEmail}
-                        disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                      />
-                    </label>
-                    <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Slack</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Requires a workspace Slack destination to be configured.
-                        </p>
-                      </div>
-                      <DeferredCheckbox
-                        checked={workspaceDigestSendSlack}
-                        onCheckedChange={setWorkspaceDigestSendSlack}
-                        disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                      />
-                    </label>
-                    {workspaceDigestSendSlack ? (
-                      <label className="block max-w-md">
-                        <span className="text-xs font-medium text-slate-600">Slack route</span>
-                        <select
-                          value={workspaceDigestSlackDestinationId}
-                          onChange={(event) =>
-                            setWorkspaceDigestSlackDestinationId(event.target.value)
-                          }
-                          disabled={workspaceDigestLoading || !activeWorkspace?.canManage}
-                          className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="default">Default workspace destination</option>
-                          {workspaceSlackDestinations.map((destination) => (
-                            <option key={destination.id} value={destination.id}>
-                              {destination.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Timezone</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Reports use your current browser timezone when settings are saved.
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">
-                      {workspaceDigestSettings?.timezone || browserTimeZone}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">{browserTimeZone}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Actions</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Save the recurring report or send a manual run now.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={workspaceDigestBusy !== null || !activeWorkspace?.canManage}
-                      className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceDigestBusy === "save" ? "Saving..." : "Save Digest Settings"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSendWorkspaceDigestNow()}
-                      disabled={workspaceDigestBusy !== null || !activeWorkspace?.canManage}
-                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceDigestBusy === "send" ? "Sending..." : "Send Now"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Save as template</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Save this delivery setup so you can reuse it later.
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <label className="flex-1 max-w-md">
-                      <span className="text-xs font-medium text-slate-600">Template name</span>
-                      <input
-                        type="text"
-                        value={workspaceDigestTemplateName}
-                        onChange={(event) => setWorkspaceDigestTemplateName(event.target.value)}
-                        disabled={!activeWorkspace?.canManage || workspaceDigestLoading}
-                        placeholder="Weekly risk watch"
-                        className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveReportTemplate("workspace")}
-                      disabled={
-                        !activeWorkspace?.canManage ||
-                        reportTemplateBusyKey !== null ||
-                        !workspaceDigestTemplateName.trim()
-                      }
-                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {reportTemplateBusyKey === "save:workspace"
-                        ? "Saving..."
-                        : "Save Template"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            {!activeWorkspace?.canManage ? (
-              <p className="mt-4 max-w-5xl text-sm text-slate-600">
-                Only owners and admins can manage workspace digests or send them manually.
-              </p>
-            ) : null}
-          </div>
-          ) : null}
-
-          {showDeliverySettings ? (
-          <div className="pt-2">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Report Templates
-                </p>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                  Reuse recurring report setups
-                </h2>
-                <p className="mt-3 text-sm leading-6 text-slate-600">
-                  Save your best workspace and project report configurations, then
-                  apply them without rebuilding cadence, recipients, and report type
-                  from scratch.
-                </p>
-              </div>
-            </div>
-            <div className="mt-6 grid gap-8 lg:grid-cols-2">
-              {(["workspace", "project"] as const).map((scope) => {
-                const templatesForScope = reportTemplates.filter(
-                  (template) => template.targetScope === scope,
-                );
-                return (
-                  <div key={scope} className="pt-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {scope === "workspace"
-                            ? "Workspace templates"
-                            : "Project templates"}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {scope === "workspace"
-                            ? "Apply directly to the workspace report form."
-                            : "Apply when a project is selected in intelligence."}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                        {templatesForScope.length}
-                      </span>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {templatesForScope.length ? (
-                        templatesForScope.map((template) => (
-                          <div key={template.id} className="border-t border-slate-200 pt-3 first:border-t-0 first:pt-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-semibold text-slate-900">
-                                {template.name}
-                              </p>
-                              <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
-                                {template.cadence}
-                              </span>
-                              <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
-                                {digestReportTypeOptions.find(
-                                  (option) => option.id === template.reportType,
-                                )?.label || template.reportType}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-xs text-slate-500">
-                              {template.cadence === "monthly"
-                                ? `Day ${template.dayOfMonth}`
-                                : digestWeekdayOptions.find(
-                                    (option) => Number(option.id) === template.weekday,
-                                  )?.label || "Weekly"}{" "}
-                              at{" "}
-                              {template.hourLocal === 0
-                                ? "12:00 AM"
-                                : template.hourLocal < 12
-                                  ? `${template.hourLocal}:00 AM`
-                                  : template.hourLocal === 12
-                                    ? "12:00 PM"
-                                    : `${template.hourLocal - 12}:00 PM`}
-                              {" · "}
-                              {
-                                digestRecipientOptions.find(
-                                  (option) => option.id === template.recipientScope,
-                                )?.label
-                              }
-                              {" · "}
-                              {[
-                                template.sendEmail ? "Email" : null,
-                                template.sendSlack ? "Slack" : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" + ") || "No delivery"}
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => applyReportTemplate(template)}
-                                disabled={
-                                  scope === "project" &&
-                                  (intelligenceScope !== "project" ||
-                                    intelligenceProjectId === "all")
-                                }
-                                className="cursor-pointer rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Apply
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteReportTemplate(template.id)}
-                                disabled={reportTemplateBusyKey !== null || !activeWorkspace?.canManage}
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {reportTemplateBusyKey === `delete:${template.id}`
-                                  ? "Deleting..."
-                                  : "Delete"}
-                              </button>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-slate-500">
-                          {reportTemplatesLoading
-                            ? "Loading templates..."
-                            : "No templates saved yet."}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <DeliverySettingsSection
+            activeWorkspace={activeWorkspace}
+            workspaceDigestSettings={workspaceDigestSettings}
+            workspaceDigestEnabled={workspaceDigestEnabled}
+            workspaceDigestCadence={workspaceDigestCadence}
+            workspaceDigestWeekday={workspaceDigestWeekday}
+            workspaceDigestDayOfMonth={workspaceDigestDayOfMonth}
+            workspaceDigestHour={workspaceDigestHour}
+            workspaceDigestReportType={workspaceDigestReportType}
+            workspaceDigestRecipientScope={workspaceDigestRecipientScope}
+            workspaceDigestSendEmail={workspaceDigestSendEmail}
+            workspaceDigestSendSlack={workspaceDigestSendSlack}
+            workspaceDigestSlackDestinationId={workspaceDigestSlackDestinationId}
+            workspaceDigestTemplateName={workspaceDigestTemplateName}
+            workspaceDigestLoading={workspaceDigestLoading}
+            workspaceDigestBusy={workspaceDigestBusy}
+            reportTemplates={reportTemplates}
+            reportTemplatesLoading={reportTemplatesLoading}
+            reportTemplateBusyKey={reportTemplateBusyKey}
+            workspaceSlackDestinations={workspaceSlackDestinations}
+            browserTimeZone={browserTimeZone}
+            digestWeekdayOptions={digestWeekdayOptions}
+            digestCadenceOptions={digestCadenceOptions}
+            digestRecipientOptions={digestRecipientOptions}
+            digestReportTypeOptions={digestReportTypeOptions}
+            intelligenceScope={intelligenceScope}
+            intelligenceProjectId={intelligenceProjectId}
+            onWorkspaceDigestEnabledChange={setWorkspaceDigestEnabled}
+            onWorkspaceDigestCadenceChange={setWorkspaceDigestCadence}
+            onWorkspaceDigestWeekdayChange={setWorkspaceDigestWeekday}
+            onWorkspaceDigestDayOfMonthChange={setWorkspaceDigestDayOfMonth}
+            onWorkspaceDigestHourChange={setWorkspaceDigestHour}
+            onWorkspaceDigestReportTypeChange={setWorkspaceDigestReportType}
+            onWorkspaceDigestRecipientScopeChange={setWorkspaceDigestRecipientScope}
+            onWorkspaceDigestSendEmailChange={setWorkspaceDigestSendEmail}
+            onWorkspaceDigestSendSlackChange={setWorkspaceDigestSendSlack}
+            onWorkspaceDigestSlackDestinationIdChange={setWorkspaceDigestSlackDestinationId}
+            onWorkspaceDigestTemplateNameChange={setWorkspaceDigestTemplateName}
+            onSubmit={handleSaveWorkspaceDigestSettings}
+            onSendNow={handleSendWorkspaceDigestNow}
+            onSaveReportTemplate={handleSaveReportTemplate}
+            onApplyReportTemplate={applyReportTemplate}
+            onDeleteReportTemplate={handleDeleteReportTemplate}
+          />
           ) : null}
 
           {showIntegrationSettings ? (
-          <div className="pt-2">
-            <div className="max-w-5xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Slack
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                Workspace delivery
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Connect Slack for {activeWorkspaceLabel} so reports and saved insights
-                can be shared outside Voxly.
-              </p>
-              {workspaceSlackSettings ? (
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-                  <span>{workspaceSlackSettings.configured ? "Configured" : "Not connected"}</span>
-                  <span>{workspaceSlackSettings.enabled ? "Enabled" : "Paused"}</span>
-                  {workspaceSlackSettings.maskedWebhook ? (
-                    <span>{workspaceSlackSettings.maskedWebhook}</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            <form onSubmit={handleSaveWorkspaceSlackSettings} className="mt-6 max-w-5xl">
-              <div>
-                <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Webhook</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Paste the incoming webhook Voxly should use.
-                    </p>
-                  </div>
-                  <div className="max-w-2xl">
-                    <input
-                      type="password"
-                      value={workspaceSlackWebhookDraft}
-                      onChange={(event) => setWorkspaceSlackWebhookDraft(event.target.value)}
-                      placeholder={
-                        workspaceSlackSettings?.configured
-                          ? "Paste a new webhook URL to replace the current one"
-                          : "https://hooks.slack.com/services/..."
-                      }
-                      disabled={workspaceSlackLoading || !activeWorkspace?.canManage}
-                      className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <p className="mt-2 text-sm text-slate-500">
-                      Voxly stores the webhook server-side and only shows a masked value after it is saved.
-                    </p>
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Availability</p>
-                  </div>
-                  <div className="space-y-4">
-                    <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Enable Slack delivery</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Lets Voxly send test messages, digests, and shared insights.
-                        </p>
-                      </div>
-                      <DeferredCheckbox
-                        checked={workspaceSlackEnabled}
-                        onCheckedChange={setWorkspaceSlackEnabled}
-                        disabled={workspaceSlackLoading || !activeWorkspace?.canManage}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                      />
-                    </label>
-                    <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Send digests to Slack</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Workspace reports can post directly to the connected channel.
-                        </p>
-                      </div>
-                      <DeferredCheckbox
-                        checked={workspaceSlackSendDigests}
-                        onCheckedChange={setWorkspaceSlackSendDigests}
-                        disabled={workspaceSlackLoading || !activeWorkspace?.canManage}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Actions</p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={
-                        workspaceSlackBusy !== null ||
-                        !activeWorkspace?.canManage ||
-                        (!workspaceSlackWebhookDraft.trim() && !workspaceSlackSettings?.configured)
-                      }
-                      className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceSlackBusy === "save" ? "Saving..." : "Save Slack Settings"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSendSlackTest()}
-                      disabled={
-                        workspaceSlackBusy !== null ||
-                        !activeWorkspace?.canManage ||
-                        !workspaceSlackSettings?.configured ||
-                        !workspaceSlackEnabled
-                      }
-                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceSlackBusy === "test" ? "Sending..." : "Send Test"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            {!activeWorkspace?.canManage ? (
-              <p className="mt-4 max-w-5xl text-sm text-slate-600">
-                Only owners and admins can manage Slack integration settings.
-              </p>
-            ) : null}
-          </div>
-          ) : null}
-
-          {showIntegrationSettings ? (
-          <div className="pt-2">
-            <div className="max-w-5xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Notion
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                Workspace knowledge sync
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Connect Notion for {activeWorkspaceLabel} so saved insights can be
-                published as pages instead of just exported files.
-              </p>
-              {workspaceNotionSettings ? (
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-                  <span>{workspaceNotionSettings.configured ? "Configured" : "Not connected"}</span>
-                  <span>{workspaceNotionSettings.enabled ? "Enabled" : "Paused"}</span>
-                  {workspaceNotionSettings.parentPageId ? (
-                    <span>Parent page: {workspaceNotionSettings.parentPageId}</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            <form onSubmit={handleSaveWorkspaceNotionSettings} className="mt-6 max-w-5xl">
-              <div>
-                <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Integration token</p>
-                  </div>
-                  <div className="max-w-2xl">
-                    <input
-                      type="password"
-                      value={workspaceNotionTokenDraft}
-                      onChange={(event) => setWorkspaceNotionTokenDraft(event.target.value)}
-                      placeholder={
-                        workspaceNotionSettings?.configured
-                          ? "Paste a new Notion token to replace the current one"
-                          : "secret_xxx..."
-                      }
-                      disabled={workspaceNotionLoading || !activeWorkspace?.canManage}
-                      className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Parent page</p>
-                  </div>
-                  <div className="max-w-2xl">
-                    <input
-                      type="text"
-                      value={workspaceNotionParentPageDraft}
-                      onChange={(event) => setWorkspaceNotionParentPageDraft(event.target.value)}
-                      placeholder="Paste the parent page ID"
-                      disabled={workspaceNotionLoading || !activeWorkspace?.canManage}
-                      className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Availability</p>
-                  </div>
-                  <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Enable Notion publishing</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Allows saved insights to create real pages in Notion.
-                      </p>
-                    </div>
-                    <DeferredCheckbox
-                      checked={workspaceNotionEnabled}
-                      onCheckedChange={setWorkspaceNotionEnabled}
-                      disabled={workspaceNotionLoading || !activeWorkspace?.canManage}
-                      className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                    />
-                  </label>
-                </div>
-                <div className="grid gap-4 border-t border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Actions</p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={
-                        workspaceNotionBusy !== null ||
-                        !activeWorkspace?.canManage ||
-                        ((!workspaceNotionTokenDraft.trim() ||
-                          !workspaceNotionParentPageDraft.trim()) &&
-                          !workspaceNotionSettings?.configured)
-                      }
-                      className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceNotionBusy === "save" ? "Saving..." : "Save Notion Settings"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleValidateWorkspaceNotion()}
-                      disabled={
-                        workspaceNotionBusy !== null ||
-                        !activeWorkspace?.canManage ||
-                        !workspaceNotionSettings?.configured ||
-                        !workspaceNotionEnabled
-                      }
-                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {workspaceNotionBusy === "validate" ? "Checking..." : "Validate Connection"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            {!activeWorkspace?.canManage ? (
-              <p className="mt-4 max-w-5xl text-sm text-slate-600">
-                Only owners and admins can manage Notion integration settings.
-              </p>
-            ) : null}
-          </div>
+          <IntegrationSettingsSection
+            activeWorkspace={activeWorkspace}
+            activeWorkspaceLabel={activeWorkspaceLabel}
+            workspaceSlackSettings={workspaceSlackSettings}
+            workspaceSlackWebhookDraft={workspaceSlackWebhookDraft}
+            workspaceSlackLoading={workspaceSlackLoading}
+            workspaceSlackBusy={workspaceSlackBusy}
+            workspaceSlackEnabled={workspaceSlackEnabled}
+            workspaceSlackSendDigests={workspaceSlackSendDigests}
+            workspaceNotionSettings={workspaceNotionSettings}
+            workspaceNotionLoading={workspaceNotionLoading}
+            workspaceNotionBusy={workspaceNotionBusy}
+            workspaceNotionEnabled={workspaceNotionEnabled}
+            workspaceNotionTokenDraft={workspaceNotionTokenDraft}
+            workspaceNotionParentPageDraft={workspaceNotionParentPageDraft}
+            onWorkspaceSlackWebhookDraftChange={setWorkspaceSlackWebhookDraft}
+            onWorkspaceSlackEnabledChange={setWorkspaceSlackEnabled}
+            onWorkspaceSlackSendDigestsChange={setWorkspaceSlackSendDigests}
+            onWorkspaceNotionTokenDraftChange={setWorkspaceNotionTokenDraft}
+            onWorkspaceNotionParentPageDraftChange={setWorkspaceNotionParentPageDraft}
+            onWorkspaceNotionEnabledChange={setWorkspaceNotionEnabled}
+            onSlackSubmit={handleSaveWorkspaceSlackSettings}
+            onSendSlackTest={handleSendSlackTest}
+            onNotionSubmit={handleSaveWorkspaceNotionSettings}
+            onValidateNotion={handleValidateWorkspaceNotion}
+          />
           ) : null}
 
           {showAccessSettings ? (
-          <div className="pt-2">
-            <div className="max-w-5xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Workspace Access
-              </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                Members and invites
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Manage who can access {activeWorkspaceLabel}, what role they have,
-                and how ownership is handled.
-              </p>
-            </div>
-            <form onSubmit={handleInviteWorkspaceMember} className="mt-6 max-w-5xl">
-              <div>
-                <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Invite teammate</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Send an invite to {activeWorkspaceLabel} and choose the initial role.
-                    </p>
-                  </div>
-                  <div className="flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-end">
-                    <label className="flex-1">
-                      <input
-                        type="email"
-                        value={inviteEmail}
-                        onChange={(event) => setInviteEmail(event.target.value)}
-                        placeholder="teammate@company.com"
-                        disabled={!activeWorkspace?.canManage || inviteBusy}
-                        className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                    </label>
-                    <label className="sm:w-44">
-                      <select
-                        value={inviteRole}
-                        onChange={(event) => setInviteRole(event.target.value)}
-                        disabled={!activeWorkspace?.canManage || inviteBusy}
-                        className="w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="member">Member</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
-                    </label>
-                    <button
-                      type="submit"
-                      disabled={
-                        inviteBusy || !inviteEmail.trim() || !activeWorkspace?.canManage
-                      }
-                      className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {inviteBusy ? "Sending..." : "Send Invite"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
-            {!activeWorkspace?.canManage ? (
-              <p className="mt-3 max-w-5xl text-sm text-slate-600">
-                Only owners and admins can invite teammates to {activeWorkspaceLabel}.
-              </p>
-            ) : null}
-          </div>
+          <AccessSettingsSection
+            activeWorkspace={activeWorkspace}
+            activeWorkspaceLabel={activeWorkspaceLabel}
+            inviteEmail={inviteEmail}
+            inviteRole={inviteRole}
+            inviteBusy={inviteBusy}
+            memberBusyId={memberBusyId}
+            ownerTransferMemberId={ownerTransferMemberId}
+            ownerTransferBusy={ownerTransferBusy}
+            leaveWorkspaceBusy={leaveWorkspaceBusy}
+            workspaceMembers={workspaceMembers}
+            workspaceInvites={workspaceInvites}
+            workspacePeopleLoading={workspacePeopleLoading}
+            workspaceActivity={workspaceActivity}
+            workspaceActivityLoading={workspaceActivityLoading}
+            ownershipTransferBlockedByBilling={ownershipTransferBlockedByBilling}
+            onInviteEmailChange={setInviteEmail}
+            onInviteRoleChange={setInviteRole}
+            onOwnerTransferMemberIdChange={setOwnerTransferMemberId}
+            onInviteSubmit={handleInviteWorkspaceMember}
+            onUpdateMemberRole={handleUpdateWorkspaceMemberRole}
+            onRemoveMember={handleRemoveWorkspaceMember}
+            onResendInvite={handleResendInvite}
+            onRevokeInvite={handleRevokeInvite}
+            onTransferOwnership={handleTransferWorkspaceOwnership}
+            onLeaveWorkspace={handleLeaveWorkspace}
+          />
           ) : null}
-
-          {showAccessSettings ? (
-          <div className="mt-8 max-w-5xl">
-            <div className="pt-2">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-900">Active members</h3>
-                <span className="text-sm text-slate-500">{workspaceMembers.length}</span>
-              </div>
-              <div className="mt-4 space-y-4">
-                {workspacePeopleLoading ? (
-                  <p className="text-sm text-slate-500">
-                    Loading members for {activeWorkspaceLabel}...
-                  </p>
-                ) : workspaceMembers.length ? (
-                  workspaceMembers.map((member) => (
-                    <div key={member.id} className="border-t border-slate-200 pt-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-900">
-                            {member.user.name?.trim() || member.user.email}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            {member.user.email}
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            Joined{" "}
-                            {member.joinedAt
-                              ? new Date(member.joinedAt).toLocaleDateString()
-                              : "recently"}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            value={member.role}
-                            onChange={(event) =>
-                              void handleUpdateWorkspaceMemberRole(
-                                member.id,
-                                event.target.value,
-                              )
-                            }
-                            disabled={
-                              memberBusyId === member.id ||
-                              member.role === "owner" ||
-                              !activeWorkspace?.canManage
-                            }
-                            className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <option value="owner">Owner</option>
-                            <option value="admin">Admin</option>
-                            <option value="member">Member</option>
-                            <option value="viewer">Viewer</option>
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => void handleRemoveWorkspaceMember(member.id)}
-                            disabled={
-                              memberBusyId === member.id ||
-                              member.role === "owner" ||
-                              !activeWorkspace?.canManage
-                            }
-                            className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    No teammates in {activeWorkspaceLabel} yet.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-900">Pending invites</h3>
-                <span className="text-sm text-slate-500">{workspaceInvites.length}</span>
-              </div>
-              <div className="mt-4 space-y-4">
-                {workspacePeopleLoading ? (
-                  <p className="text-sm text-slate-500">
-                    Loading invites for {activeWorkspaceLabel}...
-                  </p>
-                ) : workspaceInvites.length ? (
-                  workspaceInvites.map((invite) => {
-                    const isExpired = new Date(invite.expiresAt).getTime() < Date.now();
-
-                    return (
-                      <div key={invite.id} className="border-t border-slate-200 pt-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {invite.email}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {invite.role} · {isExpired ? "expired" : "expires"}{" "}
-                              {new Date(invite.expiresAt).toLocaleDateString()}
-                            </p>
-                            <p className="mt-1 text-[11px] text-slate-400">
-                              Sent {new Date(invite.createdAt).toLocaleDateString()}
-                              {invite.updatedAt &&
-                              invite.updatedAt !== invite.createdAt
-                                ? ` · resent ${new Date(invite.updatedAt).toLocaleDateString()}`
-                                : ""}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                                isExpired
-                                  ? "border border-amber-200 bg-amber-50 text-amber-700"
-                                  : "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                              }`}
-                            >
-                              {isExpired ? "Expired" : "Pending"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => void handleResendInvite(invite.id)}
-                              disabled={inviteBusy || !activeWorkspace?.canManage}
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Resend
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleRevokeInvite(invite.id)}
-                              disabled={inviteBusy || !activeWorkspace?.canManage}
-                              className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Revoke
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    No pending invites for {activeWorkspaceLabel} right now.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          ) : null}
-          {showAccessSettings ? (
-          <div className="mt-8 max-w-5xl">
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold text-slate-900">Ownership</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Transfer ownership of {activeWorkspaceLabel} before an owner steps
-                away. Personal workspaces cannot be transferred.
-              </p>
-              {ownershipTransferBlockedByBilling ? (
-                <p className="mt-3 text-sm text-amber-800">
-                  Ownership transfer is blocked while the current owner still has active subscription access or remaining credits tied to this workspace.
-                </p>
-              ) : null}
-              <div className="mt-4 flex max-w-3xl flex-col gap-3 lg:flex-row lg:items-end">
-                <label className="flex-1">
-                  <select
-                    value={ownerTransferMemberId}
-                    onChange={(event) => setOwnerTransferMemberId(event.target.value)}
-                    disabled={ownerTransferBusy || ownershipTransferBlockedByBilling}
-                    className="w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">Choose a member</option>
-                    {workspaceMembers
-                      .filter((member) => member.role !== "owner")
-                      .map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.user.name?.trim() || member.user.email}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void handleTransferWorkspaceOwnership()}
-                  disabled={
-                    ownerTransferBusy ||
-                    !ownerTransferMemberId ||
-                    ownershipTransferBlockedByBilling
-                  }
-                  className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {ownerTransferBusy ? "Transferring..." : "Transfer Owner"}
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold text-slate-900">Leave workspace</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Non-owners can leave {activeWorkspaceLabel} at any time. Owners
-                must transfer ownership first.
-              </p>
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={() => void handleLeaveWorkspace()}
-                  disabled={leaveWorkspaceBusy}
-                  className="cursor-pointer rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {leaveWorkspaceBusy ? "Leaving..." : "Leave Workspace"}
-                </button>
-              </div>
-            </div>
-          </div>
-          ) : null}
-          {showAccessSettings ? (
-          <div className="mt-8 max-w-5xl pt-2">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">Recent activity</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Access changes for {activeWorkspaceLabel} are logged here for accountability.
-                </p>
-              </div>
-              <span className="text-sm text-slate-500">{workspaceActivity.length}</span>
-            </div>
-            <div className="mt-4 space-y-4">
-              {workspaceActivityLoading ? (
-                <p className="text-sm text-slate-500">
-                  Loading activity for {activeWorkspaceLabel}...
-                </p>
-              ) : workspaceActivity.length ? (
-                workspaceActivity.map((entry) => (
-                  <div key={entry.id} className="border-t border-slate-200 pt-4">
-                    <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900">
-                          {entry.summary}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {(entry.actorUser?.name?.trim() ||
-                            entry.actorUser?.email ||
-                          "System") +
-                            " · " +
-                            new Date(entry.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        {entry.action.replaceAll(".", " ")}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Activity for {activeWorkspaceLabel} will appear here as invites
-                  and membership changes happen.
-                </p>
-              )}
-            </div>
-          </div>
-          ) : null}
-          <div
-            id="workspace-tasks"
-            className={`mt-5 rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
-              showOperationsSurface ? "" : "hidden"
-            }`}
-          >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Workspace Tasks
-                </p>
-                <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-                  Team task board
-                </h3>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                  See tracked action items across this workspace, filter the queue,
-                  and jump straight back into the related transcript when needed.
-                </p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-4">
-                <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Total
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">
-                    {workspaceTaskCounts.total}
-                  </p>
-                </div>
-                <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Open
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">
-                    {workspaceTaskCounts.open}
-                  </p>
-                </div>
-                <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    In Progress
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">
-                    {workspaceTaskCounts.inProgress}
-                  </p>
-                </div>
-                <div className="rounded-[18px] border border-slate-200 bg-white px-3 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Done
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">
-                    {workspaceTaskCounts.done}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end">
-              <label className="lg:w-56">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Status
-                </span>
-                <select
-                  value={workspaceTaskStatusFilter}
-                  onChange={(event) => setWorkspaceTaskStatusFilter(event.target.value)}
-                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                >
-                  {taskStatusOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="lg:w-56">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Assignment
-                </span>
-                <select
-                  value={workspaceTaskAssignmentFilter}
-                  onChange={(event) =>
-                    setWorkspaceTaskAssignmentFilter(event.target.value)
-                  }
-                  className="mt-2 w-full cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
-                >
-                  {taskAssignmentOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="mt-4 space-y-3">
-              {workspaceTasksLoading ? (
-                <p className="text-sm text-slate-500">Loading workspace tasks...</p>
-              ) : filteredWorkspaceTasks.length ? (
-                filteredWorkspaceTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="rounded-[20px] border border-slate-200 bg-white px-4 py-4"
-                  >
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-slate-200 bg-[#fffaf3] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                            {task.transcription?.fileName || "Transcript"}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
-                              task.priority === "HIGH"
-                                ? "bg-red-100 text-red-700"
-                                : task.priority === "MEDIUM"
-                                  ? "bg-orange-100 text-orange-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {task.priority}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
-                              task.status === "done"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : task.status === "in_progress"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {task.status.replace("_", " ")}
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm font-semibold leading-relaxed text-slate-900">
-                          {task.title}
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                          <span>@{task.assignee?.trim() || "Unassigned"}</span>
-                          {task.dueDate ? (
-                            <span>Due {new Date(task.dueDate).toLocaleDateString()}</span>
-                          ) : (
-                            <span>No due date</span>
-                          )}
-                          <span>
-                            Added {new Date(task.createdAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 xl:justify-end">
-                        <select
-                          value={task.status}
-                          onChange={(event) =>
-                            void handleUpdateActionTask(task.id, {
-                              status: event.target.value as ActionTask["status"],
-                            })
-                          }
-                          disabled={actionTaskBusyKey === `update:${task.id}`}
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="open">Open</option>
-                          <option value="in_progress">In Progress</option>
-                          <option value="done">Done</option>
-                        </select>
-                        <input
-                          type="text"
-                          defaultValue={task.assignee || ""}
-                          placeholder="Assignee"
-                          onBlur={(event) =>
-                            void handleUpdateActionTask(task.id, {
-                              assignee: event.target.value,
-                            })
-                          }
-                          disabled={actionTaskBusyKey === `update:${task.id}`}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <input
-                          type="date"
-                          defaultValue={task.dueDate ? task.dueDate.slice(0, 10) : ""}
-                          onBlur={(event) =>
-                            void handleUpdateActionTask(task.id, {
-                              dueDate: event.target.value,
-                            })
-                          }
-                          disabled={actionTaskBusyKey === `update:${task.id}`}
-                          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleOpenTaskTranscript(task)}
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
-                        >
-                          Open Transcript
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteActionTask(task.id)}
-                          disabled={actionTaskBusyKey === `delete:${task.id}`}
-                          className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-slate-500">
-                  No tracked tasks match these filters yet.
-                </p>
-              )}
-            </div>
-          </div>
+          <WorkspaceTasksSurface {...workspaceTasksSurfaceProps} />
           <div
             id="intelligence"
             className={`mt-5 rounded-[22px] border border-slate-200 bg-[#fcfbf8] p-4 ${
@@ -8620,400 +6632,52 @@ export function TranscriptionClient({
                 </div>
               </div>
             ) : null}
-            {intelligenceScope === "project" && intelligenceProjectId !== "all" ? (
-              <div className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="max-w-2xl">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Project Report
-                    </p>
-                    <h4 className="mt-2 text-lg font-semibold text-slate-950">
-                      Recurring project report
-                    </h4>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      Configure a recurring report for this project. You can keep the
-                      broad summary or narrow the report toward new insights, open
-                      tasks, or risk watch coverage. Delivery follows each user&apos;s
-                      digest email preference and can also post to Slack if workspace
-                      digest delivery is enabled there.
-                    </p>
-                    {projectDigestSettings ? (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 font-semibold text-slate-700">
-                          {projectDigestSettings.enabled ? "Enabled" : "Paused"}
-                        </span>
-                        <span className="rounded-full border border-slate-200 bg-[#fcfbf8] px-3 py-1 font-semibold text-slate-700">
-                          {digestReportTypeOptions.find(
-                            (option) => option.id === projectDigestSettings.reportType,
-                          )?.label || "Summary report"}
-                        </span>
-                        <span>{projectDigestSettings.scheduleLabel}</span>
-                        {projectDigestSettings.lastSentAt ? (
-                          <span>
-                            Last sent{" "}
-                            {new Date(projectDigestSettings.lastSentAt).toLocaleString()}
-                          </span>
-                        ) : (
-                          <span>Not sent yet</span>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                  <form
-                    onSubmit={handleSaveProjectDigestSettings}
-                    className="grid w-full gap-3 lg:max-w-3xl lg:grid-cols-2"
-                  >
-                    <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Digest status
-                      </span>
-                      <div className="mt-3 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            Enable project digest
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            Run a weekly report for this project.
-                          </p>
-                        </div>
-                        <DeferredCheckbox
-                          checked={projectDigestEnabled}
-                          onCheckedChange={setProjectDigestEnabled}
-                          disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                          className="h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                        />
-                      </div>
-                    </label>
-                    <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Cadence
-                      </span>
-                      <select
-                        value={projectDigestCadence}
-                        onChange={(event) =>
-                          setProjectDigestCadence(event.target.value as "weekly" | "monthly")
-                        }
-                        disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {digestCadenceOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Report type
-                      </span>
-                      <select
-                        value={projectDigestReportType}
-                        onChange={(event) =>
-                          setProjectDigestReportType(
-                            event.target.value as
-                              | "summary"
-                              | "new_insights"
-                              | "open_tasks"
-                              | "risk_watch",
-                          )
-                        }
-                        disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {digestReportTypeOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {
-                          digestReportTypeOptions.find(
-                            (option) => option.id === projectDigestReportType,
-                          )?.description
-                        }
-                      </p>
-                    </label>
-                    <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Recipient scope
-                      </span>
-                      <select
-                        value={projectDigestRecipientScope}
-                        onChange={(event) => setProjectDigestRecipientScope(event.target.value)}
-                        disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {digestRecipientOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Delivery channels
-                      </span>
-                      <div className="mt-3 space-y-3">
-                        <label className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">Email</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Respect each member&apos;s personal digest email preference.
-                            </p>
-                          </div>
-                          <DeferredCheckbox
-                            checked={projectDigestSendEmail}
-                            onCheckedChange={setProjectDigestSendEmail}
-                            disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                            className="h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                          />
-                        </label>
-                        <label className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">Slack</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Requires workspace Slack digests to be enabled.
-                            </p>
-                          </div>
-                          <DeferredCheckbox
-                            checked={projectDigestSendSlack}
-                            onCheckedChange={setProjectDigestSendSlack}
-                            disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                            className="h-4 w-4 rounded border-slate-300 text-slate-950 disabled:cursor-not-allowed"
-                          />
-                        </label>
-                        {projectDigestSendSlack ? (
-                          <label className="block">
-                            <span className="text-xs font-medium text-slate-600">
-                              Slack route
-                            </span>
-                            <select
-                              value={projectDigestSlackDestinationId}
-                              onChange={(event) =>
-                                setProjectDigestSlackDestinationId(event.target.value)
-                              }
-                              disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                              className="mt-2 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <option value="default">Default workspace destination</option>
-                              {workspaceSlackDestinations.map((destination) => (
-                                <option key={destination.id} value={destination.id}>
-                                  {destination.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : null}
-                      </div>
-                    </div>
-                    {projectDigestCadence === "weekly" ? (
-                      <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Weekly day
-                        </span>
-                        <select
-                          value={projectDigestWeekday}
-                          onChange={(event) => setProjectDigestWeekday(event.target.value)}
-                          disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                          className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {digestWeekdayOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : (
-                      <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Day of month
-                        </span>
-                        <select
-                          value={projectDigestDayOfMonth}
-                          onChange={(event) => setProjectDigestDayOfMonth(event.target.value)}
-                          disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                          className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {Array.from({ length: 28 }, (_, index) => {
-                            const day = index + 1;
-                            return (
-                              <option key={day} value={String(day)}>
-                                Day {day}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <p className="mt-2 text-xs text-slate-500">
-                          Monthly reports use days 1-28 to avoid short-month skips.
-                        </p>
-                      </label>
-                    )}
-                    <label className="rounded-[16px] border border-slate-200 bg-[#fcfbf8] px-4 py-3">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Local hour
-                      </span>
-                      <select
-                        value={projectDigestHour}
-                        onChange={(event) => setProjectDigestHour(event.target.value)}
-                        disabled={projectDigestLoading || !activeWorkspace?.canManage}
-                        className="mt-3 w-full cursor-pointer rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {Array.from({ length: 24 }, (_, hour) => (
-                          <option key={hour} value={String(hour)}>
-                            {hour === 0
-                              ? "12:00 AM"
-                              : hour < 12
-                                ? `${hour}:00 AM`
-                                : hour === 12
-                                  ? "12:00 PM"
-                                  : `${hour - 12}:00 PM`}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="flex flex-wrap gap-3 lg:col-span-2">
-                      <button
-                        type="submit"
-                        disabled={projectDigestBusy !== null || !activeWorkspace?.canManage}
-                        className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {projectDigestBusy === "save" ? "Saving..." : "Save Project Digest"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleSendProjectDigestNow()}
-                        disabled={projectDigestBusy !== null || !activeWorkspace?.canManage}
-                        className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {projectDigestBusy === "send" ? "Sending..." : "Send Now"}
-                      </button>
-                    </div>
-                    <div className="rounded-[16px] border border-dashed border-slate-200 bg-white px-4 py-3 lg:col-span-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Save as template
-                      </p>
-                      <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end">
-                        <label className="flex-1">
-                          <span className="text-xs font-medium text-slate-600">
-                            Template name
-                          </span>
-                          <input
-                            type="text"
-                            value={projectDigestTemplateName}
-                            onChange={(event) =>
-                              setProjectDigestTemplateName(event.target.value)
-                            }
-                            disabled={!activeWorkspace?.canManage || projectDigestLoading}
-                            placeholder="Monthly project summary"
-                            className="mt-2 w-full rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => void handleSaveReportTemplate("project")}
-                          disabled={
-                            !activeWorkspace?.canManage ||
-                            reportTemplateBusyKey !== null ||
-                            !projectDigestTemplateName.trim()
-                          }
-                          className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {reportTemplateBusyKey === "save:project"
-                            ? "Saving..."
-                            : "Save Template"}
-                        </button>
-                      </div>
-                </div>
-              </form>
-            </div>
-            <div className="mt-4 rounded-[18px] border border-dashed border-slate-200 bg-white p-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="max-w-2xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Slack destinations
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Add extra Slack webhooks for channel-specific routing. Recurring
-                    reports can send to the default workspace destination or any saved
-                    destination below.
-                  </p>
-                </div>
-                <div className="grid w-full gap-3 lg:max-w-3xl lg:grid-cols-[1fr,1fr,auto]">
-                  <input
-                    type="text"
-                    value={workspaceSlackDestinationName}
-                    onChange={(event) => setWorkspaceSlackDestinationName(event.target.value)}
-                    placeholder="Leadership channel"
-                    disabled={!activeWorkspace?.canManage}
-                    className="rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                  <input
-                    type="password"
-                    value={workspaceSlackDestinationWebhook}
-                    onChange={(event) =>
-                      setWorkspaceSlackDestinationWebhook(event.target.value)
-                    }
-                    placeholder="https://hooks.slack.com/services/..."
-                    disabled={!activeWorkspace?.canManage}
-                    className="rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-2 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleCreateSlackDestination()}
-                    disabled={
-                      !activeWorkspace?.canManage ||
-                      workspaceSlackDestinationBusy !== null ||
-                      !workspaceSlackDestinationName.trim() ||
-                      !workspaceSlackDestinationWebhook.trim()
-                    }
-                    className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {workspaceSlackDestinationBusy === "create" ? "Saving..." : "Add route"}
-                  </button>
-                </div>
-              </div>
-              <div className="mt-4 space-y-3">
-                {workspaceSlackDestinations.length ? (
-                  workspaceSlackDestinations.map((destination) => (
-                    <div
-                      key={destination.id}
-                      className="flex flex-col gap-3 rounded-[16px] border border-slate-200 bg-[#fcfbf8] p-3 lg:flex-row lg:items-center lg:justify-between"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {destination.name}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {destination.maskedWebhook || "Saved destination"}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteSlackDestination(destination.id)}
-                        disabled={
-                          workspaceSlackDestinationBusy !== null || !activeWorkspace?.canManage
-                        }
-                        className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {workspaceSlackDestinationBusy === `delete:${destination.id}`
-                          ? "Deleting..."
-                          : "Delete"}
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="rounded-[16px] border border-dashed border-slate-200 bg-[#fcfbf8] px-4 py-3 text-sm text-slate-500">
-                    No extra Slack destinations yet.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-            ) : null}
+            <ProjectDigestPanel
+              intelligenceScope={intelligenceScope}
+              intelligenceProjectId={intelligenceProjectId}
+              activeWorkspace={activeWorkspace}
+              projectDigestSettings={projectDigestSettings}
+              projectDigestEnabled={projectDigestEnabled}
+              projectDigestLoading={projectDigestLoading}
+              projectDigestCadence={projectDigestCadence}
+              projectDigestReportType={projectDigestReportType}
+              projectDigestRecipientScope={projectDigestRecipientScope}
+              projectDigestSendEmail={projectDigestSendEmail}
+              projectDigestSendSlack={projectDigestSendSlack}
+              projectDigestSlackDestinationId={projectDigestSlackDestinationId}
+              projectDigestWeekday={projectDigestWeekday}
+              projectDigestDayOfMonth={projectDigestDayOfMonth}
+              projectDigestHour={projectDigestHour}
+              projectDigestBusy={projectDigestBusy}
+              projectDigestTemplateName={projectDigestTemplateName}
+              reportTemplateBusyKey={reportTemplateBusyKey}
+              workspaceSlackDestinations={workspaceSlackDestinations}
+              workspaceSlackDestinationName={workspaceSlackDestinationName}
+              workspaceSlackDestinationWebhook={workspaceSlackDestinationWebhook}
+              workspaceSlackDestinationBusy={workspaceSlackDestinationBusy}
+              digestReportTypeOptions={digestReportTypeOptions}
+              digestCadenceOptions={digestCadenceOptions}
+              digestRecipientOptions={digestRecipientOptions}
+              digestWeekdayOptions={digestWeekdayOptions}
+              setProjectDigestEnabled={setProjectDigestEnabled}
+              setProjectDigestCadence={setProjectDigestCadence}
+              setProjectDigestReportType={setProjectDigestReportType}
+              setProjectDigestRecipientScope={setProjectDigestRecipientScope}
+              setProjectDigestSendEmail={setProjectDigestSendEmail}
+              setProjectDigestSendSlack={setProjectDigestSendSlack}
+              setProjectDigestSlackDestinationId={setProjectDigestSlackDestinationId}
+              setProjectDigestWeekday={setProjectDigestWeekday}
+              setProjectDigestDayOfMonth={setProjectDigestDayOfMonth}
+              setProjectDigestHour={setProjectDigestHour}
+              setProjectDigestTemplateName={setProjectDigestTemplateName}
+              setWorkspaceSlackDestinationName={setWorkspaceSlackDestinationName}
+              setWorkspaceSlackDestinationWebhook={setWorkspaceSlackDestinationWebhook}
+              handleSaveProjectDigestSettings={handleSaveProjectDigestSettings}
+              handleSendProjectDigestNow={handleSendProjectDigestNow}
+              handleSaveReportTemplate={handleSaveReportTemplate}
+              handleCreateSlackDestination={handleCreateSlackDestination}
+              handleDeleteSlackDestination={handleDeleteSlackDestination}
+            />
             <div className="mt-4 flex flex-wrap gap-2">
               {[
                 "Summarize this project in five bullets.",
@@ -9168,690 +6832,7 @@ export function TranscriptionClient({
                 transcripts with source citations.
               </div>
             )}
-            <div className="mt-4 rounded-[20px] border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {intelligenceScope === "project"
-                      ? "Saved Insights"
-                      : "Saved Workspace Insights"}
-                  </h4>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {intelligenceScope === "project"
-                      ? "Reopen previous project answers without re-running a model."
-                      : "Reopen previous workspace answers without re-running a model."}
-                  </p>
-                </div>
-                <span className="text-xs font-semibold text-slate-400">
-                  {intelligenceScope === "project"
-                    ? filteredProjectInsights.length
-                    : filteredWorkspaceInsights.length}
-                </span>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {projectInsightFilterOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() =>
-                      intelligenceScope === "project"
-                        ? setProjectInsightFilter(option.id)
-                        : setWorkspaceInsightFilter(option.id)
-                    }
-                    className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-semibold ${
-                      (intelligenceScope === "project"
-                        ? projectInsightFilter
-                        : workspaceInsightFilter) === option.id
-                        ? "border-slate-900 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-4 space-y-3">
-                {intelligenceScope === "workspace" ? (
-                  workspaceInsightsLoading ? (
-                    <p className="text-sm text-slate-500">Loading workspace insights...</p>
-                  ) : filteredWorkspaceInsights.length ? (
-                    filteredWorkspaceInsights.map((insight) => {
-                      const canDeleteInsight =
-                        !!currentUser &&
-                        (insight.createdBy?.id === currentUser.id ||
-                          activeWorkspace?.canManage);
-
-                      return (
-                        <div
-                          key={insight.id}
-                          className={`rounded-[18px] border px-4 py-4 ${
-                            selectedWorkspaceInsightId === insight.id
-                              ? "border-slate-900 bg-[#fcfbf8]"
-                              : "border-slate-200 bg-[#fcfbf8]"
-                          }`}
-                        >
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-semibold text-slate-900">
-                                  {insight.title}
-                                </p>
-                                {insight.isPinned ? (
-                                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
-                                    Pinned
-                                  </span>
-                                ) : null}
-                                {insight.archivedAt ? (
-                                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                                    Archived
-                                  </span>
-                                ) : null}
-                              </div>
-                              <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">
-                                {insight.question}
-                              </p>
-                              <p className="mt-2 text-[11px] text-slate-400">
-                                {new Date(insight.createdAt).toLocaleString()}
-                                {insight.createdBy
-                                  ? ` · ${insight.createdBy.name?.trim() || insight.createdBy.email}`
-                                  : ""}
-                                {insight.projectIds?.length
-                                  ? ` · ${insight.projectIds.length} projects`
-                                  : " · whole workspace"}
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void handleToggleWorkspaceInsightPinned(insight)}
-                                disabled={workspaceInsightBusyKey === `pin:${insight.id}`}
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {workspaceInsightBusyKey === `pin:${insight.id}`
-                                  ? "Saving..."
-                                  : insight.isPinned
-                                    ? "Unpin"
-                                    : "Pin"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleToggleWorkspaceInsightArchived(insight)}
-                                disabled={workspaceInsightBusyKey === `archive:${insight.id}`}
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {workspaceInsightBusyKey === `archive:${insight.id}`
-                                  ? "Saving..."
-                                  : insight.archivedAt
-                                    ? "Restore"
-                                    : "Archive"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenSavedWorkspaceInsight(insight)}
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
-                              >
-                                Open
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handleCopyInsightForNotion("workspace", insight.id)
-                                }
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
-                              >
-                                Copy for Notion
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handleExportInsightMarkdown("workspace", insight.id)
-                                }
-                                disabled={exportBusy === `insight:workspace:${insight.id}`}
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {exportBusy === `insight:workspace:${insight.id}`
-                                  ? "Exporting..."
-                                  : "Export Markdown"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handlePublishWorkspaceInsightToNotion(insight.id)
-                                }
-                                disabled={
-                                  notionShareBusyKey === `workspace:${insight.id}` ||
-                                  !workspaceNotionSettings?.configured ||
-                                  !workspaceNotionSettings?.enabled
-                                }
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {notionShareBusyKey === `workspace:${insight.id}`
-                                  ? "Publishing..."
-                                  : "Publish to Notion"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleShareWorkspaceInsightToSlack(insight.id)}
-                                disabled={
-                                  slackShareBusyKey === `workspace:${insight.id}` ||
-                                  !workspaceSlackSettings?.configured ||
-                                  !workspaceSlackSettings?.enabled
-                                }
-                                className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {slackShareBusyKey === `workspace:${insight.id}`
-                                  ? "Sharing..."
-                                  : "Share to Slack"}
-                              </button>
-                              {canDeleteInsight ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteWorkspaceInsight(insight.id)}
-                                  disabled={workspaceInsightBusyKey === `delete:${insight.id}`}
-                                  className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {workspaceInsightBusyKey === `delete:${insight.id}`
-                                    ? "Deleting..."
-                                    : "Delete"}
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                          {selectedWorkspaceInsightId === insight.id ? (
-                            <div className="mt-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                              <div className="flex items-center justify-between gap-3">
-                                <h5 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                  Workspace Insight Discussion
-                                </h5>
-                                <span className="text-[11px] font-semibold text-slate-400">
-                                  {currentWorkspaceInsightComments.length}
-                                </span>
-                              </div>
-                              <div className="mt-3 space-y-3">
-                                {currentWorkspaceInsightComments.length ? (
-                                  currentWorkspaceInsightComments.map((comment) => (
-                                    <div
-                                      key={comment.id}
-                                      className="rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-3"
-                                    >
-                                      {(() => {
-                                        const canManageComment =
-                                          !!currentUser &&
-                                          (comment.user.id === currentUser.id ||
-                                            activeWorkspace?.canManage);
-
-                                        return (
-                                          <>
-                                            {editingCommentId === comment.id ? (
-                                              <textarea
-                                                value={
-                                                  commentEditDrafts[comment.id] ??
-                                                  comment.content
-                                                }
-                                                onChange={(event) =>
-                                                  setCommentEditDrafts((prev) => ({
-                                                    ...prev,
-                                                    [comment.id]: event.target.value,
-                                                  }))
-                                                }
-                                                rows={3}
-                                                className="w-full rounded-[12px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 outline-none"
-                                              />
-                                            ) : (
-                                              <p className="text-sm leading-6 text-slate-900">
-                                                {comment.content}
-                                              </p>
-                                            )}
-                                            {comment.mentions?.length ? (
-                                              <div className="mt-2 flex flex-wrap gap-2">
-                                                {comment.mentions.map((mention) => (
-                                                  <span
-                                                    key={`${comment.id}-${mention.email}`}
-                                                    className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700"
-                                                  >
-                                                    @{mention.name?.trim() || mention.email}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            ) : null}
-                                            <p className="mt-2 text-[11px] text-slate-500">
-                                              {comment.user.name?.trim() || comment.user.email} ·{" "}
-                                              {new Date(comment.createdAt).toLocaleString()}
-                                            </p>
-                                            {canManageComment ? (
-                                              <div className="mt-3 flex flex-wrap gap-2">
-                                                {editingCommentId === comment.id ? (
-                                                  <>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() =>
-                                                        void handleUpdateComment(
-                                                          comment.id,
-                                                          commentEditDrafts[comment.id] ??
-                                                            comment.content,
-                                                        )
-                                                      }
-                                                      disabled={commentBusyKey === `edit:${comment.id}`}
-                                                      className="cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-3 py-1.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                                    >
-                                                      {commentBusyKey === `edit:${comment.id}`
-                                                        ? "Saving..."
-                                                        : "Save"}
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => setEditingCommentId(null)}
-                                                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-700"
-                                                    >
-                                                      Cancel
-                                                    </button>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => {
-                                                        setEditingCommentId(comment.id);
-                                                        setCommentEditDrafts((prev) => ({
-                                                          ...prev,
-                                                          [comment.id]: comment.content,
-                                                        }));
-                                                      }}
-                                                      className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-700"
-                                                    >
-                                                      Edit
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() =>
-                                                        void handleDeleteComment(comment.id)
-                                                      }
-                                                      disabled={commentBusyKey === `delete:${comment.id}`}
-                                                      className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    >
-                                                      Delete
-                                                    </button>
-                                                  </>
-                                                )}
-                                              </div>
-                                            ) : null}
-                                          </>
-                                        );
-                                      })()}
-                                    </div>
-                                  ))
-                                ) : (
-                                  <p className="text-sm text-slate-500">
-                                    No comments yet for this workspace insight.
-                                  </p>
-                                )}
-                              </div>
-                              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end">
-                                <label className="flex-1">
-                                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                    Add Workspace Insight Comment
-                                  </span>
-                                  <textarea
-                                    value={workspaceInsightCommentDrafts[insight.id] || ""}
-                                    onChange={(event) =>
-                                      setWorkspaceInsightCommentDrafts((prev) => ({
-                                        ...prev,
-                                        [insight.id]: event.target.value,
-                                      }))
-                                    }
-                                    rows={2}
-                                    placeholder="Add a note or mention a teammate with @name"
-                                    className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void handleCreateComment({
-                                      content: workspaceInsightCommentDrafts[insight.id] || "",
-                                      workspaceInsightId: insight.id,
-                                    })
-                                  }
-                                  disabled={
-                                    !(workspaceInsightCommentDrafts[insight.id] || "").trim() ||
-                                    commentBusyKey === `workspace-insight:${insight.id}`
-                                  }
-                                  className="cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {commentBusyKey === `workspace-insight:${insight.id}`
-                                    ? "Posting..."
-                                    : "Post"}
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-sm text-slate-500">
-                      No saved workspace insights match this filter yet.
-                    </p>
-                  )
-                ) : projectInsightsLoading ? (
-                  <p className="text-sm text-slate-500">Loading saved insights...</p>
-                ) : filteredProjectInsights.length ? (
-                  filteredProjectInsights.map((insight) => {
-                    const canDeleteInsight =
-                      !!currentUser &&
-                      (insight.createdBy?.id === currentUser.id || activeWorkspace?.canManage);
-
-                    return (
-                      <div
-                        key={insight.id}
-                        className={`rounded-[18px] border px-4 py-4 ${
-                          selectedProjectInsightId === insight.id
-                            ? "border-slate-900 bg-[#fcfbf8]"
-                            : "border-slate-200 bg-[#fcfbf8]"
-                        }`}
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-sm font-semibold text-slate-900">
-                                {insight.title}
-                              </p>
-                              {insight.isPinned ? (
-                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
-                                  Pinned
-                                </span>
-                              ) : null}
-                              {insight.archivedAt ? (
-                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                                  Archived
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">
-                              {insight.question}
-                            </p>
-                            <p className="mt-2 text-[11px] text-slate-400">
-                              {new Date(insight.createdAt).toLocaleString()}
-                              {insight.createdBy
-                                ? ` · ${insight.createdBy.name?.trim() || insight.createdBy.email}`
-                                : ""}
-                              {insight.archivedAt
-                                ? ` · archived ${new Date(insight.archivedAt).toLocaleDateString()}`
-                                : ""}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleToggleProjectInsightPinned(insight)}
-                              disabled={projectInsightBusyKey === `pin:${insight.id}`}
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {projectInsightBusyKey === `pin:${insight.id}`
-                                ? "Saving..."
-                                : insight.isPinned
-                                  ? "Unpin"
-                                  : "Pin"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleToggleProjectInsightArchived(insight)}
-                              disabled={projectInsightBusyKey === `archive:${insight.id}`}
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {projectInsightBusyKey === `archive:${insight.id}`
-                                ? "Saving..."
-                                : insight.archivedAt
-                                  ? "Restore"
-                                  : "Archive"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSavedProjectInsight(insight)}
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
-                            >
-                              Open
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleCopyInsightForNotion("project", insight.id)
-                              }
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
-                            >
-                              Copy for Notion
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handleExportInsightMarkdown("project", insight.id)
-                              }
-                              disabled={exportBusy === `insight:project:${insight.id}`}
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {exportBusy === `insight:project:${insight.id}`
-                                ? "Exporting..."
-                                : "Export Markdown"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void handlePublishProjectInsightToNotion(insight.id)
-                              }
-                              disabled={
-                                notionShareBusyKey === `project:${insight.id}` ||
-                                !workspaceNotionSettings?.configured ||
-                                !workspaceNotionSettings?.enabled
-                              }
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {notionShareBusyKey === `project:${insight.id}`
-                                ? "Publishing..."
-                                : "Publish to Notion"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleShareProjectInsightToSlack(insight.id)}
-                              disabled={
-                                slackShareBusyKey === `project:${insight.id}` ||
-                                !workspaceSlackSettings?.configured ||
-                                !workspaceSlackSettings?.enabled
-                              }
-                              className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {slackShareBusyKey === `project:${insight.id}`
-                                ? "Sharing..."
-                                : "Share to Slack"}
-                            </button>
-                            {canDeleteInsight ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteProjectInsight(insight.id)}
-                                disabled={projectInsightBusyKey === `delete:${insight.id}`}
-                                className="cursor-pointer rounded-full border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {projectInsightBusyKey === `delete:${insight.id}`
-                                  ? "Deleting..."
-                                  : "Delete"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                        {selectedProjectInsightId === insight.id ? (
-                          <div className="mt-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <h5 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                Insight Discussion
-                              </h5>
-                              <span className="text-[11px] font-semibold text-slate-400">
-                                {currentProjectInsightComments.length}
-                              </span>
-                            </div>
-                            <div className="mt-3 space-y-3">
-                              {currentProjectInsightComments.length ? (
-                                currentProjectInsightComments.map((comment) => (
-                                  <div
-                                    key={comment.id}
-                                    className="rounded-[14px] border border-slate-200 bg-[#fcfbf8] px-3 py-3"
-                                  >
-                                    {(() => {
-                                      const canManageComment =
-                                        !!currentUser &&
-                                        (comment.user.id === currentUser.id ||
-                                          activeWorkspace?.canManage);
-
-                                      return (
-                                        <>
-                                          {editingCommentId === comment.id ? (
-                                            <textarea
-                                              value={
-                                                commentEditDrafts[comment.id] ?? comment.content
-                                              }
-                                              onChange={(event) =>
-                                                setCommentEditDrafts((prev) => ({
-                                                  ...prev,
-                                                  [comment.id]: event.target.value,
-                                                }))
-                                              }
-                                              rows={3}
-                                              className="w-full rounded-[12px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-900 outline-none"
-                                            />
-                                          ) : (
-                                            <p className="text-sm leading-6 text-slate-900">
-                                              {comment.content}
-                                            </p>
-                                          )}
-                                          {comment.mentions?.length ? (
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                              {comment.mentions.map((mention) => (
-                                                <span
-                                                  key={`${comment.id}-${mention.email}`}
-                                                  className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700"
-                                                >
-                                                  @{mention.name?.trim() || mention.email}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          ) : null}
-                                          <p className="mt-2 text-[11px] text-slate-500">
-                                            {comment.user.name?.trim() || comment.user.email} ·{" "}
-                                            {new Date(comment.createdAt).toLocaleString()}
-                                          </p>
-                                          {canManageComment ? (
-                                            <div className="mt-3 flex flex-wrap gap-2">
-                                              {editingCommentId === comment.id ? (
-                                                <>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                      void handleUpdateComment(
-                                                        comment.id,
-                                                        commentEditDrafts[comment.id] ??
-                                                          comment.content,
-                                                      )
-                                                    }
-                                                    disabled={commentBusyKey === `edit:${comment.id}`}
-                                                    className="cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-3 py-1.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                                  >
-                                                    {commentBusyKey === `edit:${comment.id}`
-                                                      ? "Saving..."
-                                                      : "Save"}
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => setEditingCommentId(null)}
-                                                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-700"
-                                                  >
-                                                    Cancel
-                                                  </button>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      setEditingCommentId(comment.id);
-                                                      setCommentEditDrafts((prev) => ({
-                                                        ...prev,
-                                                        [comment.id]: comment.content,
-                                                      }));
-                                                    }}
-                                                    className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-700"
-                                                  >
-                                                    Edit
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => void handleDeleteComment(comment.id)}
-                                                    disabled={commentBusyKey === `delete:${comment.id}`}
-                                                    className="cursor-pointer rounded-full border border-red-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                                  >
-                                                    Delete
-                                                  </button>
-                                                </>
-                                              )}
-                                            </div>
-                                          ) : null}
-                                        </>
-                                      );
-                                    })()}
-                                  </div>
-                                ))
-                              ) : (
-                                <p className="text-sm text-slate-500">
-                                  No comments yet for this insight.
-                                </p>
-                              )}
-                            </div>
-                            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end">
-                              <label className="flex-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                                  Add Insight Comment
-                                </span>
-                                <textarea
-                                  value={projectInsightCommentDrafts[insight.id] || ""}
-                                  onChange={(event) =>
-                                    setProjectInsightCommentDrafts((prev) => ({
-                                      ...prev,
-                                      [insight.id]: event.target.value,
-                                    }))
-                                  }
-                                  rows={2}
-                                  placeholder="Add a note or mention a teammate with @name"
-                                  className="mt-2 w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none"
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handleCreateComment({
-                                    content: projectInsightCommentDrafts[insight.id] || "",
-                                    projectInsightId: insight.id,
-                                  })
-                                }
-                                disabled={
-                                  !(projectInsightCommentDrafts[insight.id] || "").trim() ||
-                                  commentBusyKey === `insight:${insight.id}`
-                                }
-                                className="cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {commentBusyKey === `insight:${insight.id}`
-                                  ? "Posting..."
-                                  : "Post"}
-                              </button>
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    No saved insights match this filter yet.
-                  </p>
-                )}
-              </div>
-            </div>
+            <SavedInsightsPanel {...savedInsightsPanelProps} />
           </div>
         </section>
         {isOverviewSurface ? (
@@ -9863,90 +6844,15 @@ export function TranscriptionClient({
             focusedSummary={focusedSummary}
             overviewUploadPanelVersion={overviewUploadPanelVersion}
             overviewUploadPanelStartExpanded={overviewUploadPanelStartExpanded}
-            uploadBodyProps={{
-              activeWorkspace,
-              fileInputId,
-              file,
-              onFileChange: (nextFile) => {
-                setFile(nextFile);
-                setEstimatedDurationSeconds(null);
-                if (nextFile) {
-                  void readMediaDuration(nextFile);
-                }
-              },
-              estimatedDurationSeconds,
-              isDev,
-              testDataLoading,
-              testDataStatus,
-              onLoadTestData: handleLoadTestData,
-              uploadTemplate,
-              onUploadTemplateChange: setUploadTemplate,
-              templateOptions,
-              templatesStatusText: templatesLoading
-                ? "Loading templates..."
-                : customTemplates.length
-                  ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
-                  : "No custom templates yet.",
-              templateBusy,
-              onCreateTemplate: handleCreateTemplate,
-              uploadProjectId,
-              onUploadProjectIdChange: setUploadProjectId,
-              projects,
-              projectsStatusText: projectsLoading
-                ? "Loading projects..."
-                : projects.length
-                  ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
-                  : "No projects yet.",
-              projectBusy,
-              onCreateProject: handleCreateProject,
-              onUpload: handleUpload,
-              uploading,
-              durationLoading,
-              hasEnoughEstimatedCredits,
-              estimatedCredits,
-              billing,
-            }}
-            currentRecordingProps={{
-              activeWorkspace,
-              focusedSummary,
-              displaySummary,
-              selectedProjectName,
-              currentRecordingText,
-              currentRecordingSnippet,
-              hasExpandableCurrentRecordingText,
-              focusedSummaryHiddenByFilters,
-              isFocusedSummaryProcessing,
-              canProcessFocusedSummary,
-              currentActionTasks,
-              activeTranscriptionId,
-              actionTaskBusyKey,
-              taskCommentsById,
-              taskCommentDrafts,
-              commentBusyKey,
-              detailsAutoOpenToken: overviewDetailsAutoOpenToken,
-              onProcess: handleProcess,
-              onCopySummary: () =>
-                void handleCopyText(
-                  "Summary",
-                  buildSummaryText(displaySummary || focusedSummary),
-                ),
-              onStartUpload: () => scrollToSection("upload"),
-              onCreateActionTask: handleCreateActionTask,
-              onUpdateActionTask: handleUpdateActionTask,
-              onDeleteActionTask: handleDeleteActionTask,
-              onTaskCommentDraftChange: (taskId, value) =>
-                setTaskCommentDrafts((prev) => ({ ...prev, [taskId]: value })),
-              onCreateTaskComment: (input) =>
-                handleCreateComment({ taskId: input.taskId, content: input.content }),
-            }}
+            uploadBodyProps={sharedUploadBodyProps}
+            currentRecordingProps={overviewCurrentRecordingProps}
           />
         ) : null}
 
+        {workspaceSurface === "upload" ? (
         <section
           id="upload"
-          className={`rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] sm:p-7 ${
-            workspaceSurface === "upload" ? "" : "hidden"
-          }`}
+          className="rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] sm:p-7"
         >
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-3xl">
@@ -9963,53 +6869,7 @@ export function TranscriptionClient({
               </p>
             </div>
           </div>
-          <UploadPanelBody
-            activeWorkspace={activeWorkspace}
-            fileInputId={fileInputId}
-            file={file}
-            onFileChange={(nextFile) => {
-              setFile(nextFile);
-              setEstimatedDurationSeconds(null);
-              if (nextFile) {
-                void readMediaDuration(nextFile);
-              }
-            }}
-            estimatedDurationSeconds={estimatedDurationSeconds}
-            isDev={isDev}
-            testDataLoading={testDataLoading}
-            testDataStatus={testDataStatus}
-            onLoadTestData={handleLoadTestData}
-            uploadTemplate={uploadTemplate}
-            onUploadTemplateChange={setUploadTemplate}
-            templateOptions={templateOptions}
-            templatesStatusText={
-              templatesLoading
-                ? "Loading templates..."
-                : customTemplates.length
-                  ? `${customTemplates.length} custom template${customTemplates.length === 1 ? "" : "s"}`
-                  : "No custom templates yet."
-            }
-            templateBusy={templateBusy}
-            onCreateTemplate={handleCreateTemplate}
-            uploadProjectId={uploadProjectId}
-            onUploadProjectIdChange={setUploadProjectId}
-            projects={projects}
-            projectsStatusText={
-              projectsLoading
-                ? "Loading projects..."
-                : projects.length
-                  ? `${projects.length} project${projects.length === 1 ? "" : "s"}`
-                  : "No projects yet."
-            }
-            projectBusy={projectBusy}
-            onCreateProject={handleCreateProject}
-            onUpload={handleUpload}
-            uploading={uploading}
-            durationLoading={durationLoading}
-            hasEnoughEstimatedCredits={hasEnoughEstimatedCredits}
-            estimatedCredits={estimatedCredits}
-            billing={billing}
-          />
+          <UploadPanelBody {...sharedUploadBodyProps} />
 
           {shouldShowGlobalError && (
             <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-800 shadow-sm">
@@ -10017,19 +6877,11 @@ export function TranscriptionClient({
             </div>
           )}
         </section>
+        ) : null}
 
         <HistorySurface
           key={activeWorkspaceId || "workspace-pending"}
-          isActive={workspaceSurface === "transcriptions"}
-          activeWorkspaceId={activeWorkspaceId}
-          activeWorkspace={activeWorkspace}
-          initialProjectFilter={initialProjectFilter}
-          statusOptions={statusOptions}
-          templateOptions={templateOptions}
-          projects={projects}
-          onAssignProject={handleAssignProject}
-          onProcess={handleProcess}
-          onDelete={handleDelete}
+          {...historySurfaceProps}
         />
       </div>
 
