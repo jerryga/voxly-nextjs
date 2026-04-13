@@ -316,6 +316,7 @@ type HistoryRowProps = {
   item: Transcription;
   projects: Project[];
   onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
+  onProcess: (transcriptionId: string, template?: string | null) => void;
   onDelete: (transcriptionId: string) => Promise<void>;
 };
 
@@ -323,6 +324,7 @@ const HistoryRow = memo(function HistoryRow({
   item,
   projects,
   onAssignProject,
+  onProcess,
   onDelete,
 }: HistoryRowProps) {
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
