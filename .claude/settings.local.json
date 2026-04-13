@@ -10,7 +10,11 @@
       "Bash(npm run:*)",
       "Bash(xargs ls:*)",
       "Bash(git:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npx prisma:*)",
+      "Bash(node:*)",
+      "Bash(npx tsx -e ':*)",
+      "Bash(npx tsx:*)"
     ]
   }
 }

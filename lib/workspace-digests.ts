@@ -568,11 +568,6 @@ export async function sendWorkspaceDigest(input: {
                 ...(settings.recipientScope === "managers"
                   ? { role: { in: ["owner", "admin"] } }
                   : {}),
-                user: {
-                  email: {
-                    not: null,
-                  },
-                },
               } as any,
               select: {
                 user: {

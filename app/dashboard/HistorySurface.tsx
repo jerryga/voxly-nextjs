@@ -316,7 +316,6 @@ type HistoryRowProps = {
   item: Transcription;
   projects: Project[];
   onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
-  onProcess: (transcriptionId: string, template?: string | null) => void;
   onDelete: (transcriptionId: string) => Promise<void>;
 };
 
@@ -324,7 +323,6 @@ const HistoryRow = memo(function HistoryRow({
   item,
   projects,
   onAssignProject,
-  onProcess,
   onDelete,
 }: HistoryRowProps) {
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
@@ -495,7 +493,6 @@ export type HistorySurfaceProps = {
   templateOptions: Array<{ id: string; label: string }>;
   projects: Project[];
   onAssignProject: (transcriptionId: string, projectId: string) => Promise<boolean>;
-  onProcess: (transcriptionId: string, template?: string | null) => void;
   onDelete: (transcriptionId: string) => Promise<void>;
 };
 
@@ -508,7 +505,6 @@ export const HistorySurface = memo(function HistorySurface({
   templateOptions,
   projects,
   onAssignProject,
-  onProcess,
   onDelete,
 }: HistorySurfaceProps) {
   const historyRequestAbortRef = useRef<AbortController | null>(null);
@@ -832,7 +828,6 @@ export const HistorySurface = memo(function HistorySurface({
               item={item}
               projects={projects}
               onAssignProject={handleHistoryAssignProject}
-              onProcess={onProcess}
               onDelete={handleHistoryDelete}
             />
           ))}

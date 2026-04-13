@@ -135,7 +135,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const { id, template } = parsed.data;
+    const { id, template, actionItems } = parsed.data;
     const projectId = Object.prototype.hasOwnProperty.call(parsed.data, "projectId")
       ? parsed.data.projectId
       : undefined;
@@ -161,6 +161,7 @@ export async function PATCH(request: Request) {
       data: {
         ...(template ? { template } : {}),
         ...(typeof projectId !== "undefined" ? { projectId } : {}),
+        ...(actionItems ? { actionItems } : {}),
       },
     });
 
