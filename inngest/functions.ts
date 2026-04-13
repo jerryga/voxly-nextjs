@@ -1,5 +1,7 @@
 import { inngest } from "./client";
 import { processUploadedAudio } from "@/lib/transcriptions/process";
+import { prisma } from "@/lib/prisma";
+import { sendSessionReadyEmail } from "@/lib/email/session-ready";
 
 export type AudioUploadedEvent = {
   name: "voxly/audio.uploaded";
@@ -25,7 +27,7 @@ export const processMeetingAudio = inngest.createFunction(
       throw new Error("Missing transcriptionId or fileKey");
     }
 
-    await step.run("process-uploaded-audio", () =>
+    const result = await step.run("process-uploaded-audio", () =>
       processUploadedAudio({
         transcriptionId,
         fileKey,
@@ -33,6 +35,41 @@ export const processMeetingAudio = inngest.createFunction(
         bucket,
       }),
     );
+
+    // Skip email when reusing an already-processed result to avoid duplicate sends
+    if (!result.reusedExisting) {
+      await step.run("send-session-ready-email", async () => {
+        const tx = await prisma.transcription.findUnique({
+          where: { id: transcriptionId },
+          select: {
+            id: true,
+            fileName: true,
+            keyPoints: true,
+            status: true,
+            user: { select: { email: true, name: true } },
+          },
+        });
+
+        if (!tx || tx.status !== "done" || !tx.user?.email) {
+          return { skipped: true };
+        }
+
+        const keyPoints = Array.isArray(tx.keyPoints) ? (tx.keyPoints as string[]) : [];
+        const snippet =
+          String(keyPoints[0] ?? "").trim().slice(0, 120) ||
+          "Your recording has been processed.";
+
+        const origin = process.env.NEXTAUTH_URL?.replace(/\/+$/, "") ?? "";
+
+        return sendSessionReadyEmail({
+          to: tx.user.email,
+          userName: tx.user.name,
+          fileName: tx.fileName,
+          summarySnippet: snippet,
+          sessionUrl: `${origin}/session/${transcriptionId}`,
+        });
+      });
+    }
 
     return { transcriptionId };
   },

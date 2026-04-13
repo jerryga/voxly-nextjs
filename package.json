@@ -16,6 +16,7 @@
     "@deepgram/sdk": "^4.11.3",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "6.19.2",
+    "@tanstack/react-virtual": "^3.13.23",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
