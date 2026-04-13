@@ -4582,6 +4582,48 @@ export function TranscriptionClient({
     }
   }
 
+  async function handleDeleteWorkspaceSlackSettings() {
+    if (!workspaceSlackSettings?.configured) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Disconnect Slack for this workspace? Voxly will remove the saved Slack webhook and stop posting to the default Slack destination.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setWorkspaceSlackBusy("delete");
+    setError(null);
+
+    try {
+      const res = await fetch("/api/workspaces/slack", {
+        method: "DELETE",
+      });
+      const payload = (await res.json().catch(() => ({}))) as WorkspaceSlackResponse;
+      if (!res.ok || !payload.settings) {
+        throw new Error(payload?.error || "Failed to disconnect Slack");
+      }
+
+      setWorkspaceSlackSettings(payload.settings);
+      setWorkspaceSlackEnabled(payload.settings.enabled);
+      setWorkspaceSlackSendDigests(payload.settings.sendDigests);
+      setWorkspaceSlackWebhookDraft("");
+      writeSessionCache(
+        buildScopedCacheKey(WORKSPACE_SLACK_CACHE_KEY, activeWorkspaceId),
+        payload.settings,
+      );
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
+      await loadWorkspaceActivity();
+      showUploadStatusNotice("Slack integration disconnected.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to disconnect Slack");
+    } finally {
+      setWorkspaceSlackBusy(null);
+    }
+  }
+
   async function handleSaveNotificationPreferences(
     event: React.FormEvent<HTMLFormElement>,
   ) {
@@ -6619,6 +6661,7 @@ export function TranscriptionClient({
             onWorkspaceNotionEnabledChange={setWorkspaceNotionEnabled}
             onSlackSubmit={handleSaveWorkspaceSlackSettings}
             onSendSlackTest={handleSendSlackTest}
+            onDeleteSlackSettings={handleDeleteWorkspaceSlackSettings}
             onNotionSubmit={handleSaveWorkspaceNotionSettings}
             onValidateNotion={handleValidateWorkspaceNotion}
           />
