@@ -219,12 +219,14 @@ export const UploadPanelBody = memo(function UploadPanelBody({
               onChange={(event) => onUploadProjectIdChange(event.target.value)}
               className="mt-2 w-full cursor-pointer rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300"
             >
-              <option value="none">No project</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
+              <option value="none">Default Project</option>
+              {projects
+                .filter((project) => project.name !== "Default")
+                .map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
             </select>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
@@ -389,11 +391,19 @@ export const UploadPanelBody = memo(function UploadPanelBody({
             </p>
           ) : null}
           {!hasEnoughEstimatedCredits && estimatedCredits ? (
-            <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              This file is estimated to require {estimatedCredits} credits, but this
-              workspace currently has only {billing?.creditsRemaining ?? 0} remaining
-              through the owner billing account.
-            </p>
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p>
+                This file is estimated to require {estimatedCredits} credits, but this
+                workspace currently has only {billing?.creditsRemaining ?? 0} remaining
+                through the owner billing account.
+              </p>
+              <a
+                href="/billing"
+                className="mt-3 inline-flex rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white"
+              >
+                Buy Credits
+              </a>
+            </div>
           ) : null}
           {!hasEnoughEstimatedCredits && estimatedCredits && billing ? (
             <p className="mt-2 text-xs text-slate-500">
@@ -1127,4 +1137,3 @@ export const OverviewSurface = memo(function OverviewSurface({
     </>
   );
 });
-

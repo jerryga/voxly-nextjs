@@ -14,6 +14,7 @@ import { buildTranscriptionSearchText } from "@/lib/transcriptions/searchText";
 import { resolveTemplateSelectionForUser } from "@/lib/templates";
 import {
   activeWorkspaceResourceWhere,
+  ensureDefaultProjectForWorkspace,
   requireWorkspaceContext,
 } from "@/lib/workspaces";
 
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
       context.activeWorkspace.id,
     );
     const template = templateResolution.storedTemplate;
-    const projectId =
+    let projectId =
       typeof projectIdField === "string" && projectIdField.trim()
         ? projectIdField.trim()
         : null;
@@ -131,6 +132,14 @@ export async function POST(request: Request) {
     const safeName = sanitizeFilename(file.name || "upload");
     const key = `users/${context.user.id}/${Date.now()}-${safeName}`;
     uploadedKey = key;
+
+    if (!projectId) {
+      const defaultProject = await ensureDefaultProjectForWorkspace(
+        context.activeWorkspace.id,
+        context.user.id,
+      );
+      projectId = defaultProject.id;
+    }
 
     if (projectId) {
       const project = await prisma.project.findFirst({
@@ -219,6 +228,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       transcriptionId: transcription.id,
+      projectId,
       key: upload.key,
       queued: true,
     });

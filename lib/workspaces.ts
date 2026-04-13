@@ -5,6 +5,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const ACTIVE_WORKSPACE_COOKIE = "voxly_workspace";
+export const DEFAULT_PROJECT_NAME = "Default";
+export const DEFAULT_PROJECT_DESCRIPTION =
+  "Default project for workspace uploads without a custom project.";
 
 export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
 
@@ -28,6 +31,13 @@ const workspaceMemberDelegate = (prisma as typeof prisma & {
     findFirst: (...args: any[]) => Promise<any>;
   };
 }).workspaceMember;
+
+const projectDelegate = (prisma as typeof prisma & {
+  project: {
+    findFirst: (...args: any[]) => Promise<any>;
+    create: (...args: any[]) => Promise<any>;
+  };
+}).project;
 
 function slugifyWorkspaceName(name: string) {
   return name
@@ -100,6 +110,7 @@ export async function ensurePersonalWorkspaceForUser(user: {
       },
     });
 
+    await ensureDefaultProjectForWorkspace(existing.id, user.id);
     return existing;
   }
 
@@ -123,7 +134,53 @@ export async function ensurePersonalWorkspaceForUser(user: {
     },
   });
 
+  await ensureDefaultProjectForWorkspace(workspace.id, user.id);
+
   return workspace;
+}
+
+export async function ensureDefaultProjectForWorkspace(
+  workspaceId: string,
+  userId: string,
+) {
+  const existing = await projectDelegate.findFirst({
+    where: {
+      workspaceId,
+      name: DEFAULT_PROJECT_NAME,
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await projectDelegate.create({
+      data: {
+        userId,
+        workspaceId,
+        name: DEFAULT_PROJECT_NAME,
+        description: DEFAULT_PROJECT_DESCRIPTION,
+        color: "#f97316",
+      },
+      select: { id: true },
+    });
+  } catch (err) {
+    const existingAfterRace = await projectDelegate.findFirst({
+      where: {
+        workspaceId,
+        name: DEFAULT_PROJECT_NAME,
+      },
+      select: { id: true },
+    });
+
+    if (existingAfterRace) {
+      return existingAfterRace;
+    }
+
+    throw err;
+  }
 }
 
 export async function getWorkspaceContext() {
@@ -212,6 +269,10 @@ export function canEditWorkspaceMember(
 }
 
 export function canTransferWorkspaceOwnership(role: WorkspaceRole) {
+  return role === "owner";
+}
+
+export function canDeleteWorkspace(role: WorkspaceRole) {
   return role === "owner";
 }
 

@@ -131,12 +131,19 @@ const WORKSPACE_NOTION_CACHE_KEY = "voxly:dashboard:workspace-notion";
 const WORKSPACE_PEOPLE_CACHE_KEY = "voxly:dashboard:workspace-people";
 const WORKSPACE_ACTIVITY_CACHE_KEY = "voxly:dashboard:workspace-activity";
 const WORKSPACE_TASKS_CACHE_KEY = "voxly:dashboard:workspace-tasks";
+const DELETED_WORKSPACE_TOMBSTONE_KEY = "voxly:dashboard:deleted-workspace";
 
 const dashboardMemoryCache = new Map<string, SessionCacheEntry<unknown>>();
 
 type SessionCacheEntry<T> = {
   savedAt: number;
   value: T;
+};
+
+type DeletedWorkspaceTombstone = {
+  id: string;
+  name: string;
+  deletedAt: number;
 };
 
 function readSessionCache<T>(key: string): T | null {
@@ -189,6 +196,59 @@ function writeSessionCache<T>(key: string, value: T) {
   } catch {
     // Ignore cache write failures; the network path is still the source of truth.
   }
+}
+
+function readDeletedWorkspaceTombstone() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(DELETED_WORKSPACE_TOMBSTONE_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    const tombstone = JSON.parse(rawValue) as DeletedWorkspaceTombstone;
+    return tombstone?.id && tombstone?.name ? tombstone : null;
+  } catch {
+    window.sessionStorage.removeItem(DELETED_WORKSPACE_TOMBSTONE_KEY);
+    return null;
+  }
+}
+
+function writeDeletedWorkspaceTombstone(tombstone: DeletedWorkspaceTombstone) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      DELETED_WORKSPACE_TOMBSTONE_KEY,
+      JSON.stringify(tombstone),
+    );
+  } catch {
+    // Ignore storage write failures; the in-memory mask still applies.
+  }
+}
+
+function clearDeletedWorkspaceTombstone() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(DELETED_WORKSPACE_TOMBSTONE_KEY);
+}
+
+function isInsufficientCreditsError(message: string | null) {
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes("does not have enough remaining credits") ||
+    message.includes("not have enough remaining credits")
+  );
 }
 
 function useStableCallback<T extends (...args: never[]) => unknown>(callback: T): T {
@@ -1301,6 +1361,7 @@ export function TranscriptionClient({
   } | null>(null);
   const [workspaceSettingsBusy, setWorkspaceSettingsBusy] = useState(false);
   const [workspaceDraftName, setWorkspaceDraftName] = useState("");
+  const [deletedWorkspaceName, setDeletedWorkspaceName] = useState<string | null>(null);
   const [workspaceDigestSettings, setWorkspaceDigestSettings] =
     useState<WorkspaceDigestSettings | null>(null);
   const [workspaceDigestLoading, setWorkspaceDigestLoading] = useState(true);
@@ -1397,6 +1458,7 @@ export function TranscriptionClient({
   const [ownerTransferMemberId, setOwnerTransferMemberId] = useState("");
   const [ownerTransferBusy, setOwnerTransferBusy] = useState(false);
   const [leaveWorkspaceBusy, setLeaveWorkspaceBusy] = useState(false);
+  const [deleteWorkspaceBusy, setDeleteWorkspaceBusy] = useState(false);
   const [uploadProjectId, setUploadProjectId] = useState("none");
   const [file, setFile] = useState<File | null>(null);
   const [estimatedDurationSeconds, setEstimatedDurationSeconds] = useState<
@@ -1702,7 +1764,7 @@ export function TranscriptionClient({
   const showCurrentWorkspaceLabel =
     workspaceSurface === "overview" ||
     workspaceSurface === "transcriptions" ||
-    workspaceSurface === "settings";
+    (workspaceSurface === "settings" && isWorkspaceSettingsMode);
   const currentActionTasks = useMemo(
     () =>
       activeTranscriptionId
@@ -1769,6 +1831,7 @@ export function TranscriptionClient({
     Boolean(billing?.hasActiveSubscription) || (billing?.creditsRemaining ?? 0) > 0;
   const shouldShowGlobalError =
     Boolean(error) && error !== "Unauthorized" && error !== "Forbidden";
+  const shouldShowBuyCreditsButton = isInsufficientCreditsError(error);
   const unreadNotificationsCount = notifications.filter((item) => !item.readAt).length;
   const currentUserAssigneeCandidates = useMemo(() => {
     const candidates = new Set<string>();
@@ -2796,7 +2859,23 @@ export function TranscriptionClient({
   }
 
   useEffect(() => {
+    const tombstone = readDeletedWorkspaceTombstone();
+    if (!tombstone) {
+      return;
+    }
+
+    setDeletedWorkspaceName(tombstone.name);
+    setActiveWorkspace(null);
+    setWorkspaceDraftName("");
+    setItems([]);
+    setAllItems([]);
+    setProjects([]);
+  }, []);
+
+  useEffect(() => {
     function handleWorkspaceSwitched() {
+      clearDeletedWorkspaceTombstone();
+      setDeletedWorkspaceName(null);
       resetWorkspaceScopedState();
       void loadWorkspaces();
     }
@@ -3448,13 +3527,19 @@ export function TranscriptionClient({
       }
       clearTranscriptionCaches();
       clearScopedCache(BILLING_CACHE_KEY, activeWorkspaceId);
+      const uploadedProjectId =
+        typeof payload?.projectId === "string" && payload.projectId.trim()
+          ? payload.projectId
+          : uploadProjectId === "none"
+            ? null
+            : uploadProjectId;
       const optimisticItem: Transcription | null = payload?.transcriptionId
         ? {
             id: payload.transcriptionId,
             fileName: file.name,
             status: payload?.processedInline ? "done" : payload?.queued ? "processing" : "uploaded",
             template: uploadTemplate,
-            projectId: uploadProjectId === "none" ? null : uploadProjectId,
+            projectId: uploadedProjectId,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             duration: estimatedDurationSeconds
@@ -4864,6 +4949,72 @@ export function TranscriptionClient({
     }
   }
 
+  async function handleDeleteWorkspace() {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    const confirmation = window.prompt(
+      `Type ${activeWorkspace.name} to permanently delete this workspace and all of its projects and recordings.`,
+    );
+    if (confirmation !== activeWorkspace.name) {
+      if (confirmation !== null) {
+        setError("Workspace deletion cancelled because the name did not match.");
+      }
+      return;
+    }
+
+    setDeleteWorkspaceBusy(true);
+    setError(null);
+
+    try {
+      const deletedName = activeWorkspace.name;
+      const res = await fetch("/api/workspaces", {
+        method: "DELETE",
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Failed to delete workspace");
+      }
+
+      setFocusedSummaryId(null);
+      setAssistantSummary(null);
+      setAssistantMessages(defaultAssistantMessages);
+      setActionTasksByTranscription({});
+      setWorkspaceTasks([]);
+      dispatchComments({ type: "CLEAR" });
+      setIntelligenceResult(null);
+      setIntelligenceQuestion("");
+      setWorkspaceIntelligenceProjectIds([]);
+      setSavedWorkspaceInsights([]);
+      setSelectedWorkspaceInsightId(null);
+      setItems([]);
+      setAllItems([]);
+      setProjects([]);
+      setActiveWorkspace(null);
+      setWorkspaceDraftName("");
+      writeDeletedWorkspaceTombstone({
+        id: activeWorkspace.id,
+        name: deletedName,
+        deletedAt: Date.now(),
+      });
+      window.dispatchEvent(
+        new CustomEvent("voxly:workspace-deleted", {
+          detail: { workspaceId: activeWorkspace.id },
+        }),
+      );
+      clearTranscriptionCaches();
+      clearScopedCache(PROJECTS_CACHE_KEY, activeWorkspaceId);
+      clearScopedCache(BILLING_CACHE_KEY, activeWorkspaceId);
+      clearWorkspaceAdminCaches();
+      setDeletedWorkspaceName(deletedName);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete workspace");
+    } finally {
+      setDeleteWorkspaceBusy(false);
+    }
+  }
+
   async function handleCreateActionTask(input: {
     title: string;
     priority?: string;
@@ -5662,10 +5813,12 @@ export function TranscriptionClient({
       status: "Ops tracking live",
     },
     settings: {
-      eyebrow: "Workspace Settings",
-      title: "Configure delivery and access",
+      eyebrow: "Settings",
+      title: isWorkspaceSettingsMode ? "Workspace settings" : "Personal settings",
       description:
-        "Manage workspace identity, integrations, members, and recurring report behavior.",
+        isWorkspaceSettingsMode
+          ? "Manage this workspace's identity, access, integrations, reports, and deletion."
+          : "Manage preferences that follow you across workspaces.",
       status: "Admin controls ready",
     },
   };
@@ -5674,8 +5827,8 @@ export function TranscriptionClient({
   const isOverviewSurface = workspaceSurface === "overview";
   const settingsSectionMeta: SettingsSectionMeta = {
     workspace: {
-      label: "Workspace",
-      description: "Name, owner, role, and core workspace identity",
+      label: "Workspace Settings",
+      description: "Name, owner, role, deletion, and core workspace identity",
     },
     delivery: {
       label: "Delivery",
@@ -5690,8 +5843,8 @@ export function TranscriptionClient({
       description: "Members, invites, ownership, and audit activity",
     },
     personal: {
-      label: "Personal",
-      description: "Your mention and digest preferences",
+      label: "Personal Settings",
+      description: "Your mention and digest preferences across all workspaces",
     },
   };
   const visibleSettingsSections: SettingsSection[] = isWorkspaceSettingsMode
@@ -6194,6 +6347,24 @@ export function TranscriptionClient({
         </div>
       ) : null}
 
+      {deletedWorkspaceName ? (
+        <section className="mx-auto max-w-3xl rounded-[28px] border border-slate-200 bg-white px-6 py-12 text-center shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] sm:px-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-red-600">
+            Deleted
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+            {deletedWorkspaceName} has been deleted.
+          </h1>
+          <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-600">
+            The workspace is empty now. Its projects, recordings, tasks,
+            comments, saved insights, and processing uploads were removed.
+          </p>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600">
+            Choose another workspace from the sidebar when you are ready to
+            continue.
+          </p>
+        </section>
+      ) : (
       <div
         className={`grid grid-cols-1 items-start gap-6 ${
           workspaceSurface === "settings"
@@ -6225,7 +6396,9 @@ export function TranscriptionClient({
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
                     {workspaceSurface === "settings"
-                      ? "Settings"
+                      ? isWorkspaceSettingsMode
+                        ? "Workspace Settings"
+                        : "Personal Settings"
                       : activeSurfaceMeta.eyebrow}
                   </p>
                   <h1
@@ -6364,8 +6537,10 @@ export function TranscriptionClient({
               activeWorkspaceLabel={activeWorkspaceLabel}
               workspaceDraftName={workspaceDraftName}
               workspaceSettingsBusy={workspaceSettingsBusy}
+              deleteWorkspaceBusy={deleteWorkspaceBusy}
               onWorkspaceDraftNameChange={setWorkspaceDraftName}
               onSubmit={handleRenameWorkspace}
+              onDeleteWorkspace={handleDeleteWorkspace}
             />
           </Suspense>
           ) : null}
@@ -6870,7 +7045,15 @@ export function TranscriptionClient({
 
           {shouldShowGlobalError && (
             <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-800 shadow-sm">
-              {error}
+              <p>{error}</p>
+              {shouldShowBuyCreditsButton ? (
+                <Link
+                  href="/billing"
+                  className="mt-3 inline-flex rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white"
+                >
+                  Buy Credits
+                </Link>
+              ) : null}
             </div>
           )}
         </section>
@@ -6906,6 +7089,7 @@ export function TranscriptionClient({
         />
       </aside>
       </div>
+      )}
     </div>
   );
 }

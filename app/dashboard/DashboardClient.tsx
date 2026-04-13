@@ -17,7 +17,16 @@ type SummaryTemplate = { id: string; name: string };
 type WorkspacesResponse = { ok?: boolean; activeWorkspace?: ActiveWorkspaceDetails | null; error?: string };
 type ProjectsResponse  = { ok?: boolean; projects?: Project[]; project?: Project; error?: string };
 type TemplatesResponse = { ok?: boolean; templates?: SummaryTemplate[]; error?: string };
-type UploadPayload     = { transcriptionId?: string; error?: string };
+type UploadPayload     = { transcriptionId?: string; projectId?: string; error?: string };
+
+function isInsufficientCreditsError(message: string | null) {
+  if (!message) return false;
+
+  return (
+    message.includes("does not have enough remaining credits") ||
+    message.includes("not have enough remaining credits")
+  );
+}
 
 // ─── useStableCallback ────────────────────────────────────────────────────────
 
@@ -125,7 +134,6 @@ export function DashboardClient({ initialProjectFilter = "all" }: { initialProje
     void loadProjects();
     void loadTemplates();
     void loadBilling();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
   useEffect(() => {
@@ -142,7 +150,6 @@ export function DashboardClient({ initialProjectFilter = "all" }: { initialProje
     }
     window.addEventListener("voxly:workspace-switched", handleWorkspaceSwitched);
     return () => window.removeEventListener("voxly:workspace-switched", handleWorkspaceSwitched);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const routerRef = useRef(router);
@@ -357,7 +364,15 @@ export function DashboardClient({ initialProjectFilter = "all" }: { initialProje
         <UploadPanelBody {...uploadBodyProps} />
         {uploadError && (
           <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-800">
-            {uploadError}
+            <p>{uploadError}</p>
+            {isInsufficientCreditsError(uploadError) ? (
+              <a
+                href="/billing"
+                className="mt-3 inline-flex rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white"
+              >
+                Buy Credits
+              </a>
+            ) : null}
           </div>
         )}
       </section>

@@ -142,8 +142,10 @@ type WorkspaceSettingsSectionProps = {
   activeWorkspaceLabel: string;
   workspaceDraftName: string;
   workspaceSettingsBusy: boolean;
+  deleteWorkspaceBusy: boolean;
   onWorkspaceDraftNameChange: (name: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onDeleteWorkspace: () => void;
 };
 
 export const WorkspaceSettingsSection = memo(function WorkspaceSettingsSection({
@@ -151,11 +153,15 @@ export const WorkspaceSettingsSection = memo(function WorkspaceSettingsSection({
   activeWorkspaceLabel,
   workspaceDraftName,
   workspaceSettingsBusy,
+  deleteWorkspaceBusy,
   onWorkspaceDraftNameChange,
   onSubmit,
+  onDeleteWorkspace,
 }: WorkspaceSettingsSectionProps) {
   const workspaceName = activeWorkspace?.name ?? "";
   const canManageWorkspace = Boolean(activeWorkspace?.canManage);
+  const canDeleteWorkspace =
+    activeWorkspace?.role === "owner" && !activeWorkspace.isPersonal;
 
   return (
     <div id="settings" className="pt-2">
@@ -167,8 +173,8 @@ export const WorkspaceSettingsSection = memo(function WorkspaceSettingsSection({
           {activeWorkspaceLabel}
         </h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          These settings apply only to the current workspace. Switch workspaces
-          from the Spaces area in the left sidebar.
+          These settings apply only to this workspace. Personal preferences are
+          under Personal Settings in the main sidebar.
         </p>
       </div>
       <form onSubmit={onSubmit} className="mt-6 max-w-5xl">
@@ -239,6 +245,37 @@ export const WorkspaceSettingsSection = memo(function WorkspaceSettingsSection({
           You can view workspace details, but only owners and admins can update settings.
         </p>
       ) : null}
+      <div className="mt-8 max-w-5xl border-t border-red-100 pt-6">
+        <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+          <div>
+            <p className="text-sm font-semibold text-red-700">Delete workspace</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Permanently remove this workspace, its projects, recordings, notes,
+              comments, tasks, and saved insights.
+            </p>
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={onDeleteWorkspace}
+              disabled={deleteWorkspaceBusy || !canDeleteWorkspace}
+              className="cursor-pointer rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deleteWorkspaceBusy ? "Deleting..." : "Delete Workspace"}
+            </button>
+            {!canDeleteWorkspace ? (
+              <p className="mt-3 text-sm text-slate-600">
+                Personal workspaces cannot be deleted. Shared workspaces can only
+                be deleted by their owner.
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-slate-600">
+                You will be asked to type the workspace name before deletion.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 });
@@ -403,7 +440,7 @@ export const DeliverySettingsSection = memo(function DeliverySettingsSection({
                   Turn the recurring workspace report on or leave it paused.
                 </p>
               </div>
-              <label className="flex items-start justify-between gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-4">
+              <label className="flex items-start justify-between gap-4 rounded-[8px] bg-[#fcfbf8] px-4 py-4">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">
                     Recurring workspace report
@@ -1577,13 +1614,13 @@ export const PersonalSettingsSection = memo(function PersonalSettingsSection({
   ];
 
   return (
-    <div className="border-t border-slate-200 pt-6">
+    <div className="pt-6">
       <div className="max-w-5xl">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Notification Preferences
+          Personal Settings
         </p>
         <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-          Personal delivery controls
+          Personal notification preferences
         </h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
           Choose how Voxly reaches you for mentions and digest emails across
@@ -1601,7 +1638,7 @@ export const PersonalSettingsSection = memo(function PersonalSettingsSection({
           {preferences.map((item) => (
             <div
               key={item.key}
-              className="grid gap-4 border-b border-slate-200 py-6 md:grid-cols-[220px_minmax(0,1fr)]"
+              className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]"
             >
               <div>
                 <p className="text-sm font-semibold text-slate-900">{item.title}</p>
@@ -1620,17 +1657,14 @@ export const PersonalSettingsSection = memo(function PersonalSettingsSection({
               </label>
             </div>
           ))}
-          <div className="grid gap-4 py-6 md:grid-cols-[220px_minmax(0,1fr)]">
-            <div />
-            <div>
-              <button
-                type="submit"
-                disabled={notificationPreferencesLoading || notificationPreferencesBusy}
-                className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {notificationPreferencesBusy ? "Saving..." : "Save Preferences"}
-              </button>
-            </div>
+          <div className="flex justify-center py-6">
+            <button
+              type="submit"
+              disabled={notificationPreferencesLoading || notificationPreferencesBusy}
+              className="cursor-pointer rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {notificationPreferencesBusy ? "Saving..." : "Save Preferences"}
+            </button>
           </div>
         </div>
       </form>
