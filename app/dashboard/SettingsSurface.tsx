@@ -2,6 +2,7 @@
 
 import {
   type FormEvent,
+  type ReactNode,
   memo,
   startTransition,
   useEffect,
@@ -925,6 +926,7 @@ type IntegrationSettingsSectionProps = {
   workspaceNotionEnabled: boolean;
   workspaceNotionTokenDraft: string;
   workspaceNotionParentPageDraft: string;
+  integrationError: string | null;
   onWorkspaceSlackWebhookDraftChange: (value: string) => void;
   onWorkspaceSlackEnabledChange: (checked: boolean) => void;
   onWorkspaceSlackSendDigestsChange: (checked: boolean) => void;
@@ -936,7 +938,31 @@ type IntegrationSettingsSectionProps = {
   onDeleteSlackSettings: () => void;
   onNotionSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onValidateNotion: () => void;
+  onDeleteNotionSettings: () => void;
 };
+
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: "success" | "warning" | "neutral";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-slate-200 bg-slate-50 text-slate-600";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}
+    >
+      {children}
+    </span>
+  );
+}
 
 export const IntegrationSettingsSection = memo(function IntegrationSettingsSection({
   activeWorkspace,
@@ -953,6 +979,7 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
   workspaceNotionEnabled,
   workspaceNotionTokenDraft,
   workspaceNotionParentPageDraft,
+  integrationError,
   onWorkspaceSlackWebhookDraftChange,
   onWorkspaceSlackEnabledChange,
   onWorkspaceSlackSendDigestsChange,
@@ -964,8 +991,14 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
   onDeleteSlackSettings,
   onNotionSubmit,
   onValidateNotion,
+  onDeleteNotionSettings,
 }: IntegrationSettingsSectionProps) {
   const canManageWorkspace = Boolean(activeWorkspace?.canManage);
+  const hasUnsavedNotionConnection =
+    Boolean(workspaceNotionTokenDraft.trim()) &&
+    Boolean(workspaceNotionParentPageDraft.trim());
+  const canValidateNotionConnection =
+    Boolean(workspaceNotionSettings?.configured) || hasUnsavedNotionConnection;
 
   return (
     <>
@@ -983,11 +1016,21 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
             whether scheduled and manual reports may use Slack.
           </p>
           {workspaceSlackSettings ? (
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-              <span>{workspaceSlackSettings.configured ? "Configured" : "Not connected"}</span>
-              <span>{workspaceSlackSettings.enabled ? "Enabled" : "Paused"}</span>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <StatusPill
+                tone={workspaceSlackSettings.configured ? "success" : "neutral"}
+              >
+                {workspaceSlackSettings.configured ? "Connected" : "Disconnected"}
+              </StatusPill>
+              <StatusPill
+                tone={workspaceSlackSettings.enabled ? "success" : "warning"}
+              >
+                {workspaceSlackSettings.enabled ? "Enabled" : "Paused"}
+              </StatusPill>
               {workspaceSlackSettings.maskedWebhook ? (
-                <span>{workspaceSlackSettings.maskedWebhook}</span>
+                <span className="px-1 text-slate-500">
+                  {workspaceSlackSettings.maskedWebhook}
+                </span>
               ) : null}
             </div>
           ) : null}
@@ -1147,6 +1190,15 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
         ) : null}
       </div>
 
+      {integrationError ? (
+        <div
+          role="alert"
+          className="max-w-5xl rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+        >
+          {integrationError}
+        </div>
+      ) : null}
+
       <div className="pt-2">
         <div className="max-w-5xl">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1161,11 +1213,21 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
             Notion pages.
           </p>
           {workspaceNotionSettings ? (
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
-              <span>{workspaceNotionSettings.configured ? "Configured" : "Not connected"}</span>
-              <span>{workspaceNotionSettings.enabled ? "Enabled" : "Paused"}</span>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <StatusPill
+                tone={workspaceNotionSettings.configured ? "success" : "neutral"}
+              >
+                {workspaceNotionSettings.configured ? "Connected" : "Disconnected"}
+              </StatusPill>
+              <StatusPill
+                tone={workspaceNotionSettings.enabled ? "success" : "warning"}
+              >
+                {workspaceNotionSettings.enabled ? "Enabled" : "Paused"}
+              </StatusPill>
               {workspaceNotionSettings.parentPageId ? (
-                <span>Parent page: {workspaceNotionSettings.parentPageId}</span>
+                <span className="px-1 text-slate-500">
+                  Parent page: {workspaceNotionSettings.parentPageId}
+                </span>
               ) : null}
             </div>
           ) : null}
@@ -1188,13 +1250,18 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
                   }
                   placeholder={
                     workspaceNotionSettings?.configured
-                      ? "Paste a new Notion token to replace the current one"
+                      ? "Saved token is stored. Paste a new token to replace it"
                       : "secret_xxx..."
                   }
                   disabled={workspaceNotionLoading || !canManageWorkspace}
                   className="w-full rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <p className="mt-2 text-sm text-slate-500">
+                  {workspaceNotionSettings?.maskedToken ? (
+                    <>
+                      Current token: {workspaceNotionSettings.maskedToken}.{" "}
+                    </>
+                  ) : null}
                   Create or open a Notion integration, copy its internal
                   integration secret, and make sure the target page is shared with
                   that integration.{" "}
@@ -1231,6 +1298,16 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
                 <p className="mt-2 text-sm text-slate-500">
                   Open the Notion page, copy its link, then paste the page ID from
                   the end of the URL. The page must be shared with your integration.
+                  {" "}
+                  <a
+                    href="https://developers.notion.com/guides/get-started/create-a-notion-integration#give-your-integration-page-permissions"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-slate-900 underline underline-offset-4"
+                  >
+                    Open Notion page sharing guide
+                  </a>
+                  .
                 </p>
               </div>
             </div>
@@ -1281,8 +1358,9 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
                     onClick={onValidateNotion}
                     disabled={
                       workspaceNotionBusy !== null ||
+                      workspaceNotionLoading ||
                       !canManageWorkspace ||
-                      !workspaceNotionSettings?.configured ||
+                      !canValidateNotionConnection ||
                       !workspaceNotionEnabled
                     }
                     className="cursor-pointer rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1290,6 +1368,21 @@ export const IntegrationSettingsSection = memo(function IntegrationSettingsSecti
                     {workspaceNotionBusy === "validate"
                       ? "Checking..."
                       : "Validate Connection"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDeleteNotionSettings}
+                    disabled={
+                      workspaceNotionBusy !== null ||
+                      workspaceNotionLoading ||
+                      !canManageWorkspace ||
+                      !workspaceNotionSettings?.configured
+                    }
+                    className="cursor-pointer rounded-full border border-red-200 bg-white px-5 py-3 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {workspaceNotionBusy === "delete"
+                      ? "Disconnecting..."
+                      : "Disconnect Notion"}
                   </button>
                 </div>
                 {(!workspaceNotionTokenDraft.trim() ||
