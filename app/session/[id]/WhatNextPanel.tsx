@@ -7,12 +7,23 @@ type WhatNextPanelProps = {
   projects: Project[];
   onProjectAssign: (projectId: string) => void;
   onShareCopied: () => void;
+  onPublishToNotion?: () => Promise<void>;
+  notionEnabled?: boolean;
+  notionBusy?: boolean;
 };
 
-export function WhatNextPanel({ projects, onProjectAssign, onShareCopied }: WhatNextPanelProps) {
+export function WhatNextPanel({
+  projects,
+  onProjectAssign,
+  onShareCopied,
+  onPublishToNotion,
+  notionEnabled = false,
+  notionBusy = false,
+}: WhatNextPanelProps) {
   const [showProjectSelect, setShowProjectSelect] = useState(false);
   const [showProjectPrompt, setShowProjectPrompt] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Share");
+  const [notionLabel, setNotionLabel] = useState("Send to Notion");
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setShowProjectPrompt(true), 2000);
@@ -36,6 +47,18 @@ export function WhatNextPanel({ projects, onProjectAssign, onShareCopied }: What
       onShareCopied();
       setTimeout(() => setCopyLabel("Share"), 2000);
     });
+  }
+
+  async function handleNotion() {
+    if (!onPublishToNotion || notionBusy) return;
+    try {
+      await onPublishToNotion();
+      setNotionLabel("Sent!");
+      setTimeout(() => setNotionLabel("Send to Notion"), 2500);
+    } catch {
+      setNotionLabel("Failed");
+      setTimeout(() => setNotionLabel("Send to Notion"), 2500);
+    }
   }
 
   return (
@@ -94,6 +117,17 @@ export function WhatNextPanel({ projects, onProjectAssign, onShareCopied }: What
         >
           {copyLabel}
         </button>
+
+        {notionEnabled && onPublishToNotion && (
+          <button
+            type="button"
+            onClick={() => void handleNotion()}
+            disabled={notionBusy}
+            className="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {notionBusy ? "Sending…" : notionLabel}
+          </button>
+        )}
       </div>
     </div>
   );

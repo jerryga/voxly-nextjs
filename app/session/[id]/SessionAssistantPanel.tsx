@@ -102,11 +102,11 @@ export function SessionAssistantPanel({
 
   if (onboardingHighlight) {
     return (
-      <div className="ring-2 ring-orange-400 ring-offset-4 rounded-[30px]">
+      <div className="h-full ring-2 ring-orange-400 ring-offset-4 rounded-[28px]">
         {railContent}
       </div>
     );
   }
 
-  return railContent;
+  return <div className="h-full">{railContent}</div>;
 }

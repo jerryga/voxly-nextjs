@@ -203,6 +203,21 @@ async function requireEnabledNotionSettings(workspaceId: string) {
   return settings;
 }
 
+// Requires only that Notion is connected (token + parent page saved).
+// Use this for manual publish actions where the user explicitly requests the push,
+// regardless of the workspace-level `enabled` toggle.
+async function requireConnectedNotionSettings(workspaceId: string) {
+  const settings = await getSettingsRecord(workspaceId);
+  if (!settings || !settings.apiToken?.trim() || !settings.parentPageId?.trim()) {
+    const error = new Error("Notion is not connected for this workspace.") as Error & {
+      statusCode?: number;
+    };
+    error.statusCode = 400;
+    throw error;
+  }
+  return settings;
+}
+
 export async function validateWorkspaceNotionSettings(workspaceId: string) {
   const settings = await requireEnabledNotionSettings(workspaceId);
   const pageId = normalizePageId(settings.parentPageId);
@@ -219,6 +234,45 @@ export async function validateWorkspaceNotionSettings(workspaceId: string) {
   });
 
   return serializeSettings(settings);
+}
+
+export async function publishSessionToNotion(input: {
+  workspaceId: string;
+  title: string;
+  markdown: string;
+  actorUserId?: string | null;
+  actorName: string;
+}) {
+  const settings = await requireConnectedNotionSettings(input.workspaceId);
+  const parentPageId = normalizePageId(settings.parentPageId);
+
+  const response = await notionRequest<{ id: string; url?: string }>(settings.apiToken, "/pages", {
+    method: "POST",
+    body: JSON.stringify({
+      parent: { type: "page_id", page_id: parentPageId },
+      properties: {
+        title: [{ text: { content: input.title.slice(0, 200) } }],
+      },
+      markdown: input.markdown,
+    }),
+  });
+
+  await notionDelegate.update({
+    where: { workspaceId: input.workspaceId },
+    data: { lastSyncedAt: new Date() },
+  });
+
+  await createWorkspaceAuditLog({
+    workspaceId: input.workspaceId,
+    actorUserId: input.actorUserId || null,
+    action: "workspace.notion.session_published",
+    targetType: "workspace_notion",
+    targetId: settings.id,
+    summary: `${input.actorName} published session "${input.title}" to Notion.`,
+    metadata: { title: input.title, notionPageId: response.id, notionUrl: response.url || null },
+  });
+
+  return { pageId: response.id, url: response.url || null };
 }
 
 export async function publishInsightToNotion(input: {

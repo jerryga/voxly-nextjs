@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 
 export type AssistantMessage = {
@@ -57,6 +57,11 @@ export type AssistantRailProps = {
   }) => void;
 };
 
+// Number of "real" messages (user+assistant pairs beyond the default greeting)
+function hasConversationStarted(messages: AssistantMessage[]) {
+  return messages.some((m) => m.role === "user");
+}
+
 export const SessionAssistantRail = memo(function SessionAssistantRail({
   projects,
   activeWorkspace,
@@ -73,39 +78,47 @@ export const SessionAssistantRail = memo(function SessionAssistantRail({
   onRefresh,
   onSubmit,
 }: AssistantRailProps) {
-  const assistantInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [localScope, setLocalScope] = useState<AssistantScope>(initialScope);
   const [localProjectId, setLocalProjectId] = useState(initialProjectId);
   const [localWorkspaceProjectIds, setLocalWorkspaceProjectIds] = useState<string[]>(
     initialWorkspaceProjectIds,
   );
   const [localPrompt, setLocalPrompt] = useState("");
+  const conversationStarted = hasConversationStarted(assistantMessages);
 
-  useEffect(() => {
-    setLocalScope(initialScope);
-  }, [initialScope]);
+  useEffect(() => { setLocalScope(initialScope); }, [initialScope]);
+  useEffect(() => { setLocalProjectId(initialProjectId); }, [initialProjectId]);
+  useEffect(() => { setLocalWorkspaceProjectIds(initialWorkspaceProjectIds); }, [initialWorkspaceProjectIds]);
 
+  // Auto-scroll to latest message
   useEffect(() => {
-    setLocalProjectId(initialProjectId);
-  }, [initialProjectId]);
-
-  useEffect(() => {
-    setLocalWorkspaceProjectIds(initialWorkspaceProjectIds);
-  }, [initialWorkspaceProjectIds]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [assistantMessages, assistantBusy]);
 
   const canSubmit =
     !assistantBusy &&
-    !(
-      localScope === "transcript" &&
-      !hasProcessedSummary
-    );
+    localPrompt.trim().length > 0 &&
+    !(localScope === "transcript" && !hasProcessedSummary);
 
-  function submitPrompt(textOverride?: string) {
-    const text = (textOverride ?? localPrompt).trim();
-    if (!text) {
-      return;
-    }
+  const submitPrompt = useCallback(
+    (textOverride?: string) => {
+      const text = (textOverride ?? localPrompt).trim();
+      if (!text || assistantBusy) return;
+      onSubmit({
+        text,
+        scope: localScope,
+        projectId: localProjectId,
+        workspaceProjectIds: localWorkspaceProjectIds,
+      });
+      setLocalPrompt("");
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [assistantBusy, localPrompt, localProjectId, localScope, localWorkspaceProjectIds, onSubmit],
+  );
 
+  function handleSuggestion(text: string) {
     onSubmit({
       text,
       scope: localScope,
@@ -113,302 +126,290 @@ export const SessionAssistantRail = memo(function SessionAssistantRail({
       workspaceProjectIds: localWorkspaceProjectIds,
     });
     setLocalPrompt("");
-  }
-
-  function handleSuggestion(text: string) {
-    setLocalPrompt(text);
-    submitPrompt(text);
-    requestAnimationFrame(() => assistantInputRef.current?.focus());
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   function toggleWorkspaceProject(projectId: string) {
     setLocalWorkspaceProjectIds((prev) =>
       prev.includes(projectId)
-        ? prev.filter((entry) => entry !== projectId)
+        ? prev.filter((id) => id !== projectId)
         : [...prev, projectId],
     );
   }
 
-  const activeWorkspaceLabel = activeWorkspace
-    ? `${activeWorkspace.name}${activeWorkspace.isPersonal ? " (Personal)" : ""}`
-    : "No workspace selected";
+  const scopeHint =
+    localScope === "transcript"
+      ? hasProcessedSummary
+        ? "Ask about this session — I can edit notes, extract action items, and more."
+        : "Waiting for processing to finish before I can answer about this session."
+      : localScope === "project"
+        ? "Searching across all recordings in the selected project."
+        : "Synthesising across your entire workspace.";
 
   return (
-    <section className="flex h-full flex-col gap-4 rounded-[30px] border border-slate-200 bg-white p-5 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.28)]">
-      <div className="rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
-        <div className="flex items-center justify-between gap-3">
+    <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_60px_-20px_rgba(15,23,42,0.18)]">
+
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-slate-100 px-5 pb-3 pt-4">
+        {/* Title row */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-            <span className="text-sm font-semibold text-slate-900">Voxly Tab</span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-sm">
+              <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                <path
+                  d="M8 2a6 6 0 0 1 6 6c0 1.5-.55 2.87-1.45 3.92L14 14l-2.08-1.45A5.97 5.97 0 0 1 8 14a6 6 0 0 1 0-12Z"
+                  fill="white"
+                  opacity=".9"
+                />
+                <circle cx="6" cy="8" r="1" fill="white" opacity=".5" />
+                <circle cx="8" cy="8" r="1" fill="white" />
+                <circle cx="10" cy="8" r="1" fill="white" opacity=".5" />
+              </svg>
+            </span>
+            <span className="text-sm font-semibold text-slate-900">Voxly AI</span>
+            <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </div>
           <button
             type="button"
             onClick={onRefresh}
-            disabled={
-              localScope === "transcript" &&
-              (assistantRefreshing || assistantHistoryLoading)
-            }
-            className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={assistantRefreshing || assistantHistoryLoading}
+            aria-label="Clear conversation"
+            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {localScope === "transcript"
-              ? assistantRefreshing || assistantHistoryLoading
-                ? "Refreshing..."
-                : "Refresh"
-              : "Clear"}
+            <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4" aria-hidden="true">
+              <path
+                d="M2.5 8a5.5 5.5 0 0 1 9.56-3.72M13.5 8a5.5 5.5 0 0 1-9.56 3.72M13.5 4.5V2M11 4.5h2.5M2.5 11.5V14M5 11.5H2.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
         </div>
-      </div>
 
-      <div className="flex min-h-[420px] flex-1 flex-col rounded-[24px] border border-slate-200 bg-[#fafaf7] p-4">
-        <div className="flex items-start justify-between border-b border-slate-200 pb-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-orange-700">
-              AI Assistant
-            </p>
-            <h3 className="mt-1 text-xl font-bold text-slate-900">
-              {localScope === "transcript"
-                ? "Ask Voxly to refine the notes"
-                : localScope === "project"
-                  ? "Ask across this project"
-                  : "Ask across the workspace"}
-            </h3>
-            <p className="mt-2 max-w-[18rem] truncate text-xs font-semibold text-slate-500">
-              Current workspace:{" "}
-              <span className="text-slate-800">{activeWorkspaceLabel}</span>
-            </p>
-          </div>
+        {/* Scope tabs */}
+        <div className="mt-3 flex gap-1 rounded-[14px] bg-slate-100 p-1">
+          {(["transcript", "project", "workspace"] as const).map((scopeId) => (
+            <button
+              key={scopeId}
+              type="button"
+              onClick={() => { setLocalScope(scopeId); setLocalPrompt(""); }}
+              className={`flex-1 rounded-[10px] py-1.5 text-[11px] font-semibold capitalize transition-all ${
+                localScope === scopeId
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {scopeId}
+            </button>
+          ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto py-4">
-          <div className="mt-4 space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["transcript", "Transcript"],
-                ["project", "Project"],
-                ["workspace", "Workspace"],
-              ] as const).map(([scopeId, label]) => (
+        {/* Scope sub-controls */}
+        {localScope === "project" && (
+          <select
+            value={localProjectId}
+            onChange={(e) => setLocalProjectId(e.target.value)}
+            className="mt-2 w-full cursor-pointer rounded-[12px] border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 outline-none"
+          >
+            <option value="all">All projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
+        {localScope === "workspace" && projects.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {projects.map((p) => {
+              const selected = localWorkspaceProjectIds.includes(p.id);
+              return (
                 <button
-                  key={scopeId}
+                  key={p.id}
                   type="button"
-                  onClick={() => {
-                    setLocalScope(scopeId);
-                    setLocalPrompt("");
-                  }}
-                  className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
-                    localScope === scopeId
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-700"
+                  onClick={() => toggleWorkspaceProject(p.id)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                    selected
+                      ? "border-sky-200 bg-sky-50 text-sky-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                   }`}
                 >
-                  {label}
+                  {p.name}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-            {localScope === "project" ? (
-              <label className="block">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Project scope
-                </span>
-                <select
-                  value={localProjectId}
-                  onChange={(event) => setLocalProjectId(event.target.value)}
-                  className="mt-2 w-full cursor-pointer rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none"
-                >
-                  <option value="all">Choose a project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
+      {/* ── Messages ───────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
 
-            {localScope === "workspace" ? (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Narrow to projects
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {projects.length ? (
-                    projects.map((project) => {
-                      const selected = localWorkspaceProjectIds.includes(project.id);
-                      return (
-                        <button
-                          key={project.id}
-                          type="button"
-                          onClick={() => toggleWorkspaceProject(project.id)}
-                          className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                            selected
-                              ? "border-sky-200 bg-sky-50 text-sky-700"
-                              : "border-slate-200 bg-white text-slate-700"
-                          }`}
-                        >
-                          {project.name}
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <p className="text-xs text-slate-500">
-                      Create a project to narrow workspace answers.
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="flex items-start gap-3 rounded-[24px] border border-orange-200 bg-[#fff4ec] p-4 shadow-sm">
-              <span className="text-2xl">🤖</span>
-              <div>
-                <p className="text-sm font-bold text-slate-900">
+        {/* Greeting — only shown before conversation starts */}
+        {!conversationStarted && (
+          <div className="mb-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow">
+                <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M8 2a6 6 0 0 1 6 6c0 1.5-.55 2.87-1.45 3.92L14 14l-2.08-1.45A5.97 5.97 0 0 1 8 14a6 6 0 0 1 0-12Z" fill="white" opacity=".9" />
+                  <circle cx="6" cy="8" r="1" fill="white" opacity=".5" />
+                  <circle cx="8" cy="8" r="1" fill="white" />
+                  <circle cx="10" cy="8" r="1" fill="white" opacity=".5" />
+                </svg>
+              </span>
+              <div className="rounded-2xl rounded-tl-sm border border-slate-200 bg-[#fafaf7] px-3.5 py-2.5">
+                <p className="text-sm text-slate-700">
                   {localScope === "transcript"
-                    ? "How can I help with these notes?"
+                    ? hasProcessedSummary
+                      ? "Hi! I've reviewed this session. Ask me anything — I can edit notes, extract action items, or summarise key themes."
+                      : "This session is still processing. I'll be ready to help once it's done."
                     : localScope === "project"
-                      ? "What should Voxly find across this project?"
-                      : "What should Voxly synthesize across the workspace?"}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                  {localScope === "transcript"
-                    ? "I can directly edit your notes – add key points, update action items, change priorities, and more."
-                    : "I can search across multiple transcripts, synthesize themes, and answer with grounded sources."}
+                      ? "Ask me anything across this project's recordings — themes, decisions, open questions."
+                      : "I can synthesise insights across your entire workspace. What do you want to know?"}
                 </p>
               </div>
             </div>
 
-            {(localScope !== "transcript" || hasProcessedSummary) ? (
-              <div className="mt-4 space-y-2">
-                {suggestions[localScope].map((text, index) => (
+            {/* Suggestion chips — only before conversation starts */}
+            {(localScope !== "transcript" || hasProcessedSummary) && (
+              <div className="space-y-1.5 pl-10">
+                {suggestions[localScope].map((text, i) => (
                   <button
                     key={text}
                     type="button"
                     onClick={() => handleSuggestion(text)}
-                    style={{ animationDelay: `${index * 50}ms` }}
-                    className="voxly-stagger-fade cursor-pointer w-full rounded-[20px] border border-slate-200 bg-[#fffdf9] px-4 py-3 text-left text-xs font-medium text-slate-700 shadow-sm transition-all hover:border-orange-300 hover:bg-[#fff4ec] hover:shadow-md active:scale-98"
+                    style={{ animationDelay: `${i * 40}ms` }}
+                    className="voxly-stagger-fade block w-full rounded-[14px] border border-slate-200 bg-white px-3.5 py-2.5 text-left text-xs font-medium text-slate-600 transition hover:border-orange-300 hover:bg-[#fff9f5] hover:text-orange-700"
                   >
                     {text}
                   </button>
                 ))}
               </div>
-            ) : (
-              <div className="mt-4 rounded-[20px] border border-dashed border-slate-200 bg-[#fcfbf8] px-4 py-4 text-xs leading-relaxed text-slate-500">
-                Prompts will appear here after Start Voxly finishes and the
-                recording has been processed.
-              </div>
-            )}
-
-            {assistantMessages.length > 0 && (
-              <div className="mt-4 space-y-4">
-                {assistantMessages.map((message, index) => (
-                  <div
-                    key={`${message.role}-${index}`}
-                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    {message.role === "assistant" && (
-                      <div className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#f97316] shadow-md">
-                        <span className="text-sm">🤖</span>
-                      </div>
-                    )}
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
-                        message.role === "user"
-                          ? "bg-slate-950 text-white"
-                          : "border border-slate-200 bg-[#fffdf9] text-slate-800 shadow-slate-200"
-                      }`}
-                    >
-                      <ReactMarkdown
-                        components={{
-                          p: ({ children }) => (
-                            <p className="text-sm leading-relaxed mb-2 last:mb-0 text-inherit">
-                              {children}
-                            </p>
-                          ),
-                          ul: ({ children }) => (
-                            <ul className="text-sm leading-relaxed list-disc ml-4 mb-2 last:mb-0 text-inherit">
-                              {children}
-                            </ul>
-                          ),
-                          ol: ({ children }) => (
-                            <ol className="text-sm leading-relaxed list-decimal ml-4 mb-2 last:mb-0 text-inherit">
-                              {children}
-                            </ol>
-                          ),
-                          li: ({ children }) => (
-                            <li className="text-sm leading-relaxed text-inherit">
-                              {children}
-                            </li>
-                          ),
-                          strong: ({ children }) => (
-                            <strong className="font-bold text-inherit">
-                              {children}
-                            </strong>
-                          ),
-                          em: ({ children }) => (
-                            <em className="italic text-inherit">{children}</em>
-                          ),
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                    {message.role === "user" && (
-                      <div className="ml-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-700 shadow-md">
-                        <span className="text-sm">👤</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
             )}
           </div>
-        </div>
+        )}
 
-        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
-          <div className="flex items-center gap-2">
-            <input
-              placeholder={
-                localScope === "transcript"
-                  ? "Ask me to edit your notes..."
-                  : localScope === "project"
-                    ? "Ask across this project..."
-                    : "Ask across the workspace..."
-              }
-              ref={assistantInputRef}
-              value={localPrompt}
-              disabled={!canSubmit}
-              onChange={(event) => setLocalPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  submitPrompt();
-                }
-              }}
-              className="flex-1 rounded-full border border-slate-200 bg-[#fcfbf8] px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 outline-none transition-all focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={() => submitPrompt()}
-              disabled={!canSubmit}
-              className="cursor-pointer rounded-full bg-[#f97316] px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-[#ea580c] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+        {/* Conversation messages */}
+        {assistantMessages.map((message, index) => (
+          <div
+            key={`${message.role}-${index}`}
+            className={`mb-3 flex items-end gap-2 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+          >
+            {message.role === "assistant" && (
+              <span className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-sm">
+                <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3" aria-hidden="true">
+                  <path d="M8 2a6 6 0 0 1 6 6c0 1.5-.55 2.87-1.45 3.92L14 14l-2.08-1.45A5.97 5.97 0 0 1 8 14a6 6 0 0 1 0-12Z" fill="white" opacity=".9" />
+                  <circle cx="6" cy="8" r="1" fill="white" opacity=".5" />
+                  <circle cx="8" cy="8" r="1" fill="white" />
+                  <circle cx="10" cy="8" r="1" fill="white" opacity=".5" />
+                </svg>
+              </span>
+            )}
+            <div
+              className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                message.role === "user"
+                  ? "rounded-br-sm bg-slate-900 text-white"
+                  : "rounded-bl-sm border border-slate-200 bg-[#fafaf7] text-slate-800"
+              }`}
             >
-              Send
-            </button>
+              {message.role === "assistant" ? (
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => <p className="mb-1.5 last:mb-0 text-sm text-slate-800 leading-relaxed">{children}</p>,
+                    ul: ({ children }) => <ul className="mb-1.5 ml-4 list-disc text-sm text-slate-800">{children}</ul>,
+                    ol: ({ children }) => <ol className="mb-1.5 ml-4 list-decimal text-sm text-slate-800">{children}</ol>,
+                    li: ({ children }) => <li className="text-sm text-slate-800 leading-relaxed">{children}</li>,
+                    strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                    em: ({ children }) => <em className="italic">{children}</em>,
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              ) : (
+                <p className="text-sm text-white">{message.content}</p>
+              )}
+            </div>
+            {message.role === "user" && (
+              <span className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-700 text-[10px] font-semibold text-white shadow-sm">
+                U
+              </span>
+            )}
           </div>
-          {assistantError && <p className="text-xs text-red-600">{assistantError}</p>}
-          {assistantHistoryLoading ? (
-            <p className="text-xs text-slate-500">Loading notes history...</p>
-          ) : null}
-          <p className="text-xs leading-relaxed text-slate-500">
-            {localScope === "transcript"
-              ? hasProcessedSummary
-                ? "Ready to help. Choose a suggestion or type your own request."
-                : "Process a recording to unlock prompts and assistant edits."
-              : localScope === "project"
-                ? "Project answers use grounded retrieval across recordings in the selected project."
-                : "Workspace answers search across your workspace, or just the projects you select above."}
-          </p>
-        </div>
+        ))}
+
+        {/* Typing indicator */}
+        {assistantBusy && (
+          <div className="mb-3 flex items-end gap-2">
+            <span className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-sm">
+              <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3" aria-hidden="true">
+                <path d="M8 2a6 6 0 0 1 6 6c0 1.5-.55 2.87-1.45 3.92L14 14l-2.08-1.45A5.97 5.97 0 0 1 8 14a6 6 0 0 1 0-12Z" fill="white" opacity=".9" />
+                <circle cx="6" cy="8" r="1" fill="white" opacity=".5" />
+                <circle cx="8" cy="8" r="1" fill="white" />
+                <circle cx="10" cy="8" r="1" fill="white" opacity=".5" />
+              </svg>
+            </span>
+            <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-slate-200 bg-[#fafaf7] px-4 py-3">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]" />
+            </div>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
       </div>
-    </section>
+
+      {/* ── Input ──────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-t border-slate-100 px-4 pb-4 pt-3">
+        {assistantError && (
+          <p className="mb-2 rounded-[10px] bg-red-50 px-3 py-2 text-xs text-red-600">{assistantError}</p>
+        )}
+        <div className="flex items-end gap-2 rounded-[18px] border border-slate-200 bg-[#fafaf7] px-3 py-2 focus-within:border-orange-300 focus-within:ring-2 focus-within:ring-orange-100 transition-all">
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={localPrompt}
+            disabled={localScope === "transcript" && !hasProcessedSummary}
+            onChange={(e) => {
+              setLocalPrompt(e.target.value);
+              // Auto-grow up to 5 rows
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submitPrompt();
+              }
+            }}
+            placeholder={
+              localScope === "transcript"
+                ? hasProcessedSummary
+                  ? "Ask about this session…"
+                  : "Waiting for processing…"
+                : localScope === "project"
+                  ? "Ask across this project…"
+                  : "Ask across the workspace…"
+            }
+            className="flex-1 resize-none bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ minHeight: "22px" }}
+          />
+          <button
+            type="button"
+            onClick={() => submitPrompt()}
+            disabled={!canSubmit}
+            aria-label="Send message"
+            className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-500 text-white shadow-sm transition hover:bg-orange-600 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+              <path d="M2 8h12M9 3l5 5-5 5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <p className="mt-2 px-1 text-[10px] leading-relaxed text-slate-400">
+          {scopeHint}{activeWorkspace ? ` · ${activeWorkspace.name}` : ""}
+        </p>
+      </div>
+    </div>
   );
 });

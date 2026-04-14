@@ -39,6 +39,7 @@ type SessionClientProps = {
   projects: Project[];
   activeWorkspace: ActiveWorkspaceDetails | null;
   hasDigestConfigured: boolean;
+  hasNotionConfigured: boolean;
 };
 
 export function SessionClient({
@@ -46,6 +47,7 @@ export function SessionClient({
   projects,
   activeWorkspace,
   hasDigestConfigured,
+  hasNotionConfigured,
 }: SessionClientProps) {
   const [transcription, setTranscription] = useState(initialTranscription);
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>(DEFAULT_MESSAGES);
@@ -53,8 +55,24 @@ export function SessionClient({
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const [showDigestUpsell, setShowDigestUpsell] = useState(!hasDigestConfigured);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [notionEnabled] = useState(hasNotionConfigured);
+  const [notionBusy, setNotionBusy] = useState(false);
 
   const onboarding = useOnboarding();
+
+  const handlePublishToNotion = useCallback(async () => {
+    setNotionBusy(true);
+    try {
+      const res = await fetch(
+        `/api/transcriptions/${encodeURIComponent(transcription.id)}/notion`,
+        { method: "POST" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to publish to Notion");
+    } finally {
+      setNotionBusy(false);
+    }
+  }, [transcription.id]);
 
   // Computed once from initial prop — used to trigger warm-start
   const wasAlreadyDoneRef = useRef(initialTranscription.status === "done");
@@ -280,11 +298,14 @@ export function SessionClient({
             onShareCopied={handleShareCopied}
             onProcessingComplete={handleProcessingComplete}
             onboarding={onboarding}
+            notionEnabled={notionEnabled}
+            notionBusy={notionBusy}
+            onPublishToNotion={handlePublishToNotion}
           />
         </div>
 
-        {/* Right: assistant — desktop sticky column */}
-        <div id="session-assistant" className="hidden lg:block lg:sticky lg:top-8">
+        {/* Right: assistant — full-height sticky column */}
+        <div id="session-assistant" className="hidden lg:block lg:sticky lg:top-0 lg:h-screen lg:py-8">
           {assistantPanel}
         </div>
       </div>
