@@ -25,6 +25,9 @@ type SessionSummaryPanelProps = {
   onShareCopied: () => void;
   onProcessingComplete: (updated: Transcription) => void;
   onboarding: OnboardingState;
+  notionEnabled?: boolean;
+  notionBusy?: boolean;
+  onPublishToNotion?: () => Promise<void>;
 };
 
 export const SessionSummaryPanel = memo(function SessionSummaryPanel({
@@ -35,6 +38,9 @@ export const SessionSummaryPanel = memo(function SessionSummaryPanel({
   onProjectAssign,
   onShareCopied,
   onProcessingComplete,
+  notionEnabled = false,
+  notionBusy = false,
+  onPublishToNotion,
 }: SessionSummaryPanelProps) {
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [processingStageIndex, setProcessingStageIndex] = useState(0);
@@ -582,6 +588,9 @@ export const SessionSummaryPanel = memo(function SessionSummaryPanel({
             projects={projects}
             onProjectAssign={onProjectAssign}
             onShareCopied={onShareCopied}
+            notionEnabled={notionEnabled}
+            notionBusy={notionBusy}
+            onPublishToNotion={onPublishToNotion}
           />
 
           {showDigestUpsell && <DigestUpsellBanner onDismiss={onDigestDismiss} />}

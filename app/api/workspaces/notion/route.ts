@@ -3,6 +3,7 @@ import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceSameOrigin } from "@/lib/api/security";
 import { workspaceNotionUpdateSchema } from "@/lib/api/validation";
 import {
+  deleteWorkspaceNotionSettings,
   getWorkspaceNotionSettings,
   updateWorkspaceNotionSettings,
   validateWorkspaceNotionSettings,
@@ -51,7 +52,10 @@ export async function PATCH(request: Request) {
       await request.json().catch(() => ({})),
     );
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || "Invalid request body" },
+        { status: 400 },
+      );
     }
 
     const settings = await updateWorkspaceNotionSettings(
@@ -97,6 +101,43 @@ export async function POST(request: Request) {
     }
 
     const settings = await validateWorkspaceNotionSettings(context.activeWorkspace.id);
+    return NextResponse.json({ ok: true, settings });
+  } catch (err) {
+    return NextResponse.json(
+      { error: getApiErrorMessage(err) },
+      { status: getApiErrorStatus(err) },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const originError = enforceSameOrigin(request);
+    if (originError) {
+      return originError;
+    }
+
+    const context = await requireWorkspaceContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!canManageWorkspace(context.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const settings = await deleteWorkspaceNotionSettings(context.activeWorkspace.id);
+
+    await createWorkspaceAuditLog({
+      workspaceId: context.activeWorkspace.id,
+      actorUserId: context.user.id,
+      action: "workspace.notion.deleted",
+      targetType: "workspace_notion",
+      summary: `${context.user.name?.trim() || context.user.email} disconnected Notion integration settings.`,
+      metadata: {
+        configured: settings.configured,
+      },
+    });
+
     return NextResponse.json({ ok: true, settings });
   } catch (err) {
     return NextResponse.json(

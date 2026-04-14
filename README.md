@@ -54,6 +54,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 For this project specifically, see:
 
+- [Architecture and workflow documentation](/Users/chason/Documents/GitHub/voxly-nextjs/docs/architecture-workflow.md)
 - [AWS readiness checklist](/Users/chason/Documents/GitHub/voxly-nextjs/AWS_READINESS_CHECKLIST.md)
 - [Elastic Beanstalk deployment guide](/Users/chason/Documents/GitHub/voxly-nextjs/ELASTIC_BEANSTALK_DEPLOYMENT.md)
 - [GitHub Actions CI/CD guide](/Users/chason/Documents/GitHub/voxly-nextjs/GITHUB_ACTIONS_CICD.md)

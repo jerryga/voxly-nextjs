@@ -26,6 +26,7 @@ const notionDelegate = (prisma as typeof prisma & {
     findUnique: (...args: any[]) => Promise<any>;
     upsert: (...args: any[]) => Promise<any>;
     update: (...args: any[]) => Promise<any>;
+    deleteMany: (...args: any[]) => Promise<any>;
   };
 }).workspaceNotionSettings;
 
@@ -38,6 +39,52 @@ export function maskNotionToken(token: string | null | undefined) {
     return null;
   }
   return `${token.slice(0, 6)}...${token.slice(-4)}`;
+}
+
+function getNotionErrorMessage(status: number, payload: string) {
+  let parsed: { code?: string; message?: string } | null = null;
+  try {
+    parsed = JSON.parse(payload) as { code?: string; message?: string };
+  } catch {
+    parsed = null;
+  }
+
+  const message = parsed?.message || payload;
+  const code = parsed?.code || "";
+
+  if (status === 401) {
+    return "Notion rejected the integration token. Paste a valid internal integration secret and save again.";
+  }
+
+  if (status === 403 || code === "restricted_resource") {
+    return "Notion could not access that page. Share the parent page with your Voxly integration in Notion, then validate again.";
+  }
+
+  if (status === 404 || code === "object_not_found") {
+    return "Notion could not find that page. Check the parent page ID or URL, and make sure the page is shared with your integration.";
+  }
+
+  if (status === 400 && code === "validation_error") {
+    return `Notion rejected the page request: ${message}`;
+  }
+
+  if (status === 429) {
+    return "Notion rate limited the request. Wait a moment, then validate again.";
+  }
+
+  return `Notion API error: ${status} ${message}`;
+}
+
+function getNotionErrorStatus(status: number) {
+  if ([400, 401, 403, 404].includes(status)) {
+    return 400;
+  }
+
+  if (status === 429) {
+    return 429;
+  }
+
+  return 502;
 }
 
 function serializeSettings(settings: WorkspaceNotionSettingsRecord | null) {
@@ -79,10 +126,12 @@ async function notionRequest<T>(
 
   if (!response.ok) {
     const payload = await response.text();
-    const error = new Error(`Notion API error: ${response.status} ${payload}`) as Error & {
+    const error = new Error(
+      getNotionErrorMessage(response.status, payload),
+    ) as Error & {
       statusCode?: number;
     };
-    error.statusCode = 502;
+    error.statusCode = getNotionErrorStatus(response.status);
     throw error;
   }
 
@@ -134,10 +183,33 @@ export async function updateWorkspaceNotionSettings(
   return serializeSettings(settings);
 }
 
+export async function deleteWorkspaceNotionSettings(workspaceId: string) {
+  await notionDelegate.deleteMany({
+    where: { workspaceId },
+  });
+
+  return serializeSettings(null);
+}
+
 async function requireEnabledNotionSettings(workspaceId: string) {
   const settings = await getSettingsRecord(workspaceId);
   if (!settings || !settings.enabled) {
     const error = new Error("Notion is not configured for this workspace.") as Error & {
+      statusCode?: number;
+    };
+    error.statusCode = 400;
+    throw error;
+  }
+  return settings;
+}
+
+// Requires only that Notion is connected (token + parent page saved).
+// Use this for manual publish actions where the user explicitly requests the push,
+// regardless of the workspace-level `enabled` toggle.
+async function requireConnectedNotionSettings(workspaceId: string) {
+  const settings = await getSettingsRecord(workspaceId);
+  if (!settings || !settings.apiToken?.trim() || !settings.parentPageId?.trim()) {
+    const error = new Error("Notion is not connected for this workspace.") as Error & {
       statusCode?: number;
     };
     error.statusCode = 400;
@@ -162,6 +234,45 @@ export async function validateWorkspaceNotionSettings(workspaceId: string) {
   });
 
   return serializeSettings(settings);
+}
+
+export async function publishSessionToNotion(input: {
+  workspaceId: string;
+  title: string;
+  markdown: string;
+  actorUserId?: string | null;
+  actorName: string;
+}) {
+  const settings = await requireConnectedNotionSettings(input.workspaceId);
+  const parentPageId = normalizePageId(settings.parentPageId);
+
+  const response = await notionRequest<{ id: string; url?: string }>(settings.apiToken, "/pages", {
+    method: "POST",
+    body: JSON.stringify({
+      parent: { type: "page_id", page_id: parentPageId },
+      properties: {
+        title: [{ text: { content: input.title.slice(0, 200) } }],
+      },
+      markdown: input.markdown,
+    }),
+  });
+
+  await notionDelegate.update({
+    where: { workspaceId: input.workspaceId },
+    data: { lastSyncedAt: new Date() },
+  });
+
+  await createWorkspaceAuditLog({
+    workspaceId: input.workspaceId,
+    actorUserId: input.actorUserId || null,
+    action: "workspace.notion.session_published",
+    targetType: "workspace_notion",
+    targetId: settings.id,
+    summary: `${input.actorName} published session "${input.title}" to Notion.`,
+    metadata: { title: input.title, notionPageId: response.id, notionUrl: response.url || null },
+  });
+
+  return { pageId: response.id, url: response.url || null };
 }
 
 export async function publishInsightToNotion(input: {

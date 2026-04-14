@@ -1443,6 +1443,7 @@ export function TranscriptionClient({
   const [workspaceNotionTokenDraft, setWorkspaceNotionTokenDraft] = useState("");
   const [workspaceNotionParentPageDraft, setWorkspaceNotionParentPageDraft] =
     useState("");
+  const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [notificationPreferences, setNotificationPreferences] =
     useState<UserNotificationPreferences | null>(null);
   const [notificationPreferencesLoading, setNotificationPreferencesLoading] =
@@ -4668,6 +4669,7 @@ export function TranscriptionClient({
     event.preventDefault();
     setWorkspaceNotionBusy("save");
     setError(null);
+    setIntegrationError(null);
 
     try {
       const res = await fetch("/api/workspaces/notion", {
@@ -4696,7 +4698,9 @@ export function TranscriptionClient({
       await loadWorkspaceActivity();
       showUploadStatusNotice("Notion integration updated.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save Notion settings");
+      const message = err instanceof Error ? err.message : "Failed to save Notion settings";
+      setError(message);
+      setIntegrationError(message);
     } finally {
       setWorkspaceNotionBusy(null);
     }
@@ -4705,8 +4709,42 @@ export function TranscriptionClient({
   async function handleValidateWorkspaceNotion() {
     setWorkspaceNotionBusy("validate");
     setError(null);
+    setIntegrationError(null);
 
     try {
+      const tokenDraft = workspaceNotionTokenDraft.trim();
+      const parentPageDraft = workspaceNotionParentPageDraft.trim();
+      const shouldSaveBeforeValidate =
+        Boolean(tokenDraft) ||
+        Boolean(parentPageDraft) ||
+        workspaceNotionSettings?.enabled !== workspaceNotionEnabled ||
+        workspaceNotionSettings?.parentPageId !== parentPageDraft;
+
+      if (shouldSaveBeforeValidate) {
+        const saveRes = await fetch("/api/workspaces/notion", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: workspaceNotionEnabled,
+            apiToken: tokenDraft || undefined,
+            parentPageId: parentPageDraft || undefined,
+          }),
+        });
+        const savePayload = (await saveRes.json().catch(() => ({}))) as WorkspaceNotionResponse;
+        if (!saveRes.ok || !savePayload.settings) {
+          throw new Error(savePayload?.error || "Failed to save Notion settings");
+        }
+
+        setWorkspaceNotionSettings(savePayload.settings);
+        setWorkspaceNotionEnabled(savePayload.settings.enabled);
+        setWorkspaceNotionTokenDraft("");
+        setWorkspaceNotionParentPageDraft(savePayload.settings.parentPageId || "");
+        writeSessionCache(
+          buildScopedCacheKey(WORKSPACE_NOTION_CACHE_KEY, activeWorkspaceId),
+          savePayload.settings,
+        );
+      }
+
       const res = await fetch("/api/workspaces/notion", {
         method: "POST",
       });
@@ -4725,9 +4763,55 @@ export function TranscriptionClient({
       await loadWorkspaceActivity();
       showUploadStatusNotice("Notion connection verified.");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to validate Notion connection",
+      const message =
+        err instanceof Error ? err.message : "Failed to validate Notion connection";
+      setError(message);
+      setIntegrationError(message);
+    } finally {
+      setWorkspaceNotionBusy(null);
+    }
+  }
+
+  async function handleDeleteWorkspaceNotionSettings() {
+    if (!workspaceNotionSettings?.configured) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Disconnect Notion for this workspace? Voxly will remove the saved Notion token and parent page ID, and stop publishing insights to Notion.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setWorkspaceNotionBusy("delete");
+    setError(null);
+    setIntegrationError(null);
+
+    try {
+      const res = await fetch("/api/workspaces/notion", {
+        method: "DELETE",
+      });
+      const payload = (await res.json().catch(() => ({}))) as WorkspaceNotionResponse;
+      if (!res.ok || !payload.settings) {
+        throw new Error(payload?.error || "Failed to disconnect Notion");
+      }
+
+      setWorkspaceNotionSettings(payload.settings);
+      setWorkspaceNotionEnabled(payload.settings.enabled);
+      setWorkspaceNotionTokenDraft("");
+      setWorkspaceNotionParentPageDraft("");
+      writeSessionCache(
+        buildScopedCacheKey(WORKSPACE_NOTION_CACHE_KEY, activeWorkspaceId),
+        payload.settings,
       );
+      clearScopedCache(WORKSPACE_ACTIVITY_CACHE_KEY, activeWorkspaceId);
+      await loadWorkspaceActivity();
+      showUploadStatusNotice("Notion integration disconnected.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to disconnect Notion";
+      setError(message);
+      setIntegrationError(message);
     } finally {
       setWorkspaceNotionBusy(null);
     }
@@ -6657,6 +6741,7 @@ export function TranscriptionClient({
             workspaceNotionEnabled={workspaceNotionEnabled}
             workspaceNotionTokenDraft={workspaceNotionTokenDraft}
             workspaceNotionParentPageDraft={workspaceNotionParentPageDraft}
+            integrationError={integrationError}
             onWorkspaceSlackWebhookDraftChange={setWorkspaceSlackWebhookDraft}
             onWorkspaceSlackEnabledChange={setWorkspaceSlackEnabled}
             onWorkspaceSlackSendDigestsChange={setWorkspaceSlackSendDigests}
@@ -6668,6 +6753,7 @@ export function TranscriptionClient({
             onDeleteSlackSettings={handleDeleteWorkspaceSlackSettings}
             onNotionSubmit={handleSaveWorkspaceNotionSettings}
             onValidateNotion={handleValidateWorkspaceNotion}
+            onDeleteNotionSettings={handleDeleteWorkspaceNotionSettings}
           />
           </Suspense>
           ) : null}

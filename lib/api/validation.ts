@@ -29,12 +29,30 @@ const slackWebhookSchema = z
   });
 
 const notionTokenSchema = z.string().trim().min(20).max(200);
+
+function extractNotionPageId(value: string) {
+  const trimmed = value.trim();
+  const matches = [
+    ...trimmed.matchAll(
+      /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[a-f0-9]{32}/gi,
+    ),
+  ];
+
+  return matches.at(-1)?.[0] || trimmed;
+}
+
 const notionPageIdSchema = z
   .string()
   .trim()
   .min(20)
-  .max(64)
-  .regex(/^[a-f0-9-]+$/i, "Enter a valid Notion page ID.");
+  .max(300)
+  .transform((value) => extractNotionPageId(value))
+  .refine(
+    (value) =>
+      /^[a-f0-9]{32}$/i.test(value) ||
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value),
+    "Enter a valid Notion page ID or Notion page URL.",
+  );
 
 const templateSchema = z
   .string()

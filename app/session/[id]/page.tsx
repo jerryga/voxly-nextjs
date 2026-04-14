@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getWorkspaceContext } from "@/lib/workspaces";
 import { ensureWorkspaceDigestSettings } from "@/lib/workspace-digests";
+import { getWorkspaceNotionSettings } from "@/lib/notion";
 import { DashboardShell } from "@/app/dashboard/DashboardShell";
 import { SessionClient } from "./SessionClient";
 import type { ActiveWorkspaceDetails } from "./SessionAssistantRail";
@@ -25,7 +26,7 @@ export default async function SessionPage({ params }: Props) {
 
   const workspaceId = workspaceContext.activeWorkspace.id;
 
-  const [transcription, projects, digestSettings] = await Promise.all([
+  const [transcription, projects, digestSettings, notionSettings] = await Promise.all([
     prisma.transcription.findFirst({
       where: { id, workspaceId },
       select: {
@@ -57,6 +58,7 @@ export default async function SessionPage({ params }: Props) {
       orderBy: { name: "asc" },
     }),
     ensureWorkspaceDigestSettings(workspaceId),
+    getWorkspaceNotionSettings(workspaceId),
   ]);
 
   if (!transcription) {
@@ -120,6 +122,7 @@ export default async function SessionPage({ params }: Props) {
         projects={serializedProjects}
         activeWorkspace={activeWorkspace}
         hasDigestConfigured={digestSettings.enabled}
+        hasNotionConfigured={notionSettings.configured}
       />
     </DashboardShell>
   );

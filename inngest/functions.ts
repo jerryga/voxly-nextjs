@@ -2,6 +2,8 @@ import { inngest } from "./client";
 import { processUploadedAudio } from "@/lib/transcriptions/process";
 import { prisma } from "@/lib/prisma";
 import { sendSessionReadyEmail } from "@/lib/email/session-ready";
+import { sendDueProjectDigests } from "@/lib/project-digests";
+import { sendDueWorkspaceDigests } from "@/lib/workspace-digests";
 
 export type AudioUploadedEvent = {
   name: "voxly/audio.uploaded";
@@ -72,5 +74,21 @@ export const processMeetingAudio = inngest.createFunction(
     }
 
     return { transcriptionId };
+  },
+);
+
+export const sendScheduledProjectDigests = inngest.createFunction(
+  { id: "send-scheduled-project-digests", retries: 1 },
+  { cron: "TZ=UTC 0 * * * *" },
+  async ({ step }) => {
+    return step.run("send-due-project-digests", () => sendDueProjectDigests());
+  },
+);
+
+export const sendScheduledWorkspaceDigests = inngest.createFunction(
+  { id: "send-scheduled-workspace-digests", retries: 1 },
+  { cron: "TZ=UTC 0 * * * *" },
+  async ({ step }) => {
+    return step.run("send-due-workspace-digests", () => sendDueWorkspaceDigests());
   },
 );

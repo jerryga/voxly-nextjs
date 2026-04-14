@@ -1,10 +1,18 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
-import { processMeetingAudio } from "@/inngest/functions";
+import {
+  processMeetingAudio,
+  sendScheduledProjectDigests,
+  sendScheduledWorkspaceDigests,
+} from "@/inngest/functions";
 
 export const runtime = "nodejs";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [processMeetingAudio],
+  functions: [
+    processMeetingAudio,
+    sendScheduledProjectDigests,
+    sendScheduledWorkspaceDigests,
+  ],
 });
