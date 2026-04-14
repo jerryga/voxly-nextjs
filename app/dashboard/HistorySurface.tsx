@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  type MouseEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   memo,
   startTransition,
   useCallback,
@@ -9,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ActiveWorkspaceDetails, Project, Transcription } from "./TranscriptionClient";
 
 const DASHBOARD_CACHE_TTL_MS = 60_000;
@@ -325,10 +327,12 @@ const HistoryRow = memo(function HistoryRow({
   onAssignProject,
   onDelete,
 }: HistoryRowProps) {
+  const router = useRouter();
   const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
   const [localProjectId, setLocalProjectId] = useState(item.projectId || "none");
   const [isAssigning, setIsAssigning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isOpening, setIsOpening] = useState(false);
   const transcriptPreview = item.transcript
     ? item.transcript.length > 1800
       ? `${item.transcript.slice(0, 1800).trim()}...`
@@ -338,24 +342,56 @@ const HistoryRow = memo(function HistoryRow({
     item.transcript && item.transcript.length > transcriptPreview.length,
   );
 
+  function stopRowNavigation(event: MouseEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  function stopRowKeyboard(event: ReactKeyboardEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  function openSession() {
+    setIsOpening(true);
+    router.push(`/session/${item.id}`);
+  }
+
+  function handleRowKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    openSession();
+  }
+
   useEffect(() => {
     setLocalProjectId(item.projectId || "none");
   }, [item.projectId]);
 
   return (
     <div
-      className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 hover:border-slate-300"
+      role="link"
+      tabIndex={0}
+      aria-label={`Open transcript for ${item.fileName}`}
+      onClick={openSession}
+      onKeyDown={handleRowKeyDown}
+      aria-busy={isOpening}
+      className="group relative block cursor-pointer rounded-[18px] border border-slate-200 bg-white px-4 py-4 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-orange-300"
       style={{ contain: "content" }}
     >
+      {isOpening ? (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[18px] bg-white/75 backdrop-blur-[1px]">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-orange-500" />
+            Opening transcript...
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/session/${item.id}`}
-            prefetch={true}
-            className="block truncate text-[15px] font-semibold text-slate-900 hover:text-orange-700 transition-colors"
-          >
+          <span className="block truncate text-[15px] font-semibold text-slate-900 transition-colors group-hover:text-orange-700">
             {item.fileName}
-          </Link>
+          </span>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             <p className="text-xs text-slate-500">
               {new Date(item.createdAt).toLocaleString()}
@@ -397,6 +433,8 @@ const HistoryRow = memo(function HistoryRow({
         <div className="flex flex-wrap items-center gap-2 xl:max-w-[28rem] xl:justify-end">
           <select
             value={localProjectId}
+            onClick={stopRowNavigation}
+            onKeyDown={stopRowKeyboard}
             onChange={async (event) => {
               const nextProjectId = event.target.value;
               const previousProjectId = localProjectId;
@@ -421,7 +459,11 @@ const HistoryRow = memo(function HistoryRow({
           {item.transcript ? (
             <button
               type="button"
-              onClick={() => setIsTranscriptOpen((prev) => !prev)}
+              onClick={(event) => {
+                stopRowNavigation(event);
+                setIsTranscriptOpen((prev) => !prev);
+              }}
+              onKeyDown={stopRowKeyboard}
               className="cursor-pointer rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f2f7ff] hover:text-sky-700 active:scale-95"
             >
               {isTranscriptOpen ? "Hide Transcript" : "View Transcript"}
@@ -430,7 +472,8 @@ const HistoryRow = memo(function HistoryRow({
 
           <button
             type="button"
-            onClick={async () => {
+            onClick={async (event) => {
+              stopRowNavigation(event);
               setIsDeleting(true);
               try {
                 await onDelete(item.id);
@@ -438,6 +481,7 @@ const HistoryRow = memo(function HistoryRow({
                 setIsDeleting(false);
               }
             }}
+            onKeyDown={stopRowKeyboard}
             disabled={isDeleting}
             className="cursor-pointer rounded-full border border-red-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
           >
@@ -448,6 +492,7 @@ const HistoryRow = memo(function HistoryRow({
 
       {item.transcript && isTranscriptOpen ? (
         <div
+          onClick={stopRowNavigation}
           className="mt-4 max-h-[28rem] overflow-hidden rounded-[16px] border border-slate-200 bg-[#fcfbf8] p-4"
           style={{ contain: "content" }}
         >
@@ -461,7 +506,11 @@ const HistoryRow = memo(function HistoryRow({
               </span>
               <button
                 type="button"
-                onClick={() => void navigator.clipboard.writeText(item.transcript || "")}
+                onClick={(event) => {
+                  stopRowNavigation(event);
+                  void navigator.clipboard.writeText(item.transcript || "");
+                }}
+                onKeyDown={stopRowKeyboard}
                 className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-[#f8f5ef]"
               >
                 Copy full
