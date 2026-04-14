@@ -1,11 +1,13 @@
 "use client";
 
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { Transcription } from "@/app/dashboard/TranscriptionClient";
 import type { Project } from "./SessionAssistantRail";
 import type { OnboardingState } from "./hooks/useOnboarding";
 import { WhatNextPanel } from "./WhatNextPanel";
 import { DigestUpsellBanner } from "./DigestUpsellBanner";
+import { useTranscriptionStatus } from "./hooks/useTranscriptionStatus";
+import { useFocusRevalidate } from "@/app/hooks/useFocusRevalidate";
 
 type Task = {
   id: string;
@@ -56,7 +58,7 @@ export const SessionSummaryPanel = memo(function SessionSummaryPanel({
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadTasks = useCallback(() => {
     if (transcription.status !== "done") return;
     fetch(`/api/tasks?transcriptionId=${encodeURIComponent(transcription.id)}`)
       .then((r) => r.json())
@@ -65,6 +67,13 @@ export const SessionSummaryPanel = memo(function SessionSummaryPanel({
       })
       .catch(() => {});
   }, [transcription.status, transcription.id]);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  // Re-fetch tasks when the user returns to this tab (catches changes made in other tabs/sessions)
+  useFocusRevalidate(loadTasks);
 
   // Initialise from DB — completed flags already persisted on the items
   const [completedSet, setCompletedSet] = useState<Set<number>>(() => {
@@ -156,8 +165,6 @@ export const SessionSummaryPanel = memo(function SessionSummaryPanel({
       setDeletingTaskId(null);
     }
   }
-  const abortRef = useRef<AbortController | null>(null);
-
   const isDone = transcription.status === "done";
   const isProcessing = transcription.status === "processing" || transcription.status === "uploaded";
   const deferredTranscript = useDeferredValue(transcription.transcript || "");
@@ -190,47 +197,8 @@ export const SessionSummaryPanel = memo(function SessionSummaryPanel({
     };
   }, [isProcessing]);
 
-  // Poll for completion while status is not done
-  useEffect(() => {
-    if (isDone) return;
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    function poll(delayMs: number) {
-      if (controller.signal.aborted) return;
-      setTimeout(async () => {
-        if (controller.signal.aborted) return;
-        try {
-          const res = await fetch(
-            `/api/transcriptions?id=${encodeURIComponent(transcription.id)}&allWorkspaces=true`,
-            { signal: controller.signal },
-          );
-          if (!res.ok) return;
-          const data = (await res.json()) as { items?: Transcription[] };
-          const updated = data.items?.[0];
-          if (!updated) return;
-          if (updated.status === "done") {
-            controller.abort();
-            onProcessingComplete(updated);
-          } else {
-            // backoff: cap at 8s
-            poll(Math.min(delayMs * 1.5, 8000));
-          }
-        } catch {
-          if (!controller.signal.aborted) {
-            poll(Math.min(delayMs * 1.5, 8000));
-          }
-        }
-      }, delayMs);
-    }
-
-    poll(4000);
-
-    return () => {
-      controller.abort();
-    };
-  }, [isDone, transcription.id, onProcessingComplete]);
+  // Subscribe to server-sent events for processing completion (replaces polling)
+  useTranscriptionStatus(transcription.id, isDone, onProcessingComplete);
 
   const TEMPLATE_LABELS: Record<string, string> = {
     interview: "Interview",
