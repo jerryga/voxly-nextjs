@@ -9,6 +9,12 @@
 1. [Tech Stack](#1-tech-stack)
 2. [System Architecture](#2-system-architecture)
 3. [Database Schema](#3-database-schema)
+   - Domain 1: [Identity](#domain-1--identity)
+   - Domain 2: [Workspace & Membership](#domain-2--workspace--membership)
+   - Domain 3: [Content](#domain-3--content)
+   - Domain 4: [Collaboration](#domain-4--collaboration)
+   - Domain 5: [Reporting & Integrations](#domain-5--reporting--integrations)
+   - Domain 6: [Billing](#domain-6--billing)
 4. [Core Workflows](#4-core-workflows)
    - 4.1 [Authentication & Registration](#41-authentication--registration)
    - 4.2 [Workspace Multi-Tenancy](#42-workspace-multi-tenancy)
@@ -93,126 +99,420 @@ GET /dashboard
 
 ## 3. Database Schema
 
-All models use `cuid()` primary keys. Key models:
+All 28 models use `cuid()` primary keys. The schema is organized into six functional domains.
 
-### Core user / auth
+### Entity Relationship Overview
 
-```prisma
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String?           // bcrypt hash
-  emailVerified DateTime?
-  subscription  Subscription?
-  creditTransactions CreditTransaction[]
-  // ... relations to all owned resources
-}
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  IDENTITY                                                           │
+│  User ──── Account (OAuth)                                         │
+│       ──── Session (NextAuth DB sessions, unused in JWT mode)      │
+│       ──── VerificationToken (email verification)                  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ owns / belongs to
+┌────────────────────────────▼────────────────────────────────────────┐
+│  WORKSPACE & MEMBERSHIP                                             │
+│  Workspace ─── WorkspaceMember (many-to-many with User)            │
+│            ─── WorkspaceInvite                                     │
+│            ─── WorkspaceAuditLog                                   │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ scopes
+┌────────────────────────────▼────────────────────────────────────────┐
+│  CONTENT                                                            │
+│  Project ─── Transcription ─── ActionTask                          │
+│                           ─── AssistantMessage                     │
+│                           ─── WorkspaceComment                     │
+│          ─── ProjectInsight ── WorkspaceComment                    │
+│  WorkspaceInsight ─────────── WorkspaceComment                     │
+│  SummaryTemplate                                                   │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────────┐
+│  REPORTING & INTEGRATIONS                                           │
+│  WorkspaceDigestSettings ──┐                                        │
+│  ProjectDigestSettings  ───┼── WorkspaceSlackDestination           │
+│  RecurringReportTemplate ──┘                                        │
+│  RecurringReportRun                                                 │
+│  WorkspaceSlackSettings                                             │
+│  WorkspaceNotionSettings                                            │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────────┐
+│  BILLING                                                            │
+│  Subscription ── User (1:1)                                        │
+│  CreditTransaction                                                  │
+│  Promotion ── PromotionRedemption                                  │
+│  StripeWebhookEvent (idempotency log)                              │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Multi-tenancy
+---
 
-```prisma
-model Workspace {
-  id          String  @id @default(cuid())
-  slug        String  @unique     // URL-safe, collision-safe
-  ownerUserId String
-  isPersonal  Boolean @default(false)
-  members     WorkspaceMember[]
-  // ... all workspace-scoped resources
-}
+### Domain 1 — Identity
 
-model WorkspaceMember {
-  workspaceId String
-  userId      String
-  role        String   // "owner" | "admin" | "member" | "viewer"
-  status      String   // "active" | "invited" | "removed"
-  @@unique([workspaceId, userId])
-}
+#### `User`
+Central entity. Every other model eventually traces back to a `User`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `String` | cuid() PK |
+| `email` | `String` | unique, lowercased on auth |
+| `password` | `String?` | bcrypt hash; null for OAuth users |
+| `emailVerified` | `DateTime?` | null until verification link clicked |
+| `image` | `String?` | avatar URL |
+
+Relations (all cascade on user delete):
+- `accounts` → OAuth provider tokens (NextAuth `Account` model)
+- `sessions` → DB sessions (unused — app uses JWT strategy)
+- `subscription` → 1:1 billing record
+- `creditTransactions` → full credit history
+- `workspaceMemberships` → all workspaces the user belongs to
+- `ownedWorkspaces` → workspaces the user created
+- `transcriptions` / `projects` / `actionTasks` → content they uploaded
+
+#### `Account`
+NextAuth OAuth adapter table. Stores provider tokens (`access_token`, `refresh_token`, `id_token`). Unique on `[provider, providerAccountId]`. Currently unused since the app only uses `CredentialsProvider`, but the table is present for future OAuth support.
+
+#### `Session`
+NextAuth DB session table. Not populated — the app uses `strategy: "jwt"` so sessions live in signed cookies, not the database.
+
+#### `VerificationToken`
+Email verification tokens. Created on signup, consumed once when the user clicks the link. Unique on `[identifier, token]` (identifier = email).
+
+---
+
+### Domain 2 — Workspace & Membership
+
+#### `Workspace`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `String` | cuid() PK |
+| `slug` | `String` | unique, URL-safe (e.g. `acme-corp`) |
+| `ownerUserId` | `String` | FK → User (cascade delete) |
+| `isPersonal` | `Boolean` | true for the auto-created personal workspace |
+
+Every user gets exactly one personal workspace on signup (`isPersonal: true`). It cannot be deleted. All other workspaces are team workspaces.
+
+Workspace is the **tenant boundary** — every resource in the system (transcriptions, projects, tasks, insights, settings) has a `workspaceId` FK that is checked on every query.
+
+#### `WorkspaceMember`
+
+Join table between `Workspace` and `User`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `role` | `String` | `"owner"` \| `"admin"` \| `"member"` \| `"viewer"` |
+| `status` | `String` | `"active"` \| `"invited"` \| `"removed"` |
+| `joinedAt` | `DateTime?` | set when invite is accepted |
+
+Unique on `[workspaceId, userId]` — prevents duplicate membership rows. On re-invite, `upsert` updates the existing row rather than creating a new one.
+
+Indexes:
+- `[userId, status, createdAt]` — load all workspaces for a user
+- `[workspaceId, status, createdAt]` — list members of a workspace
+
+#### `WorkspaceInvite`
+
+| Field | Type | Notes |
+|---|---|---|
+| `token` | `String` | unique; 48-char hex from `randomBytes(24)` |
+| `email` | `String` | must match signed-in user on accept |
+| `role` | `String` | role granted on accept |
+| `expiresAt` | `DateTime` | now + 7 days |
+| `acceptedAt` | `DateTime?` | set on accept; null = still open |
+| `revokedAt` | `DateTime?` | set on revoke; null = not revoked |
+
+State machine: `open` → `accepted` or `revoked`. The lookup WHERE clause always filters `acceptedAt: null AND revokedAt: null`, making each state transition irreversible. On resend, the token and expiresAt are replaced (old URL instantly invalid).
+
+Indexes:
+- `[workspaceId, createdAt]` — list pending invites
+- `[email, expiresAt]` — check for existing invite by email
+
+#### `WorkspaceAuditLog`
+
+Append-only log. `actorUserId` is nullable (`SetNull` on user delete) so logs survive if a user is removed. Every significant action in the system writes a row here:
+
+```
+workspace.invite.created / resent / accepted / revoked
+project.digest.sent_manual / sent_scheduled
+workspace.notion.session_published
+workspace.member.removed
+...
 ```
 
-### Transcription (central entity)
+`targetType` + `targetId` identify the affected entity. `metadata` is a freeform JSON blob with action-specific details. No `updatedAt` — audit logs are immutable.
 
-```prisma
-model Transcription {
-  id                  String   @id @default(cuid())
-  userId              String
-  workspaceId         String?
-  projectId           String?
-  fileName            String
-  fileUrl             String   // S3 key (not public URL)
-  template            String   @default("default")
-  status              String   // "uploaded" | "processing" | "done" | "error"
-  rawTranscript       String?  @db.Text   // verbatim Deepgram output
-  formattedTranscript String?  @db.Text   // AI-cleaned speaker turns
-  transcript          String?  @db.Text   // effective transcript served to UI
-  decisions           Json?    // string[]
-  keyPoints           Json?    // string[]
-  nextSteps           Json?    // string[]
-  actionItems         Json?    // string[]
-  duration            Int?     // seconds
-  searchText          String?  @db.Text   // denormalized full-text field
-}
+---
+
+### Domain 3 — Content
+
+#### `Project`
+
+Groups transcriptions into named collections. Unique on `[workspaceId, name]` — two projects in the same workspace cannot share a name.
+
+`userId` is the creator; `workspaceId` scopes it to the tenant. `workspaceId` is nullable with `SetNull` on workspace delete, preserving the project under the creator's personal workspace.
+
+#### `Transcription` (central content entity)
+
+| Field | Type | Notes |
+|---|---|---|
+| `fileUrl` | `String` | S3 key, not a public URL |
+| `template` | `String` | built-in slug or custom template slug |
+| `status` | `String` | `"uploaded"` → `"processing"` → `"done"` \| `"error"` |
+| `rawTranscript` | `String? @db.Text` | verbatim Deepgram output |
+| `formattedTranscript` | `String? @db.Text` | AI-cleaned speaker turns |
+| `transcript` | `String? @db.Text` | effective transcript shown in UI |
+| `decisions` | `Json?` | `string[]` extracted by LLM |
+| `keyPoints` | `Json?` | `string[]` |
+| `nextSteps` | `Json?` | `string[]` |
+| `actionItems` | `Json?` | `Array<{ title, completed? }>` |
+| `duration` | `Int?` | seconds; used for credit billing |
+| `searchText` | `String? @db.Text` | denormalized full-text field |
+
+`userId` = uploader; `workspaceId` = tenant scope; `projectId` = optional grouping. Both `workspaceId` and `projectId` use `SetNull` on delete so a transcription survives workspace/project removal.
+
+Three transcript fields exist because they serve different purposes: `rawTranscript` is the unmodified Deepgram output (useful for debugging / re-processing); `formattedTranscript` is the AI-cleaned version with speaker labels; `transcript` is whichever of the two is the best result and is what the UI and LLM features consume.
+
+Indexes (5 compound):
+```
+[userId, createdAt]               — user's personal list
+[workspaceId, createdAt]          — workspace list
+[userId, projectId, createdAt]    — project filter
+[userId, status, createdAt]       — status filter
+[userId, template, createdAt]     — template filter
+[status]                          — Inngest job processing queries
 ```
 
-### Polymorphic comments
+#### `ActionTask`
 
-```prisma
-model WorkspaceComment {
-  // Exactly one of the four FK columns is non-null:
-  transcriptionId    String?
-  actionTaskId       String?
-  projectInsightId   String?
-  workspaceInsightId String?
-  content            String  @db.Text
-  mentions           Json?   // array of { userId, name }
-}
+Tasks extracted from `actionItems` or created manually. Always linked to a parent `Transcription` (cascade delete). `sourceActionIndex` stores which `actionItems` array index it originated from, preserving traceability.
+
+| Field | Type | Notes |
+|---|---|---|
+| `status` | `String` | `"open"` \| `"in_progress"` \| `"done"` |
+| `priority` | `String` | `"LOW"` \| `"MEDIUM"` \| `"HIGH"` |
+| `assignee` | `String?` | freetext name or email |
+| `completedAt` | `DateTime?` | set when status → `"done"` |
+
+#### `AssistantMessage`
+
+Persisted chat history for the per-recording AI assistant.
+
+| Field | Type | Notes |
+|---|---|---|
+| `userId` | `String` | the member who sent/received the message |
+| `transcriptionId` | `String` | links to parent recording |
+| `role` | `String` | `"user"` \| `"assistant"` |
+| `content` | `String @db.Text` | message body |
+
+Both user and assistant turns are stored so the full conversation can be reloaded across sessions. Any workspace member can contribute to and read the conversation history for a shared transcription.
+
+#### `SummaryTemplate`
+
+User-defined processing templates. Unique on `[userId, slug]`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `baseTemplate` | `String` | built-in template to extend |
+| `promptInstructions` | `String @db.Text` | appended to the base system prompt |
+
+`workspaceId` is nullable — templates can be personal or shared across a workspace.
+
+#### `ProjectInsight` / `WorkspaceInsight`
+
+Saved results from the intelligence Q&A feature. Both have identical shape except `ProjectInsight` has a required `projectId` FK while `WorkspaceInsight` stores `projectIds: Json?` (an array of project IDs the query spanned).
+
+| Field | Type | Notes |
+|---|---|---|
+| `question` | `String @db.Text` | original user question |
+| `answer` | `String @db.Text` | LLM response |
+| `confidenceNote` | `String?` | caveats from LLM |
+| `sources` | `Json` | `Array<{ fileName, excerpt }>` |
+| `isPinned` | `Boolean` | pinned insights sort first |
+| `archivedAt` | `DateTime?` | soft-delete |
+
+---
+
+### Domain 4 — Collaboration
+
+#### `WorkspaceComment`
+
+Polymorphic comment table. Exactly one of four nullable FK columns is set per row:
+
+| FK column | Target model |
+|---|---|
+| `transcriptionId` | `Transcription` |
+| `actionTaskId` | `ActionTask` |
+| `projectInsightId` | `ProjectInsight` |
+| `workspaceInsightId` | `WorkspaceInsight` |
+
+`mentions` stores `Array<{ userId, name }>` parsed from `@handle` tokens in the comment text. All four FK columns use cascade delete — comments are removed with their parent.
+
+`workspaceId` is non-nullable on the comment itself (not inherited from the parent), making it possible to query all comments in a workspace with a single index scan without joining.
+
+#### `WorkspaceNotification`
+
+In-app notification rows delivered to specific users.
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | `String` | e.g. `"mention"`, `"project_digest"`, `"workspace_invite"` |
+| `link` | `String?` | deep link for the notification |
+| `readAt` | `DateTime?` | null = unread |
+| `metadata` | `Json?` | type-specific payload |
+
+Index `[userId, readAt, createdAt]` supports efficient unread-count queries.
+
+#### `UserNotificationPreferences`
+
+1:1 with `User`. Controls per-channel delivery:
+
+| Field | Default | Controls |
+|---|---|---|
+| `mentionEmailEnabled` | `true` | email on @mention |
+| `mentionInAppEnabled` | `true` | in-app badge on @mention |
+| `digestEmailEnabled` | `true` | whether digest emails are sent to this user |
+
+The digest system checks `digestEmailEnabled` before adding a member to the recipient list.
+
+---
+
+### Domain 5 — Reporting & Integrations
+
+#### `WorkspaceDigestSettings` / `ProjectDigestSettings`
+
+Nearly identical structure — one scoped to a workspace, one to a project. Both have `@unique` on their scope FK so there is exactly one settings row per workspace/project.
+
+| Field | Type | Notes |
+|---|---|---|
+| `enabled` | `Boolean` | master on/off switch |
+| `cadence` | `String` | `"weekly"` \| `"monthly"` |
+| `reportType` | `String` | `"summary"` \| `"new_insights"` \| `"open_tasks"` \| `"risk_watch"` |
+| `weekday` | `Int` | 0=Sun … 6=Sat (weekly only) |
+| `dayOfMonth` | `Int` | 1–31 (monthly only) |
+| `hourLocal` | `Int` | 0–23 in the user's timezone |
+| `timezone` | `String` | IANA timezone string |
+| `recipientScope` | `String` | `"managers"` \| `"all_members"` |
+| `lastSentAt` | `DateTime?` | dedup guard for the hourly cron |
+| `slackDestinationId` | `String?` | FK → `WorkspaceSlackDestination` (SetNull) |
+
+Index `[enabled, cadence, weekday, hourLocal]` is used by the Inngest cron to load only enabled digests matching the current hour without a full table scan.
+
+#### `WorkspaceSlackSettings`
+
+Workspace-level Slack OAuth credentials. `webhookUrl` is the incoming webhook URL for the default channel. `sendDigests` controls whether digests are routed to Slack.
+
+#### `WorkspaceSlackDestination`
+
+Named Slack channels within a workspace. Multiple digests and report templates can target different channels. Referenced by `WorkspaceDigestSettings`, `ProjectDigestSettings`, and `RecurringReportTemplate` via nullable FK with `SetNull` on delete.
+
+#### `WorkspaceNotionSettings`
+
+| Field | Notes |
+|---|---|
+| `enabled` | Controls automatic publishing (digest → Notion) |
+| `apiToken` | Notion integration token |
+| `parentPageId` | Notion page where sub-pages are created |
+| `lastSyncedAt` | last successful sync timestamp |
+
+`configured` (derived, not stored) = `apiToken?.trim() && parentPageId?.trim()`. Manual publish requires `configured`; automatic publish requires `enabled` too.
+
+#### `RecurringReportTemplate`
+
+Reusable report configurations that can be applied to projects or workspaces. Separate from `ProjectDigestSettings` — templates are blueprints, settings are active configurations.
+
+#### `RecurringReportRun`
+
+Immutable run history. One row per digest delivery attempt.
+
+| Field | Notes |
+|---|---|
+| `scope` | `"project"` \| `"workspace"` |
+| `trigger` | `"manual"` \| `"scheduled"` |
+| `status` | `"success"` \| `"failed"` |
+| `emailRecipientCount` | how many emails were sent |
+| `slackDelivered` | whether Slack delivery succeeded |
+
+Failed runs are logged here too (with `status: "failed"`) so retry logic can surface them in the UI.
+
+---
+
+### Domain 6 — Billing
+
+#### `Subscription`
+
+1:1 with `User`. Tracks both Stripe state and the credit ledger.
+
+| Field | Notes |
+|---|---|
+| `plan` | `"free"` \| `"starter"` \| `"pro"` \| `"team"` |
+| `status` | mirrors Stripe: `"active"` \| `"past_due"` \| `"canceled"` etc. |
+| `monthlyCreditsRemaining` | resets on each `invoice.paid` webhook |
+| `monthlyCreditsTotal` | allotment for the current period |
+| `topUpCreditsRemaining` | from one-time pack purchases |
+| `creditsRemaining` | `monthlyCreditsRemaining + topUpCreditsRemaining` (denormalized) |
+| `lastCreditRefreshAt` | timestamp of last monthly reset |
+
+Monthly credits are consumed first; top-up credits are a fallback. Both pools are tracked separately.
+
+#### `CreditTransaction`
+
+Append-only ledger. Every credit event is a row.
+
+| `type` value | `amount` sign | Trigger |
+|---|---|---|
+| `monthly_allotment` | positive | `invoice.paid` Stripe webhook |
+| `topup` | positive | one-time checkout completed |
+| `usage` | negative | audio processing completed |
+| `refund` | positive | processing failed / cancelled |
+| `promo` | positive | promotion code redeemed |
+
+`balanceAfter`, `monthlyAfter`, `topUpAfter` snapshot the balance at time of transaction — no need to replay history to get a point-in-time balance.
+
+`stripeEventId` index prevents duplicate processing if Stripe delivers a webhook twice.
+
+#### `Promotion` / `PromotionRedemption`
+
+`Promotion` stores the code, credit amount, date window, and max redemptions. `PromotionRedemption` is the join table with a unique constraint on `[promotionId, userId]` — one redemption per user per promotion. `ipHash` and `userAgentHash` are stored (hashed) for abuse detection.
+
+#### `StripeWebhookEvent`
+
+Idempotency log for Stripe webhook processing. Before handling any event, the system inserts a row with the `stripeEventId`. If a row already exists, the event is skipped. This prevents double-billing when Stripe retries delivery.
+
+---
+
+### Delete Cascade Reference
+
+| Relationship | `onDelete` | Reason |
+|---|---|---|
+| `User` → everything they own | `Cascade` | user deletion removes all their data |
+| `Workspace` → members, invites, audit logs | `Cascade` | workspace deletion is total |
+| `Workspace` → transcriptions, projects | `SetNull` | content survives as orphaned |
+| `Project` → transcriptions | `SetNull` | recordings survive project deletion |
+| `Transcription` → tasks, messages | `Cascade` | tasks/chat are meaningless without transcript |
+| `WorkspaceComment` → nothing | n/a | leaf node |
+| `SlackDestination` → digest settings | `SetNull` | settings survive channel removal |
+| `WorkspaceAuditLog.actorUserId` | `SetNull` | logs survive user removal |
+
+### Type-Cast Delegate Pattern
+
+`WorkspaceInvite`, `ProjectDigestSettings`, and `WorkspaceMember` were added via raw SQL migrations after the initial Prisma client was generated. Rather than regenerating the client (which requires updating dozens of type references), they are accessed through a type-cast at the module boundary:
+
+```typescript
+const workspaceInviteDelegate = (prisma as typeof prisma & {
+  workspaceInvite: {
+    findFirst:  (...args: any[]) => Promise<any>;
+    findMany:   (...args: any[]) => Promise<any[]>;
+    create:     (...args: any[]) => Promise<any>;
+    update:     (...args: any[]) => Promise<any>;
+    updateMany: (...args: any[]) => Promise<{ count: number }>;
+  };
+}).workspaceInvite;
 ```
 
-### Billing
-
-```prisma
-model Subscription {
-  userId          String  @unique
-  plan            String  // "starter" | "pro" | "team"
-  stripeCustomerId String @unique
-  stripeSubscriptionId String @unique
-  status          String  // mirrors Stripe status
-  monthlyCredits  Int     // allotted per renewal
-  currentPeriodEnd DateTime
-}
-
-model CreditTransaction {
-  userId         String
-  transcriptionId String?
-  type           String   // "monthly_allotment" | "usage" | "topup" | "refund"
-  amount         Int      // positive = credit added, negative = credit used
-  balanceAfter   Int
-  note           String?
-}
-```
-
-### Digest & reporting
-
-```prisma
-// Not in generated Prisma client (added via raw SQL migration)
-// Accessed via type-cast delegate pattern:
-//   const delegate = (prisma as typeof prisma & { projectDigestSettings: ... }).projectDigestSettings
-
-ProjectDigestSettings {
-  projectId       String @unique
-  enabled         Boolean
-  cadence         String  // "weekly" | "monthly"
-  reportType      String  // "summary" | "new_insights" | "open_tasks" | "risk_watch"
-  weekday         Int     // 0=Sun, 6=Sat
-  dayOfMonth      Int
-  hourLocal       Int     // 0–23
-  timezone        String  // IANA timezone
-  recipientScope  String  // "managers" | "all_members"
-  sendEmail       Boolean
-  sendSlack       Boolean
-  lastSentAt      DateTime?
-}
-```
+The `any` types are at the persistence layer boundary only. Call sites receive typed return values because the shapes are declared in local type aliases. This is a deliberate tradeoff: weaker types at the DB call in exchange for not coupling every feature build to a Prisma client regeneration cycle.
 
 ---
 
@@ -279,10 +579,135 @@ function slugifyWorkspaceName(name: string) {
 
 **Roles:** `owner` > `admin` > `member` > `viewer`
 
-**Invite flow:**
-1. Owner/admin POSTs to `/api/workspaces/invites` → unique token, 7-day TTL
-2. Resend delivers invite email
-3. Invitee GETs `/invite/[token]` → server validates token, creates `WorkspaceMember`
+**Invite lifecycle:**
+
+```
+CREATE  POST /api/workspaces/invites
+RESEND  PATCH /api/workspaces/invites/[id]
+REVOKE  DELETE /api/workspaces/invites/[id]
+ACCEPT  POST /api/workspaces/invites/accept
+```
+
+#### Token generation
+
+```typescript
+// lib/workspace-invites.ts
+export function createWorkspaceInviteToken() {
+  return randomBytes(24).toString("hex"); // 48-char hex, 192 bits of entropy
+}
+
+export function getWorkspaceInviteExpiration(days = 7) {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + days);
+  return expiresAt;
+}
+```
+
+The invite URL is constructed server-side when the email is sent:
+
+```typescript
+const inviteUrl = `${process.env.NEXTAUTH_URL}/invite/${encodeURIComponent(token)}`;
+// e.g. https://app.voxly.ai/invite/a3f9c2e1b4d8...
+```
+
+#### Sending the invite
+
+`POST /api/workspaces/invites` runs three checks before creating the record:
+
+1. **Role gate** — `canManageWorkspace(context.role)` → only `owner` or `admin` can send invites
+2. **Existing member check** — if a `WorkspaceMember` with that email already exists and is `active`, returns 409
+3. **Duplicate pending invite check** — if an `acceptedAt: null, revokedAt: null` invite already exists for that email, returns 409 with a contextual message (expired vs. pending)
+
+If all checks pass:
+```
+randomBytes(24)                     → token (48-char hex)
+getWorkspaceInviteExpiration()      → expiresAt = now + 7 days
+workspaceInvite.create(...)         → DB row
+sendWorkspaceInviteEmail(...)       → Resend delivers HTML email
+createWorkspaceAuditLog(...)        → workspace.invite.created
+```
+
+#### Landing page — `app/invite/[token]/page.tsx`
+
+Server component. Checks session before rendering:
+
+```typescript
+export default async function InviteAcceptPage({ params }) {
+  const { token } = await params;
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user) {
+    // preserve the invite URL as callbackUrl so NextAuth redirects back after sign-in
+    const callbackUrl = `/invite/${encodeURIComponent(token)}`;
+    redirect(`/auth/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}&invite=1`);
+  }
+
+  return <InviteAcceptClient token={token} />;
+}
+```
+
+Unauthenticated users are sent to `/auth/sign-in` with the invite URL encoded in `callbackUrl`. After sign-in (or signup), NextAuth redirects them back to `/invite/[token]` automatically.
+
+#### Auto-accept — `InviteAcceptClient`
+
+Client component that fires the accept request automatically on mount via a `useRef` guard:
+
+```typescript
+const autoAcceptStartedRef = useRef(false);
+
+useEffect(() => {
+  if (autoAcceptStartedRef.current) return;
+  autoAcceptStartedRef.current = true;
+  void handleAccept(); // POST /api/workspaces/invites/accept
+}, [handleAccept]);
+```
+
+The ref prevents React Strict Mode's double-invocation from firing two accept calls.
+
+#### Accept endpoint — `POST /api/workspaces/invites/accept`
+
+```
+1. requireAuthenticatedUser()          → must be signed in
+2. workspaceInvite.findFirst({
+     token,
+     acceptedAt: null,
+     revokedAt: null,                  → not yet used or revoked
+   })
+3. invite.email !== user.email         → 403 (wrong account — can't forward invite)
+4. invite.expiresAt < Date.now()       → 410 (expired)
+5. workspaceMember.upsert({
+     role: invite.role,
+     status: "active",
+     joinedAt: new Date(),
+   })                                  → idempotent: re-joining restores role
+6. workspaceInvite.update({ acceptedAt: new Date() })
+7. createWorkspaceAuditLog(workspace.invite.accepted)
+8. cookies().set(ACTIVE_WORKSPACE_COOKIE, workspaceId, {
+     httpOnly: true, sameSite: "lax",
+     secure: production, maxAge: 30 days
+   })                                  → browser lands directly in the new workspace
+9. return { workspaceId, workspace, role, billingOwner }
+```
+
+#### Resend — `PATCH /api/workspaces/invites/[id]`
+
+Generates a **new token** and new `expiresAt`. The old token immediately becomes invalid (the DB row's token column is replaced). A new email is sent with the fresh link. Audit logged as `workspace.invite.resent`.
+
+#### Revoke — `DELETE /api/workspaces/invites/[id]`
+
+Sets `revokedAt: new Date()`. The `findFirst` WHERE clause checks `revokedAt: null` everywhere, so the link stops working instantly. Audit logged as `workspace.invite.revoked`.
+
+#### Security properties
+
+| Property | Implementation |
+|---|---|
+| Unguessable token | 192 bits of entropy (`randomBytes(24)`) |
+| Non-transferable | `invite.email !== user.email` → 403 |
+| Single-use | `acceptedAt: null` in lookup WHERE |
+| Revocable | `revokedAt: null` in lookup WHERE |
+| Time-limited | `expiresAt < Date.now()` → 410 |
+| Rate-limited | 10 invites/min per IP |
+| Auth required to accept | `requireAuthenticatedUser()` before any lookup |
 
 ### 4.3 Audio Upload Pipeline
 
@@ -933,9 +1358,35 @@ Roles are `owner > admin > member > viewer`. Owner/admin can invite, remove memb
 
 ---
 
-**Q: Walk me through the invite flow.**
+**Q: Walk me through the invite flow — from sending to the user landing in the workspace.**
 
-A: An owner or admin POSTs to `/api/workspaces/invites` with an email and role. The server creates a `WorkspaceInvite` row with a `token` (crypto random, unique), a 7-day `expiresAt`, and sends an email via Resend with a link to `/invite/[token]`. When the invitee visits that link — logged in or after signing up — the server validates the token hasn't expired or been revoked, creates a `WorkspaceMember` row with the specified role, and marks `acceptedAt`. The invite is single-use.
+A: The full flow has four stages:
+
+**1. Send.** Owner/admin POSTs to `/api/workspaces/invites`. The server checks three things before creating anything: the requester must be `owner` or `admin`; no active member with that email already exists; no pending invite for that email is already open. If all pass, it calls `randomBytes(24).toString("hex")` to produce a 48-character, 192-bit hex token, creates a `WorkspaceInvite` row with a 7-day `expiresAt`, and sends a Resend email containing `${NEXTAUTH_URL}/invite/${token}`.
+
+**2. Landing.** The invitee clicks the link and hits `app/invite/[token]/page.tsx` — a server component. It calls `getServerSession()`. If the user isn't signed in, it redirects to `/auth/sign-in?callbackUrl=/invite/[token]&invite=1`. NextAuth will redirect them back to the invite URL after authentication, so the token is never lost.
+
+**3. Auto-accept.** Once authenticated, `InviteAcceptClient` mounts and immediately fires `POST /api/workspaces/invites/accept` via a `useRef` guard that prevents Strict Mode's double-invocation from sending two requests.
+
+**4. Accept.** The accept endpoint looks up the invite with `WHERE token = ? AND acceptedAt IS NULL AND revokedAt IS NULL`. It then enforces three security checks: the signed-in user's email must match `invite.email` (prevents forwarding the link); `expiresAt` must be in the future; token must not be revoked. On success it `upsert`s a `WorkspaceMember` row (idempotent — re-joining a workspace updates the role without creating a duplicate), stamps `acceptedAt`, writes an audit log, and sets the `voxly_workspace` cookie to the new workspace ID so the browser lands there immediately on the next navigation.
+
+---
+
+**Q: Why use `upsert` instead of `create` when adding the workspace member?**
+
+A: If a user was previously removed from the workspace (their `WorkspaceMember` row has `status: "removed"`), a `create` would fail with a unique constraint violation on `[workspaceId, userId]`. `upsert` updates the existing row to `status: "active"` with the new role and `joinedAt` timestamp — clean re-join with no manual cleanup needed.
+
+---
+
+**Q: How do you prevent someone from forwarding an invite link to a different person?**
+
+A: The accept endpoint compares `invite.email` (from the DB row) against `user.email` (from the authenticated session). If they don't match, it returns 403. So even if someone shares the URL, the link only works for the specific email address it was sent to. The user can't sign in with a different account and use it.
+
+---
+
+**Q: What happens when an invite is resent?**
+
+A: The `PATCH /api/workspaces/invites/[id]` endpoint generates a **brand new token** using `randomBytes(24)` and a new `expiresAt`. It overwrites the existing row's `token` and `expiresAt` columns and sends a new email. The old URL with the old token becomes invalid immediately — there's no grace period. This is intentional: resend = rotate credentials.
 
 ---
 

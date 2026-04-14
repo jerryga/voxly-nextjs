@@ -2859,6 +2859,16 @@ export function TranscriptionClient({
     }
   }
 
+  // Poll notifications every 30s so the badge stays current without any user action.
+  // Using a ref so the interval always calls the latest version of the function
+  // without needing loadNotifications in the dependency array.
+  const loadNotificationsRef = useRef(loadNotifications);
+  useEffect(() => { loadNotificationsRef.current = loadNotifications; });
+  useEffect(() => {
+    const id = setInterval(() => void loadNotificationsRef.current(), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     const tombstone = readDeletedWorkspaceTombstone();
     if (!tombstone) {

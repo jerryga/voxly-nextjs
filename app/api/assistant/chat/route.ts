@@ -1,25 +1,17 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { applyAssistantChat } from "@/lib/llm/agent";
 import { getApiErrorMessage, getApiErrorStatus } from "@/lib/api/errors";
 import { enforceRateLimit, enforceSameOrigin } from "@/lib/api/security";
 import { assistantChatSchema } from "@/lib/api/validation";
+import { requireWorkspaceContext, activeWorkspaceResourceWhere } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -33,16 +25,19 @@ export async function GET(request: Request) {
       );
     }
 
+    const where = activeWorkspaceResourceWhere(context);
     const transcription = await prisma.transcription.findFirst({
-      where: { id: transcriptionId, userId: user.id },
+      where: { id: transcriptionId, ...where },
       select: { id: true },
     });
     if (!transcription) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Return messages stored by any member of the workspace for this transcription,
+    // ordered chronologically so the full conversation is visible to collaborators.
     const messages = await prisma.assistantMessage.findMany({
-      where: { userId: user.id, transcriptionId },
+      where: { transcriptionId },
       orderBy: { createdAt: "asc" },
       select: { role: true, content: true },
     });
@@ -71,15 +66,8 @@ export async function POST(request: Request) {
       return rateLimitError;
     }
 
-    const session = await getServerSession(authOptions);
-    const email = session?.user?.email?.toLowerCase();
-
-    if (!email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const context = await requireWorkspaceContext();
+    if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -91,8 +79,9 @@ export async function POST(request: Request) {
     }
 
     const { transcriptionId, messages, summary, provider, model } = parsed.data;
+    const where = activeWorkspaceResourceWhere(context);
     const transcription = await prisma.transcription.findFirst({
-      where: { id: transcriptionId, userId: user.id },
+      where: { id: transcriptionId, ...where },
       select: { id: true },
     });
     if (!transcription) {
@@ -112,7 +101,7 @@ export async function POST(request: Request) {
         ? [
             prisma.assistantMessage.create({
               data: {
-                userId: user.id,
+                userId: context.user.id,
                 transcriptionId,
                 role: "user",
                 content: lastUserMessage.content,
@@ -122,7 +111,7 @@ export async function POST(request: Request) {
         : []),
       prisma.assistantMessage.create({
         data: {
-          userId: user.id,
+          userId: context.user.id,
           transcriptionId,
           role: "assistant",
           content: message,
