@@ -5,6 +5,9 @@ const enforceHttpsHeaders =
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   async headers() {
     const cspDirectives = [
       "default-src 'self'",

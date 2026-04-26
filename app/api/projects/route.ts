@@ -30,7 +30,7 @@ export async function GET() {
       orderBy: [{ createdAt: "desc" }],
     });
 
-    const sortedProjects = projects.sort((first, second) => {
+    const sortedProjects = projects.sort((first: any, second: any) => {
       if (first.name === DEFAULT_PROJECT_NAME) return -1;
       if (second.name === DEFAULT_PROJECT_NAME) return 1;
       return second.createdAt.getTime() - first.createdAt.getTime();

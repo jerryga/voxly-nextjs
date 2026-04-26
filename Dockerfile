@@ -11,9 +11,15 @@ RUN npm ci
 FROM base AS builder
 WORKDIR /app
 
+# Build-time placeholders only; real values are injected at runtime by Cloud Run.
+ENV DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
+ENV NEXTAUTH_URL=https://placeholder
+ENV NEXTAUTH_SECRET=placeholder
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+RUN npx prisma generate
 RUN npm run build
 
 FROM base AS runner

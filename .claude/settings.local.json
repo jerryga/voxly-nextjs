@@ -17,7 +17,15 @@
       "Bash(npx tsx:*)",
       "Bash(wc:*)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('dependencies',{}\\).get\\('inngest','not found'\\)\\)\")",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(gcloud --version)",
+      "Bash(docker --version)",
+      "Bash(gcloud auth *)",
+      "Bash(gcloud config *)",
+      "Bash(docker info *)",
+      "Bash(gcloud projects *)",
+      "Bash(npm ci *)",
+      "Bash(curl -sIL https://voxly-nhlbe7ddsa-nn.a.run.app)"
     ]
   }
 }
