@@ -25,7 +25,8 @@
       "Bash(docker info *)",
       "Bash(gcloud projects *)",
       "Bash(npm ci *)",
-      "Bash(curl -sIL https://voxly-nhlbe7ddsa-nn.a.run.app)"
+      "Bash(curl -sIL https://voxly-nhlbe7ddsa-nn.a.run.app)",
+      "Bash(gcloud logging *)"
     ]
   }
 }
