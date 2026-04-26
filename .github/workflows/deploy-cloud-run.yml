@@ -16,7 +16,7 @@ concurrency:
 
 env:
   GCP_PROJECT_ID: voxly-492205
-  GCP_REGION: northamerica-northeast1
+  GCP_REGION: us-central1
   AR_REPOSITORY: voxly
   SERVICE_NAME: voxly
   IMAGE_NAME: voxly
