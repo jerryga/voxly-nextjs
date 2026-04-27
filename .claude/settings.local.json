@@ -26,7 +26,32 @@
       "Bash(gcloud projects *)",
       "Bash(npm ci *)",
       "Bash(curl -sIL https://voxly-nhlbe7ddsa-nn.a.run.app)",
-      "Bash(gcloud logging *)"
+      "Bash(gcloud logging *)",
+      "Bash(gcloud run *)",
+      "Bash(gcloud domains *)",
+      "Bash(gcloud beta *)",
+      "Bash(dig +short voxly.chason.app CNAME)",
+      "Bash(dig +short voxly.chason.app A)",
+      "Bash(curl -v -I --max-time 10 https://voxly.chason.app)",
+      "Bash(timeout 10 openssl s_client -connect voxly.chason.app:443 -servername voxly.chason.app)",
+      "Bash(curl -sI --tlsv1.2 --max-time 10 https://voxly.chason.app)",
+      "Bash(gcloud storage *)",
+      "Bash(brew install *)",
+      "Bash(terraform -version)",
+      "Bash(terraform init *)",
+      "Bash(terraform plan *)",
+      "Bash(python3 -c ' *)",
+      "Bash(brew list *)",
+      "Bash(tofu init *)",
+      "Bash(tofu plan *)",
+      "Bash(aws s3 *)",
+      "Bash(aws elasticbeanstalk *)",
+      "Bash(aws ec2 *)",
+      "Bash(aws iam *)",
+      "Bash(aws acm *)",
+      "Bash(aws route53 *)",
+      "Bash(gh run *)",
+      "Bash(echo \"  serving at: $\\(gcloud run services describe voxly --region=us-central1 --project=voxly-492205 --format='value\\(status.url\\)' 2>/dev/null\\)\")"
     ]
   }
 }
